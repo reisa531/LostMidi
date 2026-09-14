@@ -1,0 +1,348 @@
+# Lost MIDI Archive 部署与运行手册
+
+适用版本：当前仓库基础工程与只读 Admin 平台。最后核对：2026-09-14。
+
+本文指导单机部署、启动验收、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
+
+## 1. 部署方式与边界
+
+推荐使用仓库自带的 Docker Compose，一次部署四个服务：
+
+| 服务 | 职责 | 数据与生命周期 |
+| --- | --- | --- |
+| `postgres` | PostgreSQL 17.11 | `postgres_data` named volume，持久保存数据库 |
+| `migrate` | 应用 SQL migration，可选写入示例数据 | 一次性任务，成功后退出，退出码应为 0 |
+| `backend` | C++20 / Drogon REST API | `./storage` 挂载到 `/app/storage` |
+| `frontend` | Next.js 生产构建、公开站点和 Admin | 服务端通过内部 HTTP 地址访问 backend |
+
+默认只将端口发布到宿主机 `127.0.0.1`，适合本机试运行，或置于服务器的 HTTPS 反向代理后。项目当前没有自带域名、证书、反向代理或高可用部署。
+
+**Admin 是未接入认证的只读开发预览**，不是已完成权限控制的管理系统。对外部署时应在代理层限制 `/admin` 和 `/admin/` 下的路径；增加非公开数据或写操作前，必须先实现后端认证与授权。`noindex` 不能替代访问控制。当前 PostgreSQL 与后端不需要直接暴露到公网。
+
+## 2. 环境准备
+
+### 2.1 Docker 路径
+
+- Linux：安装 Docker Engine 和 Compose 插件。
+- Windows / macOS：安装并启动 Docker Desktop，使用 Linux containers。
+- Compose 需支持 `--wait`、`service_healthy` 和 `service_completed_successfully`。
+- 主机能访问基础镜像、npm 和 Conan 的依赖源。首次 C++ 依赖构建可能较慢，预留构建内存和磁盘空间。
+- 选择稳定的部署目录；不要随意改名或改变 Compose 项目名，以免连接到另一组 named volume。
+
+```sh
+docker version
+docker compose version
+docker info
+```
+
+`docker info` 必须能连接到服务端。只有 Docker CLI、没有运行 Docker Engine 时，不能构建或运行容器。Docker 部署无需在宿主安装 Node.js、C++ 编译器或 PostgreSQL；可选 smoke 检查需要宿主 Python 3。
+
+### 2.2 获取代码
+
+将完整仓库放到部署目录，确认包含 `docker-compose.yml`、`docker/`、`backend/`、`frontend/`、`database/` 和 `storage/`。服务器部署应选择已经过测试的提交，记录版本：
+
+```sh
+git rev-parse HEAD
+git status --short
+```
+
+存在未提交修改时先明确它们是否属于本次发布。本文不自动覆盖工作区。
+
+## 3. 首次配置
+
+### 3.1 创建环境文件
+
+仅在 `.env` 不存在时复制，不要覆盖已有部署配置。
+
+Linux / macOS：
+
+```sh
+cp .env.example .env
+chmod 600 .env
+```
+
+PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+编辑 `.env`。本机体验可使用样例值；服务器应替换数据库密码，并根据用途选择 `SEED_DEMO`：
+
+```dotenv
+POSTGRES_USER=lostmidi
+POSTGRES_PASSWORD=REPLACE_WITH_A_RANDOM_PASSWORD
+POSTGRES_DB=lostmidi
+POSTGRES_PORT=5432
+
+DATABASE_URL=postgresql://lostmidi:REPLACE_WITH_A_RANDOM_PASSWORD@postgres:5432/lostmidi
+BACKEND_API_URL=http://backend:8080
+BACKEND_PORT=8080
+FRONTEND_PORT=3000
+
+DB_POOL_SIZE=4
+HTTP_THREADS=2
+WORKER_THREADS=4
+SEED_DEMO=false
+```
+
+保留 `.env.example` 中其他配置即可。占位密码必须替换，`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须对应。建议使用随机的 URL 安全字符；如果密码有 `@`、`:`、`/` 等保留字符，只在 URI 中进行百分号编码，数据库密码变量保留原值。
+
+- `SEED_DEMO=true`：写入三条虚构档案，用于开发、演示和 smoke 检查。
+- `SEED_DEMO=false`：空档案站点，适合正式数据环境。
+- 从 true 改为 false **不会删除**此前已写入的示例。
+- 不要提交 `.env`，也不要把完整的解析后 Compose 配置粘贴到公开日志；其中可能包含密码。
+
+### 3.2 地址与端口对照
+
+| 配置 | Compose 内使用 | 原生运行使用 |
+| --- | --- | --- |
+| `DATABASE_URL` 的主机 | `postgres` | `127.0.0.1` 或实际数据库地址 |
+| 数据库连接端口 | 始终为容器内 `5432` | 数据库实际端口 |
+| `BACKEND_API_URL` | `http://backend:8080` | `http://127.0.0.1:8080` |
+| `BACKEND_HOST` | Compose 固定注入 `0.0.0.0` | 建议 `127.0.0.1` |
+| `STORAGE_PATH` | Compose 固定 `/app/storage` | 建议使用绝对路径 |
+
+容器内的 `localhost` 指容器自己，不能用它连接另一个服务。`POSTGRES_PORT` 只改变宿主映射，不改变容器间的 5432。修改 `BACKEND_PORT` 后需同步修改 `BACKEND_API_URL` 中的端口。
+
+`FRONTEND_PORT` 同时设置前端宿主映射与容器端口。`PORT`、`HOSTNAME` 和 `NEXT_TELEMETRY_DISABLED` 由 Compose 注入，不必另外添加。三个线程/连接数参数允许 1–64。
+
+### 3.3 存储目录
+
+保留根目录 `storage/`，不要把它放进临时构建目录。后端容器以 UID 10001 运行；Linux 服务器首次建立专用目录可执行：
+
+```sh
+sudo install -d -o 10001 -g 10001 -m 0750 ./storage
+```
+
+已有文件时先确认属主和访问需求，不要递归改动不属于本项目的目录。Windows Docker Desktop 使用其挂载权限机制，不照搬 Linux 的 UID 设置。当前示例只含元数据，没有 MIDI 文件是正常状态。
+
+## 4. 构建与启动
+
+### 4.1 快速启动
+
+```sh
+docker compose config --quiet
+docker compose up --build -d --wait --wait-timeout 180
+docker compose ps -a
+```
+
+`--wait-timeout` 用于服务就绪等待，不是整个镜像构建的时限。如果命令报错，先查看日志，不要直接跳过失败步骤。`up` 的选项说明见 [Docker 官方文档](https://docs.docker.com/reference/cli/docker/compose/up/)。
+
+希望将首次构建和启动分开排查时：
+
+```sh
+docker compose build
+docker compose up -d --wait --wait-timeout 180
+```
+
+后端 Dockerfile 在构建阶段运行 CTest；未提供测试数据库连接时，数据库集成用例会跳过。前端构建不要求后端或数据库同时在线。
+
+### 4.2 正常启动顺序
+
+1. PostgreSQL 健康检查成功。
+2. `migrate` 执行事务化迁移，退出码为 0。
+3. Backend 启动并连接已迁移数据库，`/ready` 检查成功。
+4. Frontend 启动并通过页面健康检查。
+
+`migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
+
+## 5. 部署验收
+
+默认地址如下，修改端口后相应调整：
+
+| 地址 | 预期 |
+| --- | --- |
+| `http://127.0.0.1:3000/` | 公开首页 |
+| `http://127.0.0.1:3000/midis` | 档案列表或正常空状态 |
+| `http://127.0.0.1:3000/admin` | 只读工作台 |
+| `http://127.0.0.1:3000/admin/midis` | 后台档案表格 |
+| `http://127.0.0.1:3000/admin/modules` | 模块目录 |
+| `http://127.0.0.1:8080/health` | `{"status":"ok"}`，仅表示进程存活 |
+| `http://127.0.0.1:8080/ready` | 200，确认数据库和档案表可查询 |
+| `http://127.0.0.1:8080/api/v1/midis?page=1&pageSize=20` | 包含 data 与 pagination 的 JSON |
+
+Linux / macOS：
+
+```sh
+curl -fsS http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:8080/ready
+curl -fsS 'http://127.0.0.1:8080/api/v1/midis?page=1&pageSize=20'
+```
+
+PowerShell 使用 `curl.exe`，避免旧版 PowerShell 将 `curl` 解释为别名。
+
+**只有启用了 demo seed 的测试环境**才运行以下脚本：
+
+```sh
+python scripts/smoke.py
+# 前端尚未启动时，仅检查后端：
+python scripts/smoke.py --api-only
+```
+
+脚本假定至少存在三条示例及 `example-midi`，不能用于无 seed 的正式数据环境。除了检查 HTTP 状态，还需打开 `/midis` 和 `/admin` 确认实际数据显示；前端连接失败时可能呈现提示页，单独首页 200 不代表完整链路正常。
+
+## 6. 服务器访问与长期运行
+
+### 6.1 远程试用
+
+默认回环地址不会直接向外提供服务。可以从自己的电脑建立 SSH 隧道：
+
+```sh
+ssh -N -L 3000:127.0.0.1:3000 deploy@YOUR_SERVER
+```
+
+随后访问本机 `http://127.0.0.1:3000`。本机 3000 被占用时，将 `-L` 的第一个端口改为 3001，并访问该端口。
+
+### 6.2 域名与 HTTPS
+
+在宿主机已有反向代理上，将站点域名转发至 `http://127.0.0.1:3000`，配置证书以及 Host、X-Forwarded-For、X-Forwarded-Proto。App Router 使用流式响应，代理应允许流式传输。代理若运行在容器中，不能用它自己的 localhost 指向宿主，应根据代理的实际网络配置连接前端。
+
+公开页面和 Admin 共用前端进程。当前应限制 `/admin` 及其子路径的外部访问；后端请求由 Next.js 服务端发起，不需要将 8080 或 5432 映射到公网。域名、证书和代理配置取决于部署主机，不包含在本仓库的 Compose 中。
+
+### 6.3 重启行为
+
+当前 Compose 没有为长期服务配置自动重启策略。`-d` 只表示后台运行，不是系统开机自启或自动故障恢复。若需要，可在部署目录创建本地 `docker-compose.override.yml`：
+
+```yaml
+services:
+  postgres:
+    restart: unless-stopped
+  backend:
+    restart: unless-stopped
+  frontend:
+    restart: unless-stopped
+```
+
+保持 `migrate` 的一次性行为，不给它添加循环重启。创建 override 后重新执行 `docker compose config --quiet` 和 `docker compose up -d --wait`。另需确保 Docker 服务随系统启动。健康检查失败本身不会自动重启容器，仍需监控及排障。
+
+## 7. 日常操作与更新
+
+### 7.1 查看和停止
+
+```sh
+docker compose ps -a
+docker compose logs --tail=100 frontend backend migrate postgres
+docker compose logs -f backend
+docker compose stop
+```
+
+恢复完整依赖检查使用 `docker compose up -d --wait`。`docker compose down` 移除容器和默认网络，但保留 named volume 与宿主 storage。**不要使用 `down -v` 作为常规排障手段**，它会删除数据库 volume。
+
+### 7.2 更新发布
+
+采用可接受短暂停机的单机流程：
+
+1. 记录旧提交、环境配置及镜像信息，按第 8 节备份。
+2. 将部署代码更新到已经测试的目标提交；保留 `.env`、storage 和 Compose 项目标识。
+3. 构建新镜像；构建失败时先修复，不继续切换。
+4. 停止应用，执行数据库迁移，再启动新应用。
+
+```sh
+docker compose build
+docker compose stop frontend backend
+docker compose up -d --wait postgres
+docker compose run --rm migrate
+# 上一步退出码必须为 0；成功后再执行：
+docker compose up -d --wait --wait-timeout 180
+```
+
+最后按第 5 节验收。迁移脚本对已执行版本校验并跳过，不会重复 seed；已应用 SQL 文件不能直接改写。`docker compose restart` 不会重建镜像，也不会更新容器环境变量；修改源码或 `.env` 后应使用相应的 build / up 流程。
+
+### 7.3 回退
+
+应用回退前确认旧版本兼容现有 schema，再切换旧提交或保留的镜像重新部署。当前没有 down migration；回退代码不会回退数据库。若 schema 不兼容，应恢复匹配的数据库与文件备份，并明确备份时间之后的数据如何处理。不要用删除 volume 的方式冒充回滚。
+
+## 8. 备份与恢复
+
+以下为 Linux 服务器 Bash 示例。备份应存于仓库之外，再复制到独立存储。数据库、对象目录、部署提交号和受控保存的 `.env` 共同构成恢复资料。
+
+### 8.1 创建一致的维护备份
+
+停止应用并暂停所有导入、后台写入和其他写数据库的程序；PostgreSQL 保持运行。当前公开 API 只读，但备份流程为后续写功能保留一致性边界。
+
+```bash
+backup_dir="../lostmidi-backups/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$backup_dir"
+chmod 700 "$backup_dir"
+docker compose stop frontend backend
+docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f /tmp/lostmidi-backup.dump'
+docker compose cp postgres:/tmp/lostmidi-backup.dump "$backup_dir/database.dump"
+sudo tar -czf "$backup_dir/storage.tar.gz" -C . storage
+git rev-parse HEAD > "$backup_dir/commit.txt"
+cp .env "$backup_dir/environment.env"
+chmod 600 "$backup_dir/environment.env"
+docker compose exec -T postgres pg_restore --list /tmp/lostmidi-backup.dump
+```
+
+逐项确认命令成功、备份文件存在后，执行 `docker compose up -d --wait` 恢复服务。`pg_restore --list` 只检查归档可读取，不替代实际恢复演练。数据库归档先写到容器再 `compose cp`，避免 Windows PowerShell 旧版本重定向二进制造成损坏；Windows 操作者需将目录变量和文件操作改为对应 PowerShell 命令。
+
+`.env` 备份包含密码，应使用受控权限和备份加密。不要把整个 PostgreSQL 正在运行的数据目录当普通文件复制作为逻辑备份。
+
+### 8.2 恢复演练：新数据库，不覆盖原库
+
+选择待恢复的备份目录，使用一个不存在的测试库名。不要先对恢复目标执行项目 migration，dump 已包含 schema 和迁移历史。
+
+```bash
+backup_dir="../lostmidi-backups/REPLACE_WITH_BACKUP_TIMESTAMP"
+docker compose cp "$backup_dir/database.dump" postgres:/tmp/lostmidi-restore.dump
+docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" lostmidi_restore_check'
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d lostmidi_restore_check --no-owner --no-privileges --exit-on-error --single-transaction /tmp/lostmidi-restore.dump'
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d lostmidi_restore_check -c "SELECT count(*) FROM midi_entries;"'
+mkdir -p "$backup_dir/restore-check"
+sudo tar -xzf "$backup_dir/storage.tar.gz" -C "$backup_dir/restore-check"
+```
+
+本例不会删除原数据库或替换当前 storage。若测试库名已存在，应另选名称；不要直接对已有库执行覆盖恢复。`--no-owner` 和 `--no-privileges` 适用于当前单应用账号模型，有多角色部署时需另行恢复角色与授权。归档恢复参数见 [PostgreSQL 17 pg_restore 文档](https://www.postgresql.org/docs/17/app-pgrestore.html)。
+
+正式切换恢复数据时，先停止所有应用和写入程序，恢复匹配的 storage，检查 UID 10001 的目录权限，将 `.env` 中 `POSTGRES_DB` 与 `DATABASE_URL` 指向已恢复的库，选定兼容的代码版本，再运行迁移及启动验收。不要在共享正式数据库上运行演练写入或盲目切换。
+
+## 9. 不使用 Docker 的原生运行
+
+原生编译命令按平台见 [README 的 Local Development](README.md#local-development)。基本顺序不能省略：
+
+1. 安装 Node 22.13+、npm、C++20 编译器、CMake 3.24+、Conan 2、PostgreSQL 17 与 psql。
+2. 创建数据库和用户，设置 libpq 连接变量，执行 `sh database/migrate.sh`；Windows 可用 Git Bash。
+3. Conan 安装依赖，CMake configure / build / CTest。
+4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH，运行后端可执行程序。
+5. 在 frontend 目录配置 `.env.local`，构建并运行前端。
+
+原生前端生产模式示例：
+
+```sh
+cd frontend
+cp .env.example .env.local
+# 编辑 BACKEND_API_URL 为本机后端地址
+npm ci
+npm run build
+npm run start
+```
+
+PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根目录 `.env`；Next.js 原生模式读取 frontend/.env.local。`npm run start` 使用已有构建，修改页面后必须重新 build 并重启进程；开发热更新则使用 `npm run dev`。
+
+`.tools/` 中的便携 PostgreSQL、编译缓存或测试脚本是开发时的临时产物，不属于标准部署依赖。原生长期服务应交由主机的服务管理器管理，不能依赖交互终端一直打开。
+
+## 10. 常见故障
+
+| 现象 | 检查与处理 |
+| --- | --- |
+| Docker named pipe 不存在 / Cannot connect to daemon | 启动 Docker Engine / Desktop，确认 Linux containers；先让 docker info 成功 |
+| 缺少环境变量 | 确认根目录 .env 存在，运行 config --quiet；不要输出含密码的完整配置 |
+| 端口被占用 | 停止旧的本机服务或调整宿主端口；同步后端 URL，注意数据库内部仍用 5432 |
+| Backend 启动失败或 /ready 503 | 查看 backend、migrate、postgres 日志；核对 URI、密码、表是否迁移，以及是否混用了容器 localhost |
+| 改密码后仍无法连接 | PostgreSQL 初始化变量只用于首次初始化；已有库需要实际修改数据库角色密码，再同步 URI |
+| migrate Exited (0) | 正常的一次性任务结束，不要手工强制保持运行 |
+| migrate 非零退出 / checksum changed | 找出失败 SQL；恢复被改写的历史 migration，以新文件表达变更，不跳过失败或删迁移历史 |
+| storage Permission denied | 检查宿主挂载目录及 UID 10001 的访问权限，不使用全员可写作为常规修复 |
+| 首页可开，列表提示不可用 | 首页成功不代表 API 可用；检查 BACKEND_API_URL 与 /ready |
+| /admin 404 或页面仍为旧版 | 确认请求到本项目进程；重建前端并重建容器，原生模式重新 build、重启 |
+| 没有档案 / example-midi 404 | SEED_DEMO=false 的空库正常；不要为通过演示测试向正式库注入示例 |
+| 修改环境后没生效 | 使用 compose up 重建对应容器；仅 restart 不更新容器环境 |
+| Conan 下载或 TLS 验证失败 | 检查网络、代理及受信任证书配置，不通过关闭 TLS 验证解决 |
+| C++ 构建资源不足 | 给 Docker 增加可用资源并检查磁盘；首次依赖构建可能比应用编译更耗时 |
+
+## 11. 验证记录与文档维护
+
+本手册根据当前 Dockerfile、Compose、配置读取逻辑和迁移脚本核对。已有实际原生编译、CTest、PostgreSQL 和后端 HTTP 检查记录见 [Implementation Report](docs/implementation-report.md)。**提供部署命令不代表已在目标服务器执行成功**；此前环境没有 Docker daemon，不能声称容器整栈或备份恢复流程已验证。
+
+每次修改端口、存储挂载、环境变量、migration 策略、权限模型或构建路径时，同步更新本文件。发布记录至少保存提交号、部署时间、迁移结果、验收结果及备份位置；不记录明文密码。

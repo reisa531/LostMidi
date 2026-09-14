@@ -1,1 +1,294 @@
-# LostMidi
+# Lost MIDI Archive
+
+一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前版本建立只读 REST API、服务端渲染页面、数据库迁移和文件存储边界。
+
+这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
+
+部署与运维请从 [RUN.md](RUN.md) 开始：包含环境配置、启动验收、服务器访问、更新、备份恢复与故障排查。
+
+## Architecture
+
+```mermaid
+flowchart TD
+  Browser --> Next[Next.js App Router / Server Components]
+  Next -->|REST JSON| Controller[Drogon Controller]
+  Controller --> Service[C++ Services: midi / person / recovery]
+  Service --> Repository[PostgreSQL Repositories]
+  Repository --> DB[(PostgreSQL)]
+  Import[Future import / upload] -.-> FileService[MidiFileService]
+  FileService --> Repository
+  FileService --> Storage[IObjectStorage]
+  Storage --> Local[LocalObjectStorage / storage directory]
+  Storage -. future .-> S3[S3-compatible storage]
+```
+
+后端是 **Modular Monolith**：一个程序、一个数据库，内部按领域分模块。Next.js 只负责页面和渲染，业务数据全部来自 C++ API。没有 Next.js 数据库连接，也没有 Redis、消息队列或额外搜索服务。
+
+## Repository Structure
+
+```text
+frontend/src/app/          首页、档案列表/详情、人物、关于、错误页面
+frontend/src/components/   档案展示组件
+frontend/src/lib/api/      服务端 HTTP 客户端和 TypeScript 合约
+backend/src/common/       配置、分页、Controller、JSON、日志
+backend/src/midi/         档案与文件登记 Service、Repository、模型
+backend/src/person/       人物、昵称、署名的查询与模型
+backend/src/recovery/     历史来源、寻回记录；未来外部档案接口
+backend/src/storage/      对象存储接口、本地实现、SHA-256
+backend/tests/            GoogleTest 业务与存储测试
+database/migrations/      版本化 schema SQL
+database/seeds/           单独启用的虚构数据
+database/tests/           PostgreSQL 约束检查
+database/migrate.sh       事务、版本与校验和管理
+docker/                   前后端多阶段 Dockerfile
+docs/adr/                 五项架构决策
+docs/database.md          关系、约束、迁移的详细说明
+scripts/smoke.py          对运行中的栈执行只读端到端检查
+storage/                  本地对象目录，内容不进入 Git
+.github/workflows/ci.yml   Linux 构建和整栈检查
+```
+
+## Requirements
+
+最简单的入口是 Docker Engine / Docker Desktop 的 Linux containers 模式，以及 Docker Compose v2 或更新版本。首次构建需联网下载 npm、Conan 和基础镜像，C++ 依赖可能需要较长时间编译。
+
+| 原生工具 | 要求 |
+| --- | --- |
+| Node.js / npm | Node 22.13+；安装用 npm ci |
+| C++ 编译器 | C++20；Linux 可用 GCC 13，Windows 建议 Visual Studio Build Tools 2022 + Windows SDK |
+| CMake | 3.24+ |
+| Conan | 2.x；Docker 固定 2.32.0 |
+| Python | 安装 Conan、运行 smoke.py |
+| PostgreSQL | 17；原生需要 psql；Compose 使用 17.11-bookworm |
+| Shell | POSIX sh + sha256sum 或 shasum；Windows 可用 Git Bash |
+
+直接依赖固定在 package.json / conanfile.py：Next.js 16.3.5、React 19.3.0、Tailwind 4.3.3、TypeScript 6.0.3、Drogon 1.9.13、OpenSSL 3.6.4、GoogleTest 1.17.0。npm 提交 lockfile。Conan 的传递依赖仍可能随上游 recipe 更新，发布前应生成目标平台 lockfile 并验证升级。
+
+## Local Development
+
+### Docker workflow
+
+在仓库根目录运行：
+
+```sh
+cp .env.example .env
+docker compose config --quiet
+docker compose up --build
+```
+
+PowerShell 第一步使用 `Copy-Item .env.example .env`。示例密码是公开的本地开发值；真实 `.env` 已被忽略。服务仅发布到宿主 `127.0.0.1`。
+
+- 页面：<http://localhost:3000>
+- 存活检查：<http://localhost:8080/health>
+- 数据库就绪：<http://localhost:8080/ready>
+- 示例档案：<http://localhost:3000/midis/example-midi>
+
+启动顺序：PostgreSQL 健康检查 → 一次性 migrate 服务 → Backend 就绪检查 → Frontend。前端构建无需后端在线。Compose 运行构建后的程序，改源码后重新 `docker compose up --build`；前端热更新使用原生 `npm run dev`。
+
+```sh
+docker compose logs -f backend
+docker compose run --rm migrate
+docker compose down
+```
+
+普通 down 保留 PostgreSQL named volume 和宿主 storage/；不要为了升级 schema 删除 volume。修改数据库初始账号变量不会自动改变已有数据库，需要同步修改数据库账号和 DATABASE_URL。
+
+后端容器以 UID 10001 运行。Linux 下测试文件写入时应让 storage/ 对该 UID 可写，由后端独占管理；当前只读 API 不写入文件。数据库和对象目录分别备份、恢复。
+
+### Native workflow: Linux / macOS
+
+先准备 PostgreSQL 数据库和用户；也可只运行 Compose 的数据库：
+
+```sh
+docker compose up -d postgres
+export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=lostmidi PGDATABASE=lostmidi
+export PGPASSWORD=lostmidi_dev_only
+SEED_DEMO=true sh database/migrate.sh
+```
+
+不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库。从根目录构建后端：
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+pip install conan==2.32.0
+conan profile detect
+conan install backend --build=missing -s compiler.cppstd=20 -s build_type=Release
+cmake -S backend -B backend/build/Release \
+  -DCMAKE_TOOLCHAIN_FILE=generators/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build backend/build/Release --parallel 2
+ctest --test-dir backend/build/Release --output-on-failure
+
+export DATABASE_URL=postgresql://lostmidi:lostmidi_dev_only@127.0.0.1:5432/lostmidi
+export BACKEND_HOST=127.0.0.1 BACKEND_PORT=8080 STORAGE_PATH="$PWD/storage"
+./backend/build/Release/lostmidi_api
+```
+
+已有 Conan profile 时先检查编译器，不必重复 detect。Conan 生成的 CMakeUserPresets.json 不提交。单配置生成器默认用 backend/build/Release；Visual Studio 多配置生成器用 backend/build，不能混用同一个构建目录。
+
+另一个终端启动前端：
+
+```sh
+cd frontend
+cp .env.example .env.local
+npm ci
+npm run dev
+```
+
+### Native workflow: Windows
+
+安装 C++ Build Tools 和 Windows SDK，优先使用 x64 Developer PowerShell。原生 C++ 初次配置较复杂，尤其是编译器、SDK、代理证书与依赖二进制不匹配时；Docker 提供更统一的入口。
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install conan==2.32.0
+conan profile detect
+conan install backend --build=missing -s compiler.cppstd=20 -s build_type=Release
+cmake -S backend -B backend/build '-DCMAKE_TOOLCHAIN_FILE=generators/conan_toolchain.cmake'
+cmake --build backend/build --config Release --parallel 2
+ctest --test-dir backend/build -C Release --output-on-failure
+
+$env:DATABASE_URL='postgresql://lostmidi:lostmidi_dev_only@127.0.0.1:5432/lostmidi'
+$env:BACKEND_HOST='127.0.0.1'
+$env:BACKEND_PORT='8080'
+$env:STORAGE_PATH="$PWD\storage"
+.\backend\build\Release\lostmidi_api.exe
+```
+
+迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
+
+## Environment Variables
+
+| 变量 | 用途 / 示例 |
+| --- | --- |
+| POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB | Compose 数据库初始账号、密码和库名 |
+| POSTGRES_PORT | 宿主数据库端口，5432；容器内固定 5432 |
+| DATABASE_URL | 后端必填 PostgreSQL URI；Compose 主机 postgres，原生改 127.0.0.1 |
+| BACKEND_API_URL | Next.js 服务端后端地址；Compose http://backend:8080，原生 http://127.0.0.1:8080 |
+| BACKEND_HOST | 后端必填监听地址；原生建议 127.0.0.1，Compose 注入 0.0.0.0 |
+| BACKEND_PORT | 后端必填端口，Compose 示例 8080 |
+| FRONTEND_PORT | Compose 前端端口，3000 |
+| PORT / HOSTNAME | Compose 为 standalone Next.js 注入的端口/监听地址 |
+| STORAGE_PATH | 后端必填对象路径；原生建议绝对路径，Compose /app/storage 挂载 ./storage |
+| DB_POOL_SIZE | 数据库连接数，默认 4，允许 1–64 |
+| HTTP_THREADS | HTTP 事件循环线程，默认 2，允许 1–64 |
+| WORKER_THREADS | 同步查询工作线程，默认 4，允许 1–64 |
+| SEED_DEMO | migration 默认 false；开发示例 .env 显式 true |
+| PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD | migration 和 psql 标准变量；runner 的 DATABASE_URL 优先 |
+| NEXT_TELEMETRY_DISABLED | Compose 中设为 1 |
+| LOSTMIDI_TEST_DATABASE_URL | 可选 C++ 集成测试连接串，指向已迁移且含 demo seed 的专用测试库；未设置时跳过该测试 |
+
+修改后端端口时同步修改 BACKEND_API_URL。修改数据库密码时同步修改 DATABASE_URL，URI 密码中的保留字符需要 URL 编码。不要使用 NEXT_PUBLIC 暴露后端配置，也不要提交真实密码。
+
+## Database
+
+详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events。
+
+- MidiEntry 是作品；MidiFile 是二进制版本，SHA-256 全局唯一。相同文件当前归属一个作品，真实需要跨作品复用后再拆关联表。
+- 所有实体 ID 在 JSON 中使用字符串，避免 JavaScript 大整数丢失精度。
+- 人物可以承担多个署名角色；人物档案不等同于未来用户账户。
+- 推测年份、来源日期、版权归属与分发许可分别表达，未知使用 NULL / unknown。
+- MIDI 字节不存入 PostgreSQL，公开 JSON 不返回 storage_key。
+
+migrate.sh 在事务内持有 advisory lock，按文件名执行 migration，并记录校验和。重复运行跳过已有版本；修改已应用 SQL 会报错回滚。新增 NNN_description.sql，勿修改旧文件。当前仅支持向前迁移，无自动降级。
+
+seed 独立启用，关闭 SEED_DEMO 不会删除此前的数据。示例 slug 为 example-midi、clockwork-tide、lantern-map，包含人物、来源和寻回叙述；没有假物理文件记录。
+
+## Backend Architecture
+
+推荐阅读顺序：main.cpp → common/ApiController.cpp → midi/MidiService.cpp → midi/PostgresMidiRepository.cpp → SQL migration → tests/services_test.cpp。
+
+Controller 处理 HTTP 参数和响应；Service 校验业务输入、处理不存在的档案并组织关联数据；Repository 执行绑定参数的 SQL、构造普通 C++ 模型。Repository 接口是数据库边界，测试用小型内存档案替代数据库，不为每个内部类创建 mock。
+
+main.cpp 是组合入口，通过普通对象、引用和共享数据库客户端表达所有权。同步 SQL 在独立工作线程执行，不阻塞 HTTP 事件循环。队列接受最多 256 个待处理任务，繁忙返回 503，数据库查询有超时。
+
+列表目前采用 count、列表和逐条署名查询，最多 100 条。并发写入时计数和行不保证同一快照；将来增加写入口和大量数据后，根据真实测量批量读取署名并改进事务边界。
+
+MidiFileService 是未来导入基础：计算散列、检查重复、写入内容寻址对象，并用数据库 UNIQUE 处理并发重复。目前不验证 MIDI 格式、没有公开上传接口。文件与数据库不能共用事务；数据库写入失败可能留下对象供重试，将来需要清理流程。重复登记返回原记录，不改写它的归属。
+
+本地存储只接受小写 SHA-256 key，拒绝路径穿越和对象符号链接，临时文件写完后 rename，重复写入核对内容。目录必须由后端独占管理；mutex 只保护同一实例，不提供分布式协调或断电后的事务保证。
+
+## API
+
+| 请求 | 行为 |
+| --- | --- |
+| GET /health | 进程存活，`{"status":"ok"}`；不代表数据库正常 |
+| GET /ready | 查询已迁移数据库，失败 503 |
+| GET /api/v1/midis?page=1&pageSize=20 | 有序分页，每项包含 credits |
+| GET /api/v1/midis/:slug | entry、credits、people、historical_sources、recovery_events、files |
+| GET /api/v1/people/:id | person、aliases、midis |
+
+page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回 400；超出末页返回空 data 和原 total。slug 最多 160 个小写字母、数字和词间连字符；人物 ID 为正数 BIGINT 范围。
+
+```json
+{"data": [], "pagination": {"page": 1, "pageSize": 20, "total": 0}}
+```
+
+缺失资源返回 404，错误 JSON 结构统一：
+
+```json
+{"error": {"code": "MIDI_NOT_FOUND", "message": "The requested MIDI entry does not exist."}}
+```
+
+异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志记录 startup、数据库连接、HTTP 错误和意外异常，不记录连接串或异常原文。接口只读，没有认证、上传、下载。
+
+## Testing
+
+```sh
+cd frontend
+npm ci
+npm run build
+npm run lint
+npm run typecheck
+```
+
+后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实 Repository 集成测试；它查询已迁移并包含示例的测试库，未设置时明确标为 skipped。
+
+在专用测试库运行数据库检查，所有测试行回滚；identity 序列可能递增：
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
+```
+
+完整栈启用 demo seed 后运行：
+
+```sh
+python scripts/smoke.py
+python scripts/smoke.py --api http://127.0.0.1:8080 --frontend http://127.0.0.1:3000
+# 仅验证运行中的后端：
+python scripts/smoke.py --api-only
+```
+
+脚本检查分页、400/404、人物关系和 HTML 是否包含后端数据。GitHub Actions 配置 Linux Docker 构建、CTest、约束和 smoke 检查；提供配置不等于已在 GitHub 成功执行。实际结果见 [Implementation Report](docs/implementation-report.md)。
+
+## Development Philosophy
+
+- Modular Monolith：保持一个可理解的后端。
+- Simple first：朴素模型、明确所有权、直接 SQL。
+- No premature microservices：有真实独立部署需求时再拆分。
+- Backend owns business logic：规则与数据访问由 C++ 负责。
+- Next.js owns presentation/rendering：优先 Server Components，目前只有错误重试按钮需要 client 组件。
+
+新功能先确定规则与数据关系，再依次修改迁移、Repository、Service、Controller、API 类型和页面。给重要规则添加测试，不为猜测中的需求提前造空模块。
+
+## Future Roadmap
+
+以下内容均未实现：
+
+- **User System**：注册、登录、权限，人物档案与登录账号分离。
+- **Contribution System**：提交 MIDI / 历史资料，先设计格式校验与失败清理。
+- **Moderation**：审核贡献、署名和权利信息。
+- **Community**：帖子、评论、讨论，有需求后加入内部模块。
+- **Wanted MIDI**：可考虑 OPEN、POSSIBLE_LEAD、CANDIDATE_FOUND、VERIFIED、RECOVERED。
+- **Wayback Machine Integration**：已有 IHistoricalArchive 边界，未来实现 captures 查询。
+- **Search**：首先考虑 PostgreSQL Full Text Search。
+- **Notification**：有真实通知事件和偏好需求后加入。
+
+## Admin Platform
+
+统一后台入口为 `/admin`，包含工作台、只读 MIDI 档案列表和模块目录。使用独立布局与集中模块配置，后续管理功能可按模块加入。当前未接入管理员认证，也没有写接口，展示数据与公开站点相同。扩展方法和访问边界见 [后台平台说明](docs/admin.md)。
+
+## Architecture Decisions
+
+见 [模块化单体](docs/adr/0001-use-modular-monolith.md)、[Drogon](docs/adr/0002-use-drogon.md)、[PostgreSQL](docs/adr/0003-use-postgresql.md)、[前后端分离](docs/adr/0004-separate-nextjs-and-backend.md)、[外部存储](docs/adr/0005-store-midi-outside-database.md)。依赖参考 [Next.js 官方文档](https://nextjs.org/docs/app/getting-started/installation)、[Drogon 数据库文档](https://github.com/drogonframework/drogon/wiki/ENG-08-1-Database-DbClient)、[Conan 2 文档](https://docs.conan.io/2/)。

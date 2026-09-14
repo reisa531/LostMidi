@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+**/node_modules
+**/.next
+**/build
+**/CMakeUserPresets.json
+.tools
+.venv
+storage
+**/*.log

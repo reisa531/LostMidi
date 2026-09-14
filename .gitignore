@@ -1,0 +1,30 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Frontend
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# C++ / local tooling
+build/
+CMakeUserPresets.json
+.tools/
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime data
+storage/*
+!storage/.gitkeep
+*.log
+
+# Editors and OS
+.vs/
+.idea/
+.DS_Store
+Thumbs.db

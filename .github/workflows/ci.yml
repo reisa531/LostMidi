@@ -1,0 +1,37 @@
+name: Build and verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend static checks
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+      - name: Validate Compose
+        run: docker compose --env-file .env.example config --quiet
+      - name: Build and start (backend build runs GoogleTest)
+        run: docker compose --env-file .env.example up --build --wait --wait-timeout 180
+      - name: Database constraints
+        run: docker compose --env-file .env.example run --rm migrate psql -X -v ON_ERROR_STOP=1 -f /database/tests/constraints.sql
+      - name: API and rendered page checks
+        run: python3 scripts/smoke.py
+      - name: Diagnostic logs
+        if: failure()
+        run: docker compose --env-file .env.example logs --no-color
+      - name: Stop services
+        if: always()
+        run: docker compose --env-file .env.example down

@@ -1,0 +1,47 @@
+#include <gtest/gtest.h>
+#include "auth/Password.h"
+#include "midi/MidiWriteService.h"
+#include "common/Error.h"
+
+using namespace lostmidi;
+namespace {
+class Writer : public midi::IMidiWriter {
+public:
+    int writes = 0;
+    midi::MidiEntry create(const midi::MidiEntry& entry) override { ++writes; return entry; }
+    midi::MidiEntry update(std::int64_t, const midi::MidiEntry& entry) override { ++writes; return entry; }
+    std::optional<midi::MidiEntry> findById(std::int64_t) override { return std::nullopt; }
+};
+midi::MidiEntry draft() {
+    midi::MidiEntry e;
+    e.title = "  Example  "; e.slug = "example"; e.archiveStatus = "uncertain";
+    e.copyrightStatus = "unknown"; e.distributionPermission = "metadata_only";
+    return e;
+}
+TEST(AdminWrite, RejectsInvalidFieldsBeforePersistence) {
+    Writer repository; midi::MidiWriteService service(repository);
+    auto e = draft(); e.title = "  "; EXPECT_THROW(service.create(e), ApiError);
+    e = draft(); e.slug = "Bad--Slug"; EXPECT_THROW(service.create(e), ApiError);
+    e = draft(); e.estimatedYear = 10000; EXPECT_THROW(service.create(e), ApiError);
+    e = draft(); e.archiveStatus = "invalid"; EXPECT_THROW(service.create(e), ApiError);
+    e = draft(); e.description = std::string(20001, 'x'); EXPECT_THROW(service.create(e), ApiError);
+    e = draft(); e.revision = 0; EXPECT_THROW(service.update(1, e), ApiError);
+    EXPECT_EQ(repository.writes, 0);
+}
+TEST(AdminWrite, NormalizesTitleAndEmptyOptionalText) {
+    Writer repository; midi::MidiWriteService service(repository);
+    auto e = draft(); e.description = "";
+    const auto saved = service.create(e);
+    EXPECT_EQ(saved.title, "Example"); EXPECT_FALSE(saved.description); EXPECT_EQ(repository.writes, 1);
+}
+TEST(AdminPassword, RejectsMalformedOrWeakHashFormats) {
+    EXPECT_FALSE(auth::validPasswordHash("plaintext"));
+    EXPECT_FALSE(auth::validPasswordHash("pbkdf2_sha256:1:" + std::string(32,'0') + ":" + std::string(64,'0')));
+    EXPECT_FALSE(auth::verifyPassword("anything", "plaintext"));
+}
+TEST(AdminPassword, TokensAreRandomAndOnlyDigestIsPersisted) {
+    const auto first = auth::randomToken(); const auto second = auth::randomToken();
+    EXPECT_EQ(first.size(), 64u); EXPECT_NE(first, second);
+    EXPECT_EQ(auth::digest(first).size(), 64u); EXPECT_NE(auth::digest(first), first);
+}
+}
