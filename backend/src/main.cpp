@@ -15,7 +15,8 @@ int main() {
         drogon::app().setLogLevel(trantor::Logger::kWarn);
         auto db = drogon::orm::DbClient::newPgClient(config.databaseUrl, static_cast<std::size_t>(config.dbPoolSize));
         db->setTimeout(5.0);
-        db->execSqlSync("SELECT id FROM midi_entries LIMIT 1");
+        db->execSqlSync("SELECT revision FROM midi_entries LIMIT 1");
+        db->execSqlSync("SELECT token_hash FROM admin_sessions LIMIT 1");
         logEvent("database_connected");
         storage::LocalObjectStorage objects(config.storagePath);
         midi::PostgresMidiRepository midiRepository(db);

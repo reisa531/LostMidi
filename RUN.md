@@ -1,6 +1,6 @@
 # Lost MIDI Archive 部署与运行手册
 
-适用版本：当前仓库基础工程与只读 Admin 平台。最后核对：2026-09-14。
+适用版本：当前仓库基础工程、单管理员认证与档案基本信息管理。最后核对：2026-09-15。
 
 本文指导单机部署、启动验收、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
 
@@ -17,7 +17,7 @@
 
 默认只将端口发布到宿主机 `127.0.0.1`，适合本机试运行，或置于服务器的 HTTPS 反向代理后。项目当前没有自带域名、证书、反向代理或高可用部署。
 
-**Admin 是未接入认证的只读开发预览**，不是已完成权限控制的管理系统。对外部署时应在代理层限制 `/admin` 和 `/admin/` 下的路径；增加非公开数据或写操作前，必须先实现后端认证与授权。`noindex` 不能替代访问控制。当前 PostgreSQL 与后端不需要直接暴露到公网。
+Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可新增、编辑 MIDI 基本信息。管理员由部署环境配置，无公开注册或多角色管理。保存的档案立即出现在公开站点；归档状态不控制可见性。对外部署需使用 HTTPS 和 Secure Cookie。PostgreSQL 与后端不需要直接暴露到公网，`noindex` 仅控制索引。
 
 ## 2. 环境准备
 
@@ -35,7 +35,7 @@ docker compose version
 docker info
 ```
 
-`docker info` 必须能连接到服务端。只有 Docker CLI、没有运行 Docker Engine 时，不能构建或运行容器。Docker 部署无需在宿主安装 Node.js、C++ 编译器或 PostgreSQL；可选 smoke 检查需要宿主 Python 3。
+`docker info` 必须能连接到服务端。只有 Docker CLI、没有运行 Docker Engine 时，不能构建或运行容器。Docker 部署无需在宿主安装 Node.js、C++ 编译器或 PostgreSQL；交互生成管理员密码哈希及可选 smoke 检查需要 Python 3，可在可信的维护电脑上生成哈希后写入部署配置。
 
 ### 2.2 获取代码
 
@@ -52,19 +52,19 @@ git status --short
 
 ### 3.1 创建环境文件
 
-仅在 `.env` 不存在时复制，不要覆盖已有部署配置。
+仅在 `.env` 不存在时复制，不要覆盖已有部署配置。以下使用生产模板，默认关闭示例数据并启用 Secure Cookie，数据库密码和站点来源必须填写；本机 HTTP 试运行使用 `.env.example`。
 
 Linux / macOS：
 
 ```sh
-cp .env.example .env
+cp .env.production.example .env
 chmod 600 .env
 ```
 
 PowerShell：
 
 ```powershell
-Copy-Item .env.example .env
+Copy-Item .env.production.example .env
 ```
 
 编辑 `.env`。本机体验可使用样例值；服务器应替换数据库密码，并根据用途选择 `SEED_DEMO`：
@@ -84,6 +84,11 @@ DB_POOL_SIZE=4
 HTTP_THREADS=2
 WORKER_THREADS=4
 SEED_DEMO=false
+
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD_HASH=
+ADMIN_ORIGIN=https://archive.example.org
+ADMIN_COOKIE_SECURE=true
 ```
 
 保留 `.env.example` 中其他配置即可。占位密码必须替换，`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须对应。建议使用随机的 URL 安全字符；如果密码有 `@`、`:`、`/` 等保留字符，只在 URI 中进行百分号编码，数据库密码变量保留原值。
@@ -92,6 +97,18 @@ SEED_DEMO=false
 - `SEED_DEMO=false`：空档案站点，适合正式数据环境。
 - 从 true 改为 false **不会删除**此前已写入的示例。
 - 不要提交 `.env`，也不要把完整的解析后 Compose 配置粘贴到公开日志；其中可能包含密码。
+
+启用后台前运行以下命令，交互输入并确认至少 12 个字符的管理员密码：
+
+```sh
+python scripts/admin_password.py
+```
+
+把输出的整行 `ADMIN_PASSWORD_HASH=pbkdf2_sha256:600000:...` 替换到 `.env`。密码哈希采用随机盐和 PBKDF2-HMAC-SHA256；不要把明文密码填入哈希变量。`ADMIN_USERNAME` 最长 100 UTF-8 字节；空用户名或空哈希会关闭管理员登录，公开查询仍可使用。非空但格式错误的哈希会使后端启动失败。不存在预置管理员密码。
+
+`ADMIN_ORIGIN` 是浏览器看到的完整来源，必须包含协议、主机和非默认端口，不能包含路径或末尾 `/`。上例域名必须换成实际域名。本机 HTTP 使用 `.env.example` 的 `ADMIN_ORIGIN=http://localhost:3000` 和 `ADMIN_COOKIE_SECURE=false`；若用 `http://127.0.0.1:3000`，必须相应修改来源。正式部署使用 HTTPS 与 `ADMIN_COOKIE_SECURE=true`，不要保留开发示例的 false。
+
+修改用户名或重新生成密码哈希后，使用 `docker compose up -d --wait` 重建后端容器使配置生效；旧会话随新的凭据标识失效。会话最长 8 小时，不随访问续期。退出登录撤销当前会话，其他浏览器会话保留。单后端进程每分钟最多接受 10 次登录尝试（包括成功登录），超出返回 429；这不是跨实例的限流机制。
 
 ### 3.2 地址与端口对照
 
@@ -102,10 +119,12 @@ SEED_DEMO=false
 | `BACKEND_API_URL` | `http://backend:8080` | `http://127.0.0.1:8080` |
 | `BACKEND_HOST` | Compose 固定注入 `0.0.0.0` | 建议 `127.0.0.1` |
 | `STORAGE_PATH` | Compose 固定 `/app/storage` | 建议使用绝对路径 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` | 仅注入 backend | 在后端进程环境中设置 |
+| `ADMIN_ORIGIN` / `ADMIN_COOKIE_SECURE` | 仅注入 frontend | 在 frontend/.env.local 中设置 |
 
 容器内的 `localhost` 指容器自己，不能用它连接另一个服务。`POSTGRES_PORT` 只改变宿主映射，不改变容器间的 5432。修改 `BACKEND_PORT` 后需同步修改 `BACKEND_API_URL` 中的端口。
 
-`FRONTEND_PORT` 同时设置前端宿主映射与容器端口。`PORT`、`HOSTNAME` 和 `NEXT_TELEMETRY_DISABLED` 由 Compose 注入，不必另外添加。三个线程/连接数参数允许 1–64。
+`FRONTEND_PORT` 同时设置前端宿主映射与容器端口；变更浏览器端口时同步修改 `ADMIN_ORIGIN`。`PORT`、`HOSTNAME` 和 `NEXT_TELEMETRY_DISABLED` 由 Compose 注入，不必另外添加。三个线程/连接数参数允许 1–64。
 
 ### 3.3 存储目录
 
@@ -147,7 +166,17 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
+当前应用需要执行 `002_admin_sessions_and_revision.sql`：它新增管理员会话表和档案 revision，保留已有档案。已有部署按第 7.2 节先迁移再启动新后端，不要修改已应用的 `001` 文件。启动时和 `/ready` 均检查新结构；缺少迁移会导致启动失败，运行中结构不可查询时 `/ready` 返回 503。
+
 ## 5. 部署验收
+
+生产库上线前运行以下只读检查，发现已知示例或测试标记时以非零退出，不删除数据：
+
+```sh
+docker compose run --rm migrate psql -X -v ON_ERROR_STOP=1 -f /database/check_production.sql
+```
+
+新生产库保持 `SEED_DEMO=false`，通过后台录入真实资料。已有库改为 false 不会清除历史示例；纯演示库建议另建生产库，混合数据需备份后逐条核对处理，不要批量删除所有档案或将虚构记录改名冒充真实资料。检查仅识别仓库已知标记，通过后仍需人工复核内容。测试用 seed 和 smoke 不应在生产库运行。
 
 默认地址如下，修改端口后相应调整：
 
@@ -155,11 +184,12 @@ docker compose up -d --wait --wait-timeout 180
 | --- | --- |
 | `http://127.0.0.1:3000/` | 公开首页 |
 | `http://127.0.0.1:3000/midis` | 档案列表或正常空状态 |
-| `http://127.0.0.1:3000/admin` | 只读工作台 |
-| `http://127.0.0.1:3000/admin/midis` | 后台档案表格 |
-| `http://127.0.0.1:3000/admin/modules` | 模块目录 |
+| `http://localhost:3000/admin/login` | 管理员登录页；与默认 ADMIN_ORIGIN 一致 |
+| `http://localhost:3000/admin` | 未登录转登录页，登录后显示工作台 |
+| `http://localhost:3000/admin/midis` | 登录后显示后台档案表格与新增、编辑入口 |
+| `http://localhost:3000/admin/modules` | 登录后显示模块目录 |
 | `http://127.0.0.1:8080/health` | `{"status":"ok"}`，仅表示进程存活 |
-| `http://127.0.0.1:8080/ready` | 200，确认数据库和档案表可查询 |
+| `http://127.0.0.1:8080/ready` | 200，确认数据库、档案 revision 和会话表可查询 |
 | `http://127.0.0.1:8080/api/v1/midis?page=1&pageSize=20` | 包含 data 与 pagination 的 JSON |
 
 Linux / macOS：
@@ -182,6 +212,22 @@ python scripts/smoke.py --api-only
 
 脚本假定至少存在三条示例及 `example-midi`，不能用于无 seed 的正式数据环境。除了检查 HTTP 状态，还需打开 `/midis` 和 `/admin` 确认实际数据显示；前端连接失败时可能呈现提示页，单独首页 200 不代表完整链路正常。
 
+后台功能在独立测试环境完成以下验收。登录页面必须从 `ADMIN_ORIGIN` 配置的来源打开：
+
+1. 未登录访问 `/admin/midis/new` 和编辑 URL，应跳转登录；直接调用后台写 API 应返回 401。
+2. 错误密码显示错误；正确账号登录后进入工作台，Cookie 为 HttpOnly、SameSite=Strict、Path=/admin，HTTPS 部署还应为 Secure。
+3. 新增一条测试档案，检查成功提示、公开列表与详情；修改基本信息后公开详情应反映最新值。修改 slug 后旧 URL 返回 404，当前没有自动重定向。
+4. 重复 slug 和非法字段应显示错误且保留表单内容；两个标签页编辑同一档案时，后保存的旧版本应收到冲突提示，不能覆盖已保存内容。
+5. 退出后重新访问后台应要求登录，已撤销的令牌不能写入；会话到期后也应重新登录。
+
+管理员 API 自动检查命令：
+
+```sh
+python scripts/admin_smoke.py --api http://127.0.0.1:8080 --allow-writes
+```
+
+运行前将 API 指向专用测试数据库，配置测试管理员，再通过 `ADMIN_TEST_USERNAME` 和 `ADMIN_TEST_PASSWORD` 环境变量提供该账号凭据。脚本会新增并保留测试档案，且触发登录限流；不适合正式数据库。可在交互终端隐藏输入测试密码，例如 Bash 使用 `read -r -s -p 'Test password: ' ADMIN_TEST_PASSWORD` 后 `export ADMIN_TEST_PASSWORD`；不把密码写进命令行或测试输出。各项验证的实际执行状态见 [Implementation Report](docs/implementation-report.md)。
+
 ## 6. 服务器访问与长期运行
 
 ### 6.1 远程试用
@@ -192,13 +238,13 @@ python scripts/smoke.py --api-only
 ssh -N -L 3000:127.0.0.1:3000 deploy@YOUR_SERVER
 ```
 
-随后访问本机 `http://127.0.0.1:3000`。本机 3000 被占用时，将 `-L` 的第一个端口改为 3001，并访问该端口。
+随后访问本机 `http://127.0.0.1:3000`。本机 3000 被占用时，将 `-L` 的第一个端口改为 3001，并访问该端口。后台操作需要将服务端 `ADMIN_ORIGIN` 设置为浏览器访问的隧道来源；HTTP 本机试用使用 `ADMIN_COOKIE_SECURE=false`。切回正式域名时恢复 HTTPS 来源和 Secure Cookie。
 
 ### 6.2 域名与 HTTPS
 
 在宿主机已有反向代理上，将站点域名转发至 `http://127.0.0.1:3000`，配置证书以及 Host、X-Forwarded-For、X-Forwarded-Proto。App Router 使用流式响应，代理应允许流式传输。代理若运行在容器中，不能用它自己的 localhost 指向宿主，应根据代理的实际网络配置连接前端。
 
-公开页面和 Admin 共用前端进程。当前应限制 `/admin` 及其子路径的外部访问；后端请求由 Next.js 服务端发起，不需要将 8080 或 5432 映射到公网。域名、证书和代理配置取决于部署主机，不包含在本仓库的 Compose 中。
+公开页面和 Admin 共用前端进程。将 `ADMIN_ORIGIN` 设置为实际 HTTPS 域名，`ADMIN_COOKIE_SECURE=true`，代理保留与该域名一致的 Host 和来源信息，否则登录或保存会被来源检查拒绝。后台通过 HttpOnly Cookie 与 C++ 会话校验控制访问；如需仅内部使用，可另在代理层限制 `/admin` 及其子路径。后端请求由 Next.js 服务端发起，不需要将 8080 或 5432 映射到公网。域名、证书和代理配置取决于部署主机，不包含在本仓库的 Compose 中。
 
 ### 6.3 重启行为
 
@@ -259,7 +305,7 @@ docker compose up -d --wait --wait-timeout 180
 
 ### 8.1 创建一致的维护备份
 
-停止应用并暂停所有导入、后台写入和其他写数据库的程序；PostgreSQL 保持运行。当前公开 API 只读，但备份流程为后续写功能保留一致性边界。
+停止应用并暂停所有导入、后台写入和其他写数据库的程序；PostgreSQL 保持运行。管理员保存档案和登录、退出都会写数据库，维护备份期间应停止应用写入。
 
 ```bash
 backup_dir="../lostmidi-backups/$(date -u +%Y%m%dT%H%M%SZ)"
@@ -277,7 +323,7 @@ docker compose exec -T postgres pg_restore --list /tmp/lostmidi-backup.dump
 
 逐项确认命令成功、备份文件存在后，执行 `docker compose up -d --wait` 恢复服务。`pg_restore --list` 只检查归档可读取，不替代实际恢复演练。数据库归档先写到容器再 `compose cp`，避免 Windows PowerShell 旧版本重定向二进制造成损坏；Windows 操作者需将目录变量和文件操作改为对应 PowerShell 命令。
 
-`.env` 备份包含密码，应使用受控权限和备份加密。不要把整个 PostgreSQL 正在运行的数据目录当普通文件复制作为逻辑备份。
+`.env` 备份包含数据库密码与管理员密码哈希，应使用受控权限和备份加密。数据库归档也包含会话摘要；正式恢复时重新生成管理员密码哈希并更新配置，使备份中的旧会话失效。不要把整个 PostgreSQL 正在运行的数据目录当普通文件复制作为逻辑备份。
 
 ### 8.2 恢复演练：新数据库，不覆盖原库
 
@@ -304,15 +350,15 @@ sudo tar -xzf "$backup_dir/storage.tar.gz" -C "$backup_dir/restore-check"
 1. 安装 Node 22.13+、npm、C++20 编译器、CMake 3.24+、Conan 2、PostgreSQL 17 与 psql。
 2. 创建数据库和用户，设置 libpq 连接变量，执行 `sh database/migrate.sh`；Windows 可用 Git Bash。
 3. Conan 安装依赖，CMake configure / build / CTest。
-4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH，运行后端可执行程序。
-5. 在 frontend 目录配置 `.env.local`，构建并运行前端。
+4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH，以及 ADMIN_USERNAME、ADMIN_PASSWORD_HASH，运行后端可执行程序。
+5. 在 frontend 目录配置 `.env.local` 中的 BACKEND_API_URL、ADMIN_ORIGIN、ADMIN_COOKIE_SECURE，构建并运行前端。
 
 原生前端生产模式示例：
 
 ```sh
 cd frontend
 cp .env.example .env.local
-# 编辑 BACKEND_API_URL 为本机后端地址
+# 编辑 BACKEND_API_URL，并设置浏览器 ADMIN_ORIGIN 与 ADMIN_COOKIE_SECURE
 npm ci
 npm run build
 npm run start
@@ -336,6 +382,13 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 | storage Permission denied | 检查宿主挂载目录及 UID 10001 的访问权限，不使用全员可写作为常规修复 |
 | 首页可开，列表提示不可用 | 首页成功不代表 API 可用；检查 BACKEND_API_URL 与 /ready |
 | /admin 404 或页面仍为旧版 | 确认请求到本项目进程；重建前端并重建容器，原生模式重新 build、重启 |
+| 管理员账号尚未配置 / ADMIN_DISABLED | 为后端配置非空 ADMIN_USERNAME 和生成器输出的 ADMIN_PASSWORD_HASH；重建容器或重启原生进程 |
+| 管理员配置无效导致后端退出 | 检查是否误填明文密码、哈希是否完整、用户名是否超过 100 UTF-8 字节 |
+| 请求来源与后台配置不一致 | ADMIN_ORIGIN 必须精确匹配浏览器协议、主机和端口，无末尾斜杠；检查反向代理转发的 Host |
+| 登录成功后仍返回登录页 | 检查 Cookie 是否写入及发送；本机 HTTP 使用 false，正式 HTTPS 使用 true；核对新旧后端实例的凭据是否一致 |
+| 登录尝试过多 / 429 | 等当前一分钟窗口结束；单进程计数包含成功登录，自动测试也会消耗次数 |
+| 编辑提示版本冲突 | 保留当前输入，重新打开编辑页获得新版本后合并修改；不能直接重复提交旧 revision |
+| 修改 slug 后旧链接 404 | 当前无 slug 历史与重定向，使用保存后的公开链接并更新引用 |
 | 没有档案 / example-midi 404 | SEED_DEMO=false 的空库正常；不要为通过演示测试向正式库注入示例 |
 | 修改环境后没生效 | 使用 compose up 重建对应容器；仅 restart 不更新容器环境 |
 | Conan 下载或 TLS 验证失败 | 检查网络、代理及受信任证书配置，不通过关闭 TLS 验证解决 |
@@ -343,6 +396,8 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 
 ## 11. 验证记录与文档维护
 
-本手册根据当前 Dockerfile、Compose、配置读取逻辑和迁移脚本核对。已有实际原生编译、CTest、PostgreSQL 和后端 HTTP 检查记录见 [Implementation Report](docs/implementation-report.md)。**提供部署命令不代表已在目标服务器执行成功**；此前环境没有 Docker daemon，不能声称容器整栈或备份恢复流程已验证。
+本轮评估后按需求放弃整站 Vercel 一键部署，保留 Compose。Vercel 虽支持容器，但现有数据库迁移与持久卷需要另行迁移和验证，详见 [Vercel 评估](docs/vercel-assessment.md)。
+
+本手册根据当前 Dockerfile、Compose、配置读取逻辑和迁移脚本核对。用户已确认此前整站部署验收完成；此确认属于基础站点阶段，不自动覆盖本次新增的管理员认证和档案写入。代理实际执行的编译与检查、本次后台运行验证的限制见 [Implementation Report](docs/implementation-report.md)。备份恢复仍需在目标环境单独演练并记录结果。
 
 每次修改端口、存储挂载、环境变量、migration 策略、权限模型或构建路径时，同步更新本文件。发布记录至少保存提交号、部署时间、迁移结果、验收结果及备份位置；不记录明文密码。

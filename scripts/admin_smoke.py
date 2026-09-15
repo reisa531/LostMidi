@@ -4,6 +4,7 @@ Creates test records (no public delete API exists). Credentials come from
 ADMIN_TEST_USERNAME / ADMIN_TEST_PASSWORD, never command-line arguments.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import urllib.error
@@ -26,9 +27,13 @@ def main():
         try:
             with urllib.request.urlopen(req, timeout=15) as response:
                 status, payload = response.status, response.read()
+                response_headers = response.headers
         except urllib.error.HTTPError as error:
             status, payload = error.code, error.read()
-        assert status == expected, f"{method} {path}: expected {expected}, got {status}"
+            response_headers = error.headers
+        expected_statuses = expected if isinstance(expected, tuple) else (expected,)
+        assert status in expected_statuses, f"{method} {path}: expected {expected}, got {status}"
+        assert "no-store" in response_headers.get("Cache-Control", ""), "Admin responses must not be cached"
         return json.loads(payload)
 
     credentials = {"username": os.environ["ADMIN_TEST_USERNAME"], "password": os.environ["ADMIN_TEST_PASSWORD"]}
@@ -63,6 +68,16 @@ def main():
     assert request(path, token=token)["title"] == changed["title"]
     second = request("/api/v1/admin/midis", "POST", draft, token, 201)
     assert request(path, "PUT", {**changed, "slug": second["slug"], "revision": edited["revision"]}, token, 409)["error"]["code"] == "SLUG_CONFLICT"
+    assert request(path, token=token) == edited, "A rejected slug change must not alter the record"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda title: request(path, "PUT", {**changed, "title": title, "revision": edited["revision"]}, token, (200, 409)),
+                                ("Concurrent edit A", "Concurrent edit B")))
+    winners = [result for result in results if "revision" in result]
+    conflicts = [result for result in results if "error" in result]
+    assert len(winners) == len(conflicts) == 1, "Only one concurrent edit may commit"
+    assert conflicts[0]["error"]["code"] == "STALE_ENTRY"
+    assert winners[0]["revision"] == edited["revision"] + 1
+    assert request(path, token=token) == winners[0]
     request("/api/v1/admin/midis/9223372036854775807", "PUT", changed, token, 404)
 
     second_token = request("/api/v1/admin/login", "POST", credentials)["token"]
@@ -81,7 +96,7 @@ def main():
             limited = True
             break
     assert limited, "Expected login rate limiting"
-    print("PASS: authentication, revocation, rate limit, protected create/edit, validation, slug and revision conflicts, public visibility")
+    print("PASS: authentication, revocation, rate limit, protected create/edit, validation, slug conflicts, concurrent revision conflicts, public visibility, no-store")
 
 
 if __name__ == "__main__":

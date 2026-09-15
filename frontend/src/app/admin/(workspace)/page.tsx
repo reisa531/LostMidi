@@ -15,7 +15,7 @@ export default async function AdminOverview() {
     if (!(error instanceof ApiError)) throw error;
   }
   return <>
-    <AdminPageHeader eyebrow="Workspace / Overview" title="管理工作台" description="从这里查看档案概况，进入各个管理模块。平台将随档案工作的需要逐步扩展。" />
+    <AdminPageHeader eyebrow="Workspace / Overview" title="管理工作台" description="查看档案概况，新增作品资料，更新归档状态与权利信息。" />
     <div className="mb-8 grid gap-4 sm:grid-cols-3">
       <div className="rounded-xl border border-line bg-white p-6"><p className="text-xs text-muted">已收录档案</p><p className="my-3 text-4xl font-semibold tabular-nums">{archive?.pagination.total ?? "—"}</p><p className="text-xs text-muted">{archive ? "来自档案数据库" : "数据暂不可用"}</p></div>
       <div className="rounded-xl border border-line bg-white p-6"><p className="text-xs text-muted">档案服务</p><p className="my-3 text-2xl font-semibold">{archive ? "连接正常" : "暂不可用"}</p><p className="text-xs text-muted">以本次档案查询结果为准</p></div>
@@ -27,7 +27,7 @@ export default async function AdminOverview() {
         <p className="mt-5 text-xs text-muted">按档案编号展示前五条记录，点击标题查看公开详情。</p>
       </AdminPanel>
       <div className="space-y-6"><AdminPanel title="工作入口"><Link href="/admin/midis" className="block rounded-lg bg-[#f2f4f0] p-4 text-sm font-medium hover:bg-[#e7eee2]">浏览 MIDI 档案 <span className="float-right">→</span></Link><Link href="/admin/modules" className="mt-3 block rounded-lg bg-[#f2f4f0] p-4 text-sm font-medium hover:bg-[#e7eee2]">查看模块目录 <span className="float-right">→</span></Link></AdminPanel>
-      <AdminPanel title="平台建设"><p className="text-sm leading-7 text-muted">统一工作空间已经就绪。人物管理、来源与寻回功能将在后续加入，沿用相同的导航与页面布局。</p></AdminPanel></div>
+      <AdminPanel title="资料维护"><p className="text-sm leading-7 text-muted">请依据可核实的来源填写资料，未确认的信息保持留空或标记为未知。保存后内容立即公开，修改档案地址前请核对现有引用。</p></AdminPanel></div>
     </div>
   </>;
 }

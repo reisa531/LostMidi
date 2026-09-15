@@ -70,8 +70,14 @@ MidiEntry PostgresMidiRepository::update(std::int64_t id, const MidiEntry& e) {
             e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.archiveStatus,
             *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission, id, e.revision);
         if (!rows.empty()) return entryFrom(rows[0]);
-    } catch (const drogon::orm::UniqueViolation&) {
-        throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
+    } catch (const drogon::orm::Failure& error) {
+        const auto* sqlError = dynamic_cast<const drogon::orm::SqlError*>(&error);
+        if (sqlError && !sqlError->sqlState().empty() && sqlError->sqlState() != "23505") throw;
+        // Some Drogon PostgreSQL builds expose only Failure, without SQLSTATE.
+        // Confirm the conflicting record instead of parsing localized error text.
+        if (!db_->execSqlSync("SELECT 1 FROM midi_entries WHERE slug=$1 AND id<>$2", e.slug, id).empty())
+            throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
+        throw;
     }
     if (!findById(id)) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
     throw ApiError(409, "STALE_ENTRY", "This entry was changed elsewhere. Reload before saving.");

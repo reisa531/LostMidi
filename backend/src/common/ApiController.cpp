@@ -56,7 +56,8 @@ void ApiController::registerRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/ready", [this](const drogon::HttpRequestPtr&, Callback&& callback) {
         dispatch(std::move(callback), [this] {
-            db_->execSqlSync("SELECT id FROM midi_entries LIMIT 1");
+            db_->execSqlSync("SELECT revision FROM midi_entries LIMIT 1");
+            db_->execSqlSync("SELECT token_hash FROM admin_sessions LIMIT 1");
             Json::Value body;
             body["status"] = "ok";
             return body;

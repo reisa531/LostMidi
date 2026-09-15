@@ -9,6 +9,19 @@ DECLARE
 BEGIN
     INSERT INTO midi_entries (slug, title) VALUES ('schema-constraint-test', 'Constraint test')
         RETURNING id INTO entry_id;
+    IF (SELECT revision FROM midi_entries WHERE id = entry_id) <> 1 THEN
+        RAISE EXCEPTION 'New entries must start at revision 1';
+    END IF;
+    UPDATE midi_entries SET title = 'Updated constraint test', revision = 100 WHERE id = entry_id;
+    IF (SELECT revision FROM midi_entries WHERE id = entry_id) <> 2 THEN
+        RAISE EXCEPTION 'Every update must increment the stored revision exactly once';
+    END IF;
+    BEGIN
+        INSERT INTO admin_sessions (token_hash, credential_id, expires_at)
+            VALUES ('raw-session-token', 'constraint-test', CURRENT_TIMESTAMP + INTERVAL '8 hours');
+        RAISE EXCEPTION 'Expected invalid session token hash to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
     INSERT INTO people (display_name) VALUES ('Constraint test person')
         RETURNING id INTO contributor_id;
     INSERT INTO midi_files (midi_id, original_filename, sha256, file_size, storage_key)

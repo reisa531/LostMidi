@@ -23,7 +23,8 @@ std::string AuthService::login(const std::string& username, const std::string& p
         std::lock_guard lock(mutex_);
         const auto now = std::chrono::steady_clock::now();
         if (now - window_ >= std::chrono::minutes(1)) { window_ = now; attempts_ = 0; }
-        if (++attempts_ > 10) throw ApiError(429, "LOGIN_RATE_LIMITED", "Too many login attempts. Retry in one minute.");
+        if (attempts_ >= 10) throw ApiError(429, "LOGIN_RATE_LIMITED", "Too many login attempts. Retry in one minute.");
+        ++attempts_;
     }
     // Always verify the password, even for a wrong username.
     const bool passwordMatches = verifyPassword(password, passwordHash_);

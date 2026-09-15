@@ -6,6 +6,10 @@ const statuses: Record<ArchiveStatus, string> = {
 };
 const roles: Record<string, string> = { composer: "作曲", arranger: "编曲", sequencer: "音序制作", contributor: "贡献者" };
 export function roleName(role: string) { return roles[role] ?? role; }
+const copyrightStatuses: Record<string, string> = { unknown: "尚未确认", public_domain: "公有领域", licensed: "已许可", copyrighted: "受版权保护" };
+const distributionPermissions: Record<string, string> = { unknown: "尚未确认", permission_granted: "已获授权", metadata_only: "仅公开资料", restricted: "限制分发" };
+export function copyrightLabel(value: string | null) { return copyrightStatuses[value ?? "unknown"] ?? "尚未确认"; }
+export function distributionLabel(value: string | null) { return distributionPermissions[value ?? "unknown"] ?? "尚未确认"; }
 export function Status({ status }: { status: ArchiveStatus }) {
   return <span className="inline-block whitespace-nowrap rounded-sm border border-line px-2 py-1 text-xs text-accent">{statuses[status] ?? status}</span>;
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getMidiBySlug } from "@/lib/api/midi";
 import { ApiError } from "@/lib/api/client";
-import { Credits, Status, Section, Unavailable, ExternalSource, dateLabel } from "@/components/archive";
+import { Credits, Status, Section, Unavailable, ExternalSource, dateLabel, copyrightLabel, distributionLabel } from "@/components/archive";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "档案详情" };
@@ -40,8 +40,8 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
       <div><dt className="text-muted">发现时间</dt><dd>{dateLabel(file.discovered_at)}</dd></div>
     </dl>) : <p className="text-muted">尚无已登记的 MIDI 文件。此档案目前仅保存文字资料。</p>}</Section>
     <Section title="权利信息"><dl className="grid gap-4 sm:grid-cols-2">
-      <div><dt className="text-muted">版权状态</dt><dd>{entry.copyright_status ?? "unknown"}</dd></div>
-      <div><dt className="text-muted">分发许可</dt><dd>{entry.distribution_permission ?? "unknown"}</dd></div>
+      <div><dt className="text-muted">版权状态</dt><dd>{copyrightLabel(entry.copyright_status)}</dd></div>
+      <div><dt className="text-muted">分发许可</dt><dd>{distributionLabel(entry.distribution_permission)}</dd></div>
       <div><dt className="text-muted">许可证</dt><dd>{entry.license ?? "尚未确认"}</dd></div>
       <div><dt className="text-muted">权利人</dt><dd>{entry.rights_holder ?? "尚未确认"}</dd></div>
     </dl></Section>

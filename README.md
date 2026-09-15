@@ -1,6 +1,6 @@
 # Lost MIDI Archive
 
-一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前版本建立只读 REST API、服务端渲染页面、数据库迁移和文件存储边界。
+一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前版本包含公开查询 REST API、服务端渲染页面、单管理员后台、档案基本信息新增与编辑、数据库迁移和文件存储边界。
 
 这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
 
@@ -30,7 +30,9 @@ flowchart TD
 frontend/src/app/          首页、档案列表/详情、人物、关于、错误页面
 frontend/src/components/   档案展示组件
 frontend/src/lib/api/      服务端 HTTP 客户端和 TypeScript 合约
+frontend/src/lib/admin/    服务端登录态、来源检查与表单操作
 backend/src/common/       配置、分页、Controller、JSON、日志
+backend/src/auth/         密码验证、管理员会话与接口授权
 backend/src/midi/         档案与文件登记 Service、Repository、模型
 backend/src/person/       人物、昵称、署名的查询与模型
 backend/src/recovery/     历史来源、寻回记录；未来外部档案接口
@@ -44,6 +46,8 @@ docker/                   前后端多阶段 Dockerfile
 docs/adr/                 五项架构决策
 docs/database.md          关系、约束、迁移的详细说明
 scripts/smoke.py          对运行中的栈执行只读端到端检查
+scripts/admin_password.py  交互生成管理员密码哈希
+scripts/admin_smoke.py     在专用测试库验证认证与档案写入
 storage/                  本地对象目录，内容不进入 Git
 .github/workflows/ci.yml   Linux 构建和整栈检查
 ```
@@ -76,12 +80,15 @@ docker compose config --quiet
 docker compose up --build
 ```
 
-PowerShell 第一步使用 `Copy-Item .env.example .env`。示例密码是公开的本地开发值；真实 `.env` 已被忽略。服务仅发布到宿主 `127.0.0.1`。
+PowerShell 第一步使用 `Copy-Item .env.example .env`。示例密码是公开的本地开发值；真实 `.env` 已被忽略。服务仅发布到宿主 `127.0.0.1`。默认 `SEED_DEMO=false`，新库为空；仅在独立开发或测试库显式设置 true 以加载虚构示例。生产部署从 `.env.production.example` 配置，步骤见 [RUN.md](RUN.md)。
+
+启用后台前运行 `python scripts/admin_password.py`，把输出的 `ADMIN_PASSWORD_HASH=...` 填入 `.env`，并设置 `ADMIN_USERNAME`。空哈希会禁用管理员登录，公开查询仍可使用。`ADMIN_ORIGIN` 必须与浏览器访问地址完全一致且没有末尾斜杠，默认 `http://localhost:3000`；使用 `127.0.0.1`、其他端口或域名访问时同步修改。正式部署使用 HTTPS 并设 `ADMIN_COOKIE_SECURE=true`。详细步骤见 [RUN.md](RUN.md)。
 
 - 页面：<http://localhost:3000>
 - 存活检查：<http://localhost:8080/health>
 - 数据库就绪：<http://localhost:8080/ready>
-- 示例档案：<http://localhost:3000/midis/example-midi>
+- 档案列表：<http://localhost:3000/midis>；只有显式加载示例后才存在 `/midis/example-midi`
+- 管理员登录：<http://localhost:3000/admin/login>
 
 启动顺序：PostgreSQL 健康检查 → 一次性 migrate 服务 → Backend 就绪检查 → Frontend。前端构建无需后端在线。Compose 运行构建后的程序，改源码后重新 `docker compose up --build`；前端热更新使用原生 `npm run dev`。
 
@@ -93,7 +100,7 @@ docker compose down
 
 普通 down 保留 PostgreSQL named volume 和宿主 storage/；不要为了升级 schema 删除 volume。修改数据库初始账号变量不会自动改变已有数据库，需要同步修改数据库账号和 DATABASE_URL。
 
-后端容器以 UID 10001 运行。Linux 下测试文件写入时应让 storage/ 对该 UID 可写，由后端独占管理；当前只读 API 不写入文件。数据库和对象目录分别备份、恢复。
+后端容器以 UID 10001 运行。Linux 下测试文件写入时应让 storage/ 对该 UID 可写，由后端独占管理；当前后台仅写档案元数据，不写入文件。数据库和对象目录分别备份、恢复。
 
 ### Native workflow: Linux / macOS
 
@@ -158,6 +165,8 @@ $env:STORAGE_PATH="$PWD\storage"
 
 迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
 
+原生模式启用后台时，在启动后端的环境中另外设置 `ADMIN_USERNAME` 和密码生成器输出的 `ADMIN_PASSWORD_HASH`；在 `frontend/.env.local` 设置 `ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`。更新已有数据库时必须先执行迁移 `002_admin_sessions_and_revision.sql`，再启动新后端。
+
 ## Environment Variables
 
 | 变量 | 用途 / 示例 |
@@ -177,6 +186,10 @@ $env:STORAGE_PATH="$PWD\storage"
 | SEED_DEMO | migration 默认 false；开发示例 .env 显式 true |
 | PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD | migration 和 psql 标准变量；runner 的 DATABASE_URL 优先 |
 | NEXT_TELEMETRY_DISABLED | Compose 中设为 1 |
+| ADMIN_USERNAME | 后端单管理员用户名；Compose 默认 admin；最长 100 UTF-8 字节 |
+| ADMIN_PASSWORD_HASH | 后端密码哈希，由 scripts/admin_password.py 生成；空值禁用登录，非法格式导致启动失败 |
+| ADMIN_ORIGIN | 前端必填的完整浏览器来源，例如 http://localhost:3000 或 https://archive.example.org；无路径与末尾斜杠 |
+| ADMIN_COOKIE_SECURE | 前端仅在值为 false 时允许 HTTP Cookie；正式 HTTPS 部署设 true |
 | LOSTMIDI_TEST_DATABASE_URL | 可选 C++ 集成测试连接串，指向已迁移且含 demo seed 的专用测试库；未设置时跳过该测试 |
 
 修改后端端口时同步修改 BACKEND_API_URL。修改数据库密码时同步修改 DATABASE_URL，URI 密码中的保留字符需要 URL 编码。不要使用 NEXT_PUBLIC 暴露后端配置，也不要提交真实密码。
@@ -184,6 +197,8 @@ $env:STORAGE_PATH="$PWD\storage"
 ## Database
 
 详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events。
+
+迁移 `002_admin_sessions_and_revision.sql` 另增 `admin_sessions` 会话表，以及 `midi_entries.revision` 和自动递增触发器。管理员账号来自部署配置，不属于人物表；数据库仅存会话令牌的 SHA-256 摘要及凭据标识，不存原始令牌。修改档案时必须提交读取时的 revision，以检测并发修改。
 
 - MidiEntry 是作品；MidiFile 是二进制版本，SHA-256 全局唯一。相同文件当前归属一个作品，真实需要跨作品复用后再拆关联表。
 - 所有实体 ID 在 JSON 中使用字符串，避免 JavaScript 大整数丢失精度。
@@ -203,7 +218,7 @@ Controller 处理 HTTP 参数和响应；Service 校验业务输入、处理不�
 
 main.cpp 是组合入口，通过普通对象、引用和共享数据库客户端表达所有权。同步 SQL 在独立工作线程执行，不阻塞 HTTP 事件循环。队列接受最多 256 个待处理任务，繁忙返回 503，数据库查询有超时。
 
-列表目前采用 count、列表和逐条署名查询，最多 100 条。并发写入时计数和行不保证同一快照；将来增加写入口和大量数据后，根据真实测量批量读取署名并改进事务边界。
+列表目前采用 count、列表和逐条署名查询，最多 100 条。并发写入时计数和行不保证同一快照；数据量增长后，根据真实测量批量读取署名并改进事务边界。
 
 MidiFileService 是未来导入基础：计算散列、检查重复、写入内容寻址对象，并用数据库 UNIQUE 处理并发重复。目前不验证 MIDI 格式、没有公开上传接口。文件与数据库不能共用事务；数据库写入失败可能留下对象供重试，将来需要清理流程。重复登记返回原记录，不改写它的归属。
 
@@ -218,6 +233,12 @@ MidiFileService 是未来导入基础：计算散列、检查重复、写入内�
 | GET /api/v1/midis?page=1&pageSize=20 | 有序分页，每项包含 credits |
 | GET /api/v1/midis/:slug | entry、credits、people、historical_sources、recovery_events、files |
 | GET /api/v1/people/:id | person、aliases、midis |
+| POST /api/v1/admin/login | 验证用户名和密码，返回有效期 8 小时的令牌 |
+| GET /api/v1/admin/session | 验证 Bearer 会话，返回管理员用户名 |
+| POST /api/v1/admin/logout | 撤销当前 Bearer 会话 |
+| POST /api/v1/admin/midis | 验证管理员后新增基本信息，成功 201 |
+| GET /api/v1/admin/midis/:id | 验证管理员后读取编辑数据和 revision |
+| PUT /api/v1/admin/midis/:id | 验证管理员后更新基本信息；slug 冲突或旧 revision 返回 409 |
 
 page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回 400；超出末页返回空 data 和原 total。slug 最多 160 个小写字母、数字和词间连字符；人物 ID 为正数 BIGINT 范围。
 
@@ -231,7 +252,7 @@ page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回
 {"error": {"code": "MIDI_NOT_FOUND", "message": "The requested MIDI entry does not exist."}}
 ```
 
-异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志记录 startup、数据库连接、HTTP 错误和意外异常，不记录连接串或异常原文。接口只读，没有认证、上传、下载。
+异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志记录 startup、数据库连接、HTTP 错误和意外异常，不记录连接串或异常原文。公开查询无需登录；后台接口在 C++ 验证会话，写入立即反映到公开站点。字段合约和错误码见 [后台平台说明](docs/admin.md)。尚无上传、下载接口。
 
 ## Testing
 
@@ -243,7 +264,7 @@ npm run lint
 npm run typecheck
 ```
 
-后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实 Repository 集成测试；它查询已迁移并包含示例的测试库，未设置时明确标为 skipped。
+后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期和档案写入冲突；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。
 
 在专用测试库运行数据库检查，所有测试行回滚；identity 序列可能递增：
 
@@ -251,7 +272,7 @@ npm run typecheck
 psql -X -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
 ```
 
-完整栈启用 demo seed 后运行：
+完整测试栈显式设置 `SEED_DEMO=true` 并执行迁移后运行（不用于生产库）：
 
 ```sh
 python scripts/smoke.py
@@ -262,13 +283,17 @@ python scripts/smoke.py --api-only
 
 脚本检查分页、400/404、人物关系和 HTML 是否包含后端数据。GitHub Actions 配置 Linux Docker 构建、CTest、约束和 smoke 检查；提供配置不等于已在 GitHub 成功执行。实际结果见 [Implementation Report](docs/implementation-report.md)。
 
+认证与写入检查使用 `python scripts/admin_smoke.py --api http://127.0.0.1:8080 --allow-writes`。先将该后端连接到**专用测试数据库**并配置测试管理员，通过环境变量 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供同一账号的明文测试凭据。脚本会创建并保留测试档案，验证未登录访问、错误登录、登录限流、注销、字段校验、slug 唯一性及 revision 冲突；不要对正式数据运行。后台浏览器操作验收见 [RUN.md](RUN.md)。
+
 ## Development Philosophy
+
+上线前执行只读检查 `psql -X -f database/check_production.sql`，排查已知示例及测试记录；切换 `SEED_DEMO=false` 不会删除旧数据。Vercel 整站一键部署本轮按需求放弃，原因和边界见 [评估记录](docs/vercel-assessment.md)。
 
 - Modular Monolith：保持一个可理解的后端。
 - Simple first：朴素模型、明确所有权、直接 SQL。
 - No premature microservices：有真实独立部署需求时再拆分。
 - Backend owns business logic：规则与数据访问由 C++ 负责。
-- Next.js owns presentation/rendering：优先 Server Components，目前只有错误重试按钮需要 client 组件。
+- Next.js owns presentation/rendering：优先 Server Components；导航高亮、交互表单和错误重试使用 client 组件，数据库与授权规则留在 C++。
 
 新功能先确定规则与数据关系，再依次修改迁移、Repository、Service、Controller、API 类型和页面。给重要规则添加测试，不为猜测中的需求提前造空模块。
 
@@ -276,7 +301,7 @@ python scripts/smoke.py --api-only
 
 以下内容均未实现：
 
-- **User System**：注册、登录、权限，人物档案与登录账号分离。
+- **User System**：面向用户的注册、多账号与角色权限；当前仅有部署配置的单管理员登录，人物档案与登录账号分离。
 - **Contribution System**：提交 MIDI / 历史资料，先设计格式校验与失败清理。
 - **Moderation**：审核贡献、署名和权利信息。
 - **Community**：帖子、评论、讨论，有需求后加入内部模块。
@@ -287,7 +312,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，包含工作台、只读 MIDI 档案列表和模块目录。使用独立布局与集中模块配置，后续管理功能可按模块加入。当前未接入管理员认证，也没有写接口，展示数据与公开站点相同。扩展方法和访问边界见 [后台平台说明](docs/admin.md)。
+统一后台入口为 `/admin`，未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过部署配置建立，浏览器使用 HttpOnly Cookie；Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，保存后立即公开。人物、署名、来源、寻回和文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)。
 
 ## Architecture Decisions
 

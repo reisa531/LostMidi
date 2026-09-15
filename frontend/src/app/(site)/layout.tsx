@@ -16,7 +16,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
           <main id="main" className="flex-1 py-12 sm:py-16">{children}</main>
           <footer className="flex flex-col justify-between gap-3 border-t border-line py-7 text-xs leading-6 text-muted sm:flex-row">
             <p>Lost MIDI Archive <span aria-hidden="true" className="px-2">/</span> 为声音留下来处。</p>
-            <p>当前为虚构示例档案 · 仅展示元数据</p>
+            <p>记录作品、历史来源与寻回故事</p>
           </footer>
         </div>
   );

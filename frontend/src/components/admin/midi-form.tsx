@@ -22,6 +22,7 @@ export function MidiForm({ entry }: { entry?: MidiEntry }) {
     <select className={inputClass} name={name} value={values[name]} onChange={event => change(name, event.target.value)}>{options.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
   </label>;
   return <form action={action} className="space-y-6 rounded-xl border border-line bg-white p-6 sm:p-8">
+    <p className="text-sm leading-6 text-muted">保存后，基础资料立即显示在公开档案中。</p>
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
     <fieldset disabled={pending} className="space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>

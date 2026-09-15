@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AdminNavigation } from "@/components/admin/navigation";
 import { requireAdmin } from "@/lib/admin/auth";
-import { logoutAction } from "@/lib/admin/actions";
+import { LogoutForm } from "@/components/admin/logout-form";
 
 export const metadata: Metadata = {
   title: { default: "管理工作台", template: "%s · 管理工作台" },
@@ -19,8 +19,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <div className="mt-auto hidden px-4 pt-10 text-xs leading-6 text-[#bdcec5] lg:block"><p>让每一份档案都有来处。</p><Link href="/" className="mt-4 inline-block text-white underline underline-offset-4">访问公开站点 ↗</Link></div>
     </aside>
     <div className="min-w-0"><header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white px-6 py-5 lg:px-10">
-      <p className="text-sm font-medium">档案管理平台 <span className="ml-2 text-xs font-normal text-muted">/ 基础工作空间</span></p>
-      <div className="flex items-center gap-4 text-xs"><span className="rounded-full bg-[#edf3e9] px-3 py-1.5 text-accent">{admin.username}</span><form action={logoutAction}><button className="underline underline-offset-4">退出登录</button></form><Link href="/" className="text-muted hover:text-accent">返回网站 ↗</Link></div>
+      <p className="text-sm font-medium">档案管理平台</p>
+      <div className="flex items-center gap-4 text-xs"><span className="rounded-full bg-[#edf3e9] px-3 py-1.5 text-accent">{admin.username}</span><LogoutForm /><Link href="/" className="text-muted hover:text-accent">返回网站 ↗</Link></div>
     </header>
     <main id="main" className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:p-10">{children}</main>
     <footer className="mx-auto max-w-7xl px-6 pb-8 text-xs text-muted lg:px-10">Lost MIDI Archive · 管理工作台</footer></div>

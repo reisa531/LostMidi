@@ -36,11 +36,13 @@ export async function loginAction(_previous: { error: string }, form: FormData) 
   redirect("/admin");
 }
 export async function logoutAction() {
-  await checkOrigin();
-  // If the database is unavailable, do not claim successful server-side revocation.
-  try { await adminRequest("/api/v1/admin/logout", { method: "POST" }); }
-  catch (error) { if (!(error instanceof ApiError && error.status === 401)) throw error; }
-  (await cookies()).set(sessionCookie, "", { path: "/admin", httpOnly: true, sameSite: "strict", secure: process.env.ADMIN_COOKIE_SECURE !== "false", maxAge: 0 });
+  try {
+    await checkOrigin();
+    // Keep the cookie when revocation fails so the administrator can retry.
+    try { await adminRequest("/api/v1/admin/logout", { method: "POST" }); }
+    catch (error) { if (!(error instanceof ApiError && error.status === 401)) throw error; }
+    (await cookies()).set(sessionCookie, "", { path: "/admin", httpOnly: true, sameSite: "strict", secure: process.env.ADMIN_COOKIE_SECURE !== "false", maxAge: 0 });
+  } catch (error) { return { error: message(error) }; }
   redirect("/admin/login");
 }
 export async function saveMidiAction(_previous: { error: string }, form: FormData) {

@@ -24,7 +24,7 @@ export default async function MidiListPage({ searchParams }: { searchParams: Pro
     <p className="mb-10 max-w-2xl leading-7 text-muted">每一条记录都保留作品的来处、人物与寻回线索。未知的信息，也是一段有待继续的历史。</p>
     <p className="mb-3 text-xs text-muted">共 {pagination.total} 条档案</p>
     <div className="border-t border-line">{data.length ? data.map(entry => <article key={entry.id} className="grid gap-4 border-b border-line py-7 sm:grid-cols-[1fr_12rem]">
-      <div><p className="mb-2 text-xs text-muted">约 {entry.estimated_year ?? "年代不详"}</p>
+      <div><p className="mb-2 text-xs text-muted">{entry.estimated_year ? `约 ${entry.estimated_year} 年` : "年代不详"}</p>
         <h2 className="mb-3 font-serif text-2xl"><Link className="hover:text-accent hover:underline" href={`/midis/${entry.slug}`}>{entry.title}</Link></h2>
         <div className="text-sm"><Credits credits={entry.credits} /></div></div>
       <div className="sm:text-right"><Status status={entry.archive_status} /></div>

@@ -8,6 +8,8 @@ jobs:
   stack:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      SEED_DEMO: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,12 +25,27 @@ jobs:
           npm run typecheck
       - name: Validate Compose
         run: docker compose --env-file .env.example config --quiet
+      - name: Configure disposable administrator credentials
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, secrets
+          password = secrets.token_urlsafe(32)
+          salt = secrets.token_bytes(16)
+          digest = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 600000).hex()
+          password_hash = f'pbkdf2_sha256:600000:{salt.hex()}:{digest}'
+          print(f'::add-mask::{password}')
+          print(f'::add-mask::{password_hash}')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write(f'ADMIN_USERNAME=ci-admin\nADMIN_TEST_USERNAME=ci-admin\nADMIN_TEST_PASSWORD={password}\nADMIN_PASSWORD_HASH={password_hash}\n')
+          PY
       - name: Build and start (backend build runs GoogleTest)
         run: docker compose --env-file .env.example up --build --wait --wait-timeout 180
       - name: Database constraints
         run: docker compose --env-file .env.example run --rm migrate psql -X -v ON_ERROR_STOP=1 -f /database/tests/constraints.sql
       - name: API and rendered page checks
         run: python3 scripts/smoke.py
+      - name: Administrator authentication and archive write checks
+        run: python3 scripts/admin_smoke.py --allow-writes
       - name: Diagnostic logs
         if: failure()
         run: docker compose --env-file .env.example logs --no-color
