@@ -24,6 +24,18 @@ BEGIN
     END;
     INSERT INTO people (display_name) VALUES ('Constraint test person')
         RETURNING id INTO contributor_id;
+    IF (SELECT revision FROM people WHERE id = contributor_id) <> 1 THEN
+        RAISE EXCEPTION 'New people must start at revision 1';
+    END IF;
+    UPDATE people SET biography = 'Revision check', revision = 100 WHERE id = contributor_id;
+    IF (SELECT revision FROM people WHERE id = contributor_id) <> 2 THEN
+        RAISE EXCEPTION 'Person update must increment the stored revision exactly once';
+    END IF;
+    BEGIN
+        INSERT INTO people (display_name, revision) VALUES ('Invalid revision', 0);
+        RAISE EXCEPTION 'Expected non-positive person revision to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
     INSERT INTO midi_files (midi_id, original_filename, sha256, file_size, storage_key)
         VALUES (entry_id, 'test.mid', repeat('a', 64), 26, 'test/constraints-first.mid');
 

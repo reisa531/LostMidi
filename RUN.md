@@ -166,7 +166,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-当前应用需要执行 `002_admin_sessions_and_revision.sql`：它新增管理员会话表和档案 revision，保留已有档案。已有部署按第 7.2 节先迁移再启动新后端，不要修改已应用的 `001` 文件。启动时和 `/ready` 均检查新结构；缺少迁移会导致启动失败，运行中结构不可查询时 `/ready` 返回 503。
+当前应用需要执行迁移 002 和 `003_person_revision.sql`：前者新增管理员会话表和档案 revision，后者新增人物 revision 与递增触发器，均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，不要修改已应用的迁移文件。启动时和 `/ready` 均检查新结构；缺少迁移会导致启动失败，运行中结构不可查询时 `/ready` 返回 503。
 
 ## 5. 部署验收
 

@@ -7,7 +7,7 @@ export interface MidiEntry {
   created_at: string; updated_at: string; copyright_status: string | null;
   license: string | null; rights_holder: string | null; distribution_permission: string | null;
 }
-export interface Person { id: string; display_name: string; biography: string | null; created_at: string }
+export interface Person { id: string; display_name: string; biography: string | null; created_at: string; revision: number }
 export interface MidiList {
   data: (MidiEntry & { credits: Credit[] })[];
   pagination: { page: number; pageSize: number; total: number };

@@ -16,6 +16,7 @@ int main() {
         auto db = drogon::orm::DbClient::newPgClient(config.databaseUrl, static_cast<std::size_t>(config.dbPoolSize));
         db->setTimeout(5.0);
         db->execSqlSync("SELECT revision FROM midi_entries LIMIT 1");
+        db->execSqlSync("SELECT revision FROM people LIMIT 1");
         db->execSqlSync("SELECT token_hash FROM admin_sessions LIMIT 1");
         logEvent("database_connected");
         storage::LocalObjectStorage objects(config.storagePath);
@@ -29,7 +30,8 @@ int main() {
         auth::AuthRepository authRepository(db);
         auth::AuthService auth(authRepository, environment("ADMIN_USERNAME"), environment("ADMIN_PASSWORD_HASH"));
         midi::MidiWriteService writer(midiRepository);
-        ApiController controller(midis, people, db, config.workerThreads, auth, writer);
+        person::PersonWriteService personWriter(personRepository);
+        ApiController controller(midis, people, db, config.workerThreads, auth, writer, personWriter);
         drogon::app().setClientMaxBodySize(128 * 1024);
         controller.registerRoutes();
         drogon::app().setThreadNum(static_cast<std::size_t>(config.httpThreads));

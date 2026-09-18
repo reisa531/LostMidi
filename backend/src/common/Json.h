@@ -1,6 +1,7 @@
 #pragma once
 #include <json/json.h>
 #include "midi/Models.h"
+#include "person/PersonWriteService.h"
 
 namespace lostmidi {
 template <typename T>
@@ -13,6 +14,7 @@ inline Json::Value toJson(const person::Person& p) {
     j["display_name"] = p.displayName;
     j["biography"] = jsonOptional(p.biography);
     j["created_at"] = p.createdAt;
+    j["revision"] = Json::Int64(p.revision);
     return j;
 }
 inline Json::Value toJson(const person::Credit& c) {
@@ -101,6 +103,19 @@ inline Json::Value toJson(const person::PersonDetail& d) {
         item["role"] = m.role;
         j["midis"].append(item);
     }
+    return j;
+}
+inline Json::Value toJson(const person::PersonEdit& edit) {
+    Json::Value j;
+    j["person"] = toJson(edit.person);
+    j["aliases"] = Json::Value(Json::arrayValue);
+    for (const auto& alias : edit.aliases) j["aliases"].append(alias);
+    return j;
+}
+inline Json::Value toJson(const person::CreditEdit& edit) {
+    Json::Value j;
+    j["revision"] = Json::Int64(edit.revision);
+    j["credits"] = jsonArray(edit.credits);
     return j;
 }
 }  // namespace lostmidi

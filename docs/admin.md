@@ -11,9 +11,13 @@
 | `/admin/midis` | 档案分页表格、新增入口、编辑及公开详情链接 |
 | `/admin/midis/new` | 新增档案基本信息 |
 | `/admin/midis/[id]/edit` | 编辑基本信息；保存后显示公开详情链接 |
+| `/admin/midis/[id]/credits` | 添加、调整或移除作品署名 |
+| `/admin/people` | 人物分页列表、创建和编辑入口 |
+| `/admin/people/new` | 创建人物及历史昵称 |
+| `/admin/people/[id]/edit` | 编辑人物资料和昵称 |
 | `/admin/modules` | 管理功能目录，仅展示可使用的功能 |
 
-人物管理、来源与寻回仅在模块配置中保留规划项，不在生产页面展示占位卡片或空的管理路由。数据不可用时显示未知状态，不显示假的统计数字。
+人物管理与作品署名已开放；来源与寻回仍在规划中。数据不可用时显示未知状态，不显示假的统计数字。
 
 ## 结构与扩展
 
@@ -48,6 +52,12 @@ Next.js 服务端将令牌存入 HttpOnly、SameSite=Strict、Path=/admin Cookie
 | `POST /api/v1/admin/midis` | 新增；成功返回 201 和档案对象 |
 | `GET /api/v1/admin/midis/:id` | 读取编辑数据和 revision |
 | `PUT /api/v1/admin/midis/:id` | 根据 revision 更新，返回新档案对象 |
+| `GET /api/v1/admin/people` | 分页人物列表，支持 page / pageSize |
+| `POST /api/v1/admin/people` | 新增人物和昵称，返回 201 |
+| `GET /api/v1/admin/people/:id` | 读取人物、revision 及昵称 |
+| `PUT /api/v1/admin/people/:id` | 按 revision 更新人物及完整昵称列表 |
+| `GET /api/v1/admin/midis/:id/credits` | 读取作品 revision 和署名列表 |
+| `PUT /api/v1/admin/midis/:id/credits` | 按作品 revision 替换完整署名列表 |
 
 除登录外均需要 Bearer 令牌。正常处理的管理响应带 `Cache-Control: no-store`。写入字段如下：
 
@@ -69,6 +79,18 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 其他错误包括 `400 INVALID_INPUT`、`401 INVALID_CREDENTIALS/UNAUTHORIZED`、`404 MIDI_NOT_FOUND`、`429 LOGIN_RATE_LIMITED` 和 `503 ADMIN_DISABLED/DATABASE_UNAVAILABLE`。没有注册、多角色、审核、删除或文件上传下载功能。
 
+## 人物与署名规则
+
+人物请求包含 `display_name`（必填，去首尾 ASCII 空白后最多 300 UTF-8 字节）、`biography`（可空，最多 20,000 字节）和 `aliases` 数组（必填，可空，最多 50 个，每个去空白后非空且最多 300 字节）。昵称不能重复，保留大小写；不同人物可同名。更新额外提交正整数 `revision`。响应为 `{person, aliases}`；旧版本返回 `409 STALE_PERSON`。
+
+署名请求为 `{revision, credits: [{person_id: "123", role: "composer"}]}`，最多 100 项；角色为 composer、arranger、sequencer、contributor。人物 ID 使用十进制字符串。同一人物可承担多个角色，但不能重复相同人物与角色。空列表表示移除全部署名。响应为 `{revision, credits}`，每项包含人物名称。未知人物返回 `400 UNKNOWN_PERSON`，所有变更与作品版本一起回滚。
+
+人物编辑在一个事务内保存简介和昵称；署名编辑在一个事务内更新作品版本和完整署名列表。基本信息与署名共用作品版本，因此另一个页面保存后，旧表单会返回 `409 STALE_ENTRY`。错误时前端保留输入，重新打开页面后核对合并。保存立即在公开人物和作品详情生效。人物选项每次加载 100 条，可继续加载或创建人物后刷新；以编号区分同名人物。
+
 ## 验证
+
+当前数据库还必须应用 `003_person_revision.sql`。在专用测试库运行 `python scripts/people_smoke.py --api http://127.0.0.1:8080 --allow-writes`，凭据使用 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`，覆盖人物昵称、署名、并发冲突和失败回滚；脚本留下带 people-check 前缀的测试资料。先执行此脚本，再执行会触发登录限流的 admin_smoke。
+
+可选浏览器验收：在独立 Python 环境安装 `playwright` 并运行 `python -m playwright install chromium`，再使用相同测试凭据执行 `python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes`。也可传 `--channel msedge` 使用已安装的 Edge；`--screenshots <目录>` 保存验收截图。浏览器地址必须与测试前端的 ADMIN_ORIGIN 一致。脚本会创建人物和作品，只能指向专用测试环境。
 
 运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。数据库需应用 `002_admin_sessions_and_revision.sql`。运行中的 API 可用 `python scripts/admin_smoke.py --allow-writes` 检查，通过 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供测试凭据；脚本保留新增档案，只在专用测试数据库运行。浏览器验收见 [RUN.md](../RUN.md)，实际执行结果及限制见 [验证记录](implementation-report.md)。

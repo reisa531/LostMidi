@@ -20,5 +20,6 @@ export default async function EditMidi({ params, searchParams }: { params: Promi
   const { saved } = await searchParams;
   return <><AdminPageHeader eyebrow={`Collection / ${entry.id}`} title="编辑 MIDI 档案" description="维护作品基础资料。人物署名、历史来源和文件记录保持独立。" />
     {saved === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已保存。<Link className="ml-3 underline" href={`/midis/${entry.slug}`}>查看公开详情 ↗</Link></p>}
+    <p className="mb-6"><Link className="text-sm underline" href={`/admin/midis/${entry.id}/credits`}>管理作品署名 →</Link></p>
     <MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} /></>;
 }

@@ -10,6 +10,7 @@ struct Person {
     std::string displayName;
     std::optional<std::string> biography;
     std::string createdAt;
+    std::int64_t revision = 1;
 };
 struct Credit {
     std::int64_t personId = 0;

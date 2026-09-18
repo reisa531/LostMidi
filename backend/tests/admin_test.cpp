@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "auth/Password.h"
 #include "midi/MidiWriteService.h"
+#include "person/PersonWriteService.h"
 #include "common/Error.h"
 
 using namespace lostmidi;
@@ -43,5 +44,34 @@ TEST(AdminPassword, TokensAreRandomAndOnlyDigestIsPersisted) {
     const auto first = auth::randomToken(); const auto second = auth::randomToken();
     EXPECT_EQ(first.size(), 64u); EXPECT_NE(first, second);
     EXPECT_EQ(auth::digest(first).size(), 64u); EXPECT_NE(auth::digest(first), first);
+}
+class PersonWriter : public person::IPersonWriter {
+public:
+    int writes = 0;
+    person::PersonList list(Page) override { return {{}, 0}; }
+    person::PersonEdit getEditor(std::int64_t) override { return {}; }
+    person::PersonEdit save(std::int64_t, const person::PersonEdit& edit) override { ++writes; return edit; }
+    person::CreditEdit getCredits(std::int64_t) override { return {1, {}}; }
+    person::CreditEdit saveCredits(std::int64_t, const person::CreditEdit& edit) override { ++writes; return edit; }
+};
+TEST(PersonWrite, RejectsAmbiguousAliasesAndInvalidCreditsBeforePersistence) {
+    PersonWriter writer; person::PersonWriteService service(writer);
+    person::PersonEdit edit; edit.person.displayName = "Name"; edit.aliases = {"old", " old "};
+    EXPECT_THROW(service.save(0, edit), ApiError);
+    edit.aliases = {" "}; EXPECT_THROW(service.save(0, edit), ApiError);
+    edit.aliases = {}; edit.person.displayName = "\t"; EXPECT_THROW(service.save(0, edit), ApiError);
+    EXPECT_THROW(service.saveCredits(1, {1, {{1, "", "invalid"}}}), ApiError);
+    EXPECT_THROW(service.saveCredits(1, {1, {{1, "", "composer"}, {1, "", "composer"}}}), ApiError);
+    EXPECT_THROW(service.saveCredits(1, {0, {}}), ApiError);
+    EXPECT_EQ(writer.writes, 0);
+}
+TEST(PersonWrite, NormalizesTextAndAllowsMultipleRoles) {
+    PersonWriter writer; person::PersonWriteService service(writer);
+    person::PersonEdit edit; edit.person.displayName = "  Name "; edit.person.biography = ""; edit.aliases = {" old "};
+    const auto saved = service.save(0, edit);
+    EXPECT_EQ(saved.person.displayName, "Name"); EXPECT_FALSE(saved.person.biography);
+    ASSERT_EQ(saved.aliases.size(), 1u); EXPECT_EQ(saved.aliases[0], "old");
+    EXPECT_NO_THROW(service.saveCredits(1, {1, {{1, "", "composer"}, {1, "", "sequencer"}}}));
+    EXPECT_NO_THROW(service.saveCredits(1, {1, {}}));
 }
 }

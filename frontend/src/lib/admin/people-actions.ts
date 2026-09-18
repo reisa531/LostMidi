@@ -1,0 +1,61 @@
+"use server";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { adminRequest } from "./auth";
+import { getPeople, type PersonEdit } from "./people";
+import { ApiError } from "@/lib/api/client";
+
+async function checkOrigin() {
+  if (!process.env.ADMIN_ORIGIN || (await headers()).get("origin") !== process.env.ADMIN_ORIGIN)
+    throw new ApiError(403, "INVALID_ORIGIN");
+}
+function idOf(value: FormDataEntryValue | null) {
+  const id = String(value ?? "");
+  if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > BigInt("9223372036854775807")) throw new ApiError(400, "INVALID_INPUT");
+  return id;
+}
+function errorMessage(error: unknown) {
+  const messages: Record<string, string> = {
+    UNAUTHORIZED: "会话已过期。请在新页面登录后重试。",
+    INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
+    INVALID_INPUT: "请检查必填项、文字长度和重复的昵称或署名。",
+    STALE_PERSON: "人物资料已被其他页面修改，请保留当前输入，重新打开编辑页后合并修改。",
+    STALE_ENTRY: "作品或署名已被其他页面修改，请保留当前输入，重新打开页面后合并修改。",
+    UNKNOWN_PERSON: "所选人物已不存在，请重新选择。", PERSON_NOT_FOUND: "人物资料已不存在。", MIDI_NOT_FOUND: "作品档案已不存在。",
+  };
+  return error instanceof ApiError ? messages[error.code] ?? "服务暂时不可用，请稍后重试。" : "请求失败，请稍后重试。";
+}
+export async function savePersonAction(_previous: { error: string }, form: FormData) {
+  let saved: PersonEdit;
+  try {
+    await checkOrigin();
+    const id = form.get("id") ? idOf(form.get("id")) : "";
+    const aliases = String(form.get("aliases") ?? "").split(/\r?\n/).map(alias => alias.trim()).filter(Boolean);
+    saved = await adminRequest<PersonEdit>(`/api/v1/admin/people${id ? `/${id}` : ""}`, {
+      method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: String(form.get("display_name") ?? ""), biography: String(form.get("biography") ?? "") || null, aliases,
+        ...(id ? { revision: Number(form.get("revision")) } : {}) }),
+    });
+  } catch (error) { return { error: errorMessage(error) }; }
+  redirect(`/admin/people/${saved.person.id}/edit?saved=1`);
+}
+export async function saveCreditsAction(_previous: { error: string }, form: FormData) {
+  let id: string;
+  try {
+    await checkOrigin();
+    id = idOf(form.get("midi_id"));
+    const people = form.getAll("person_id");
+    const roles = form.getAll("role");
+    if (people.length !== roles.length) throw new ApiError(400, "INVALID_INPUT");
+    await adminRequest(`/api/v1/admin/midis/${id}/credits`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revision: Number(form.get("revision")), credits: people.map((person, index) => ({ person_id: idOf(person), role: String(roles[index]) })) }),
+    });
+  } catch (error) { return { error: errorMessage(error) }; }
+  redirect(`/admin/midis/${id}/credits?saved=1`);
+}
+export async function loadPeopleAction(page: number) {
+  await checkOrigin();
+  if (!Number.isInteger(page) || page < 1 || page > 1000000) throw new ApiError(400, "INVALID_INPUT");
+  return getPeople(page);
+}

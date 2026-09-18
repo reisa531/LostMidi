@@ -22,6 +22,41 @@ std::int64_t idOf(const std::string& value) {
         throw ApiError(400, "INVALID_INPUT", "A positive 64-bit id is required.");
     return id;
 }
+void fieldsOf(const Json::Value& json, const std::set<std::string>& allowed) {
+    if (!json.isObject()) throw ApiError(400, "INVALID_INPUT", "Object required.");
+    for (const auto& name : json.getMemberNames())
+        if (!allowed.contains(name)) throw ApiError(400, "INVALID_INPUT", "Unknown field.");
+}
+std::int64_t revisionOf(const Json::Value& json) {
+    if (!json["revision"].isInt64() || json["revision"].asInt64() < 1)
+        throw ApiError(400, "INVALID_INPUT", "A positive revision is required.");
+    return json["revision"].asInt64();
+}
+person::PersonEdit personOf(const Json::Value& json, bool editing) {
+    fieldsOf(json, {"display_name", "biography", "aliases", "revision"});
+    person::PersonEdit edit;
+    edit.person.displayName = stringOf(json, "display_name", 300);
+    if (!json["biography"].isNull()) edit.person.biography = stringOf(json, "biography", 20000);
+    if (!json["aliases"].isArray() || json["aliases"].size() > 50)
+        throw ApiError(400, "INVALID_INPUT", "Aliases must be an array with at most 50 entries.");
+    for (const auto& alias : json["aliases"]) {
+        if (!alias.isString()) throw ApiError(400, "INVALID_INPUT", "Alias must be text.");
+        edit.aliases.push_back(alias.asString());
+    }
+    if (editing) edit.person.revision = revisionOf(json);
+    return edit;
+}
+person::CreditEdit creditsOf(const Json::Value& json) {
+    fieldsOf(json, {"revision", "credits"});
+    person::CreditEdit edit{revisionOf(json), {}};
+    if (!json["credits"].isArray() || json["credits"].size() > 100)
+        throw ApiError(400, "INVALID_INPUT", "Credits must be an array with at most 100 entries.");
+    for (const auto& credit : json["credits"]) {
+        fieldsOf(credit, {"person_id", "role"});
+        edit.credits.push_back({idOf(stringOf(credit, "person_id", 19)), "", stringOf(credit, "role", 30)});
+    }
+    return edit;
+}
 midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
     const std::set<std::string> allowed{"title","slug","description","estimated_year","archive_status","copyright_status","license","rights_holder","distribution_permission","revision"};
     for (const auto& name : json.getMemberNames())
@@ -51,6 +86,42 @@ midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
 }
 }
 void ApiController::registerAdminRoutes() {
+    drogon::app().registerHandler("/api/v1/admin/people", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+        dispatch(std::move(callback), [this, request] {
+            auth_.require(request->getHeader("authorization"));
+            if (request->method() == drogon::Post) {
+                const auto result = personWriter_.save(0, personOf(bodyOf(request), false));
+                logEvent("person_created"); return toJson(result);
+            }
+            Page page;
+            const auto& params = request->getParameters();
+            if (params.contains("page")) page.number = positiveInteger(params.at("page"), 1000000, "page");
+            if (params.contains("pageSize")) page.size = positiveInteger(params.at("pageSize"), 100, "pageSize");
+            const auto result = personWriter_.list(page);
+            Json::Value json;
+            json["data"] = jsonArray(result.data);
+            json["pagination"]["page"] = page.number;
+            json["pagination"]["pageSize"] = page.size;
+            json["pagination"]["total"] = Json::Int64(result.total);
+            return json;
+        }, request->method() == drogon::Post ? 201 : 200);
+    }, {drogon::Get, drogon::Post});
+    drogon::app().registerHandler("/api/v1/admin/people/{1}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
+        dispatch(std::move(callback), [this, request, id = std::move(id)] {
+            auth_.require(request->getHeader("authorization"));
+            if (request->method() == drogon::Get) return toJson(personWriter_.get(idOf(id)));
+            const auto result = personWriter_.save(idOf(id), personOf(bodyOf(request), true));
+            logEvent("person_updated"); return toJson(result);
+        });
+    }, {drogon::Get, drogon::Put});
+    drogon::app().registerHandler("/api/v1/admin/midis/{1}/credits", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
+        dispatch(std::move(callback), [this, request, id = std::move(id)] {
+            auth_.require(request->getHeader("authorization"));
+            if (request->method() == drogon::Get) return toJson(personWriter_.getCredits(idOf(id)));
+            const auto result = personWriter_.saveCredits(idOf(id), creditsOf(bodyOf(request)));
+            logEvent("midi_credits_updated"); return toJson(result);
+        });
+    }, {drogon::Get, drogon::Put});
     drogon::app().registerHandler("/api/v1/admin/login", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
             const auto body = bodyOf(request);

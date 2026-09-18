@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export function AdminPageHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
-  return <header className="mb-8"><p className="eyebrow">{eyebrow}</p><h1 className="mb-3 mt-3 text-3xl font-semibold tracking-tight">{title}</h1><p className="max-w-2xl text-sm leading-7 text-muted">{description}</p></header>;
+  return <header className="mb-8"><p className="eyebrow">{eyebrow}</p><h1 className="mb-3 mt-3 break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="max-w-2xl text-sm leading-7 text-muted">{description}</p></header>;
 }
 export function AdminPanel({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return <section className="min-w-0 rounded-xl border border-line bg-white"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-5"><h2 className="font-semibold">{title}</h2>{action}</div><div className="p-6">{children}</div></section>;

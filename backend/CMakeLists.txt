@@ -16,6 +16,7 @@ else()
 endif()
 
 add_library(lostmidi_core
+    src/person/PersonWriteService.cpp
     src/auth/Password.cpp
     src/midi/MidiWriteService.cpp
     src/midi/MidiService.cpp

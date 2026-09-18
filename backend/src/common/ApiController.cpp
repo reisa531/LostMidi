@@ -15,8 +15,8 @@ drogon::HttpResponsePtr errorResponse(int status, const std::string& code, const
 }
 }
 ApiController::ApiController(midi::MidiService& midis, person::PersonService& people,
-                             drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth, midi::MidiWriteService& writer)
-    : midis_(midis), people_(people), db_(std::move(db)), auth_(auth), writer_(writer), workers_(static_cast<std::size_t>(workerCount), "archive") {}
+                             drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth, midi::MidiWriteService& writer, person::PersonWriteService& personWriter)
+    : midis_(midis), people_(people), db_(std::move(db)), auth_(auth), writer_(writer), personWriter_(personWriter), workers_(static_cast<std::size_t>(workerCount), "archive") {}
 
 void ApiController::dispatch(Callback callback, std::function<Json::Value()> work, int successStatus) {
     if (pending_.fetch_add(1) >= 256) {
@@ -57,6 +57,7 @@ void ApiController::registerRoutes() {
     drogon::app().registerHandler("/ready", [this](const drogon::HttpRequestPtr&, Callback&& callback) {
         dispatch(std::move(callback), [this] {
             db_->execSqlSync("SELECT revision FROM midi_entries LIMIT 1");
+            db_->execSqlSync("SELECT revision FROM people LIMIT 1");
             db_->execSqlSync("SELECT token_hash FROM admin_sessions LIMIT 1");
             Json::Value body;
             body["status"] = "ok";

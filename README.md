@@ -165,7 +165,7 @@ $env:STORAGE_PATH="$PWD\storage"
 
 迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
 
-原生模式启用后台时，在启动后端的环境中另外设置 `ADMIN_USERNAME` 和密码生成器输出的 `ADMIN_PASSWORD_HASH`；在 `frontend/.env.local` 设置 `ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`。更新已有数据库时必须先执行迁移 `002_admin_sessions_and_revision.sql`，再启动新后端。
+原生模式启用后台时，在启动后端的环境中另外设置 `ADMIN_USERNAME` 和密码生成器输出的 `ADMIN_PASSWORD_HASH`；在 `frontend/.env.local` 设置 `ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`。更新已有数据库时必须先执行全部待应用迁移（包含 002 和 `003_person_revision.sql`），再启动新后端。
 
 ## Environment Variables
 
@@ -312,7 +312,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过部署配置建立，浏览器使用 HttpOnly Cookie；Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，保存后立即公开。人物、署名、来源、寻回和文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)。
+统一后台入口为 `/admin`，未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过部署配置建立，浏览器使用 HttpOnly Cookie；Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名，保存后立即公开。来源、寻回和文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)，下一阶段见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 

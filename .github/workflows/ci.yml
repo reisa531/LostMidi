@@ -44,7 +44,9 @@ jobs:
         run: docker compose --env-file .env.example run --rm migrate psql -X -v ON_ERROR_STOP=1 -f /database/tests/constraints.sql
       - name: API and rendered page checks
         run: python3 scripts/smoke.py
-      - name: Administrator authentication and archive write checks
+      - name: People and credit write checks
+        run: python3 scripts/people_smoke.py --allow-writes
+      - name: Administrator session and archive regression checks
         run: python3 scripts/admin_smoke.py --allow-writes
       - name: Diagnostic logs
         if: failure()
