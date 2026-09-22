@@ -23,7 +23,7 @@ Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可
 
 ### 当前生产：Vercel 前后端独立项目 + Neon Free
 
-后端项目使用仓库根目录及正式配置 `vercel.json`：`services.backend.root='.'`、`entrypoint='docker/backend.Dockerfile'`、region `iad1`，`/(.*)` rewrite 指向 backend。它不是前端配置，也不包含数据库或迁移任务；未来经确认发布时须显式选择此配置（CLI 对应 `--local-config vercel.json`），不能误部署到前端项目。
+后端项目使用仓库根目录及正式配置 `vercel.json`：`services.backend.root='.'`、`entrypoint='docker/Dockerfile.backend'`、region `iad1`，`/(.*)` rewrite 指向 backend。它不是前端配置，也不包含数据库或迁移任务；未来经确认发布时须显式选择此配置（CLI 对应 `--local-config vercel.json`），不能误部署到前端项目。
 
 后端容器接受平台 `PORT`，优先于 `BACKEND_PORT`；监听 `0.0.0.0`，默认 `DB_POOL_SIZE=2`、`HTTP_THREADS=2`、`WORKER_THREADS=2`。`DATABASE_URL` 使用现有 Neon 连接配置，数据库与存储密钥仅放在后端项目、按 Production / Preview 隔离；不要复制 Compose 的 `postgres` DNS 名称到云端。前端继续 Root Directory=`frontend`，只配置 `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE`。
 

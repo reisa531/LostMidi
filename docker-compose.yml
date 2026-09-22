@@ -35,7 +35,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: docker/backend.Dockerfile
+      dockerfile: docker/Dockerfile.backend
     depends_on:
       migrate:
         condition: service_completed_successfully

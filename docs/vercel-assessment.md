@@ -27,7 +27,7 @@
 
 后端项目 Root Directory 为仓库根目录，使用 [`vercel.json`](../vercel.json)，不是 `frontend/vercel.json`：
 
-- `services.backend.root='.'`，`entrypoint='docker/backend.Dockerfile'`，后端构建 context 为仓库根。
+- `services.backend.root='.'`，`entrypoint='docker/Dockerfile.backend'`，后端构建 context 为仓库根。
 - region 为 `iad1`；`/(.*)` rewrite 到 backend 服务。
 - 经确认发布时显式选择该配置（CLI 参数 `--local-config vercel.json`），并核对目标是后端项目。不是在前端项目修改 Root Directory，也不是 Vercel Compose 部署。
 - 平台注入的 `PORT` 优先于 `BACKEND_PORT`，无需手工覆盖；容器监听 `0.0.0.0`，默认 2 个数据库连接、2 个 HTTP 线程、2 个 worker，适合先控制 Neon Free 用量。
