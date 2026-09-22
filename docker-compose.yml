@@ -35,7 +35,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: docker/Dockerfile.backend
+      dockerfile: Dockerfile.vercel
     depends_on:
       migrate:
         condition: service_completed_successfully
