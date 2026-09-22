@@ -8,7 +8,7 @@
 
 namespace lostmidi::storage {
 namespace {
-[[noreturn]] void unavailable() { throw ApiError(503, "STORAGE_UNAVAILABLE", "Private object storage is temporarily unavailable."); }
+[[noreturn]] void unavailable() { throw ApiError(503, "STORAGE_UNAVAILABLE", "Object storage is temporarily unavailable."); }
 std::span<const std::byte> bytesOf(const std::string& s) { return std::as_bytes(std::span(s.data(), s.size())); }
 std::string hmac(const std::string& key, const std::string& message) {
     std::array<unsigned char, EVP_MAX_MD_SIZE> result{}; unsigned length = 0;
@@ -32,7 +32,9 @@ std::string now() {
 }
 S3Config S3Config::fromEnvironment() {
     const auto env = [](const char* name, const char* fallback = "") { const char* v = std::getenv(name); return std::string(v && *v ? v : fallback); };
-    if (env("S3_PRIVATE_CONFIRMED") != "true") throw std::runtime_error("Confirm private bucket policy before enabling S3 storage.");
+    // Uploaded objects are publicly distributed (anonymous read is allowed by design),
+    // so the operator must acknowledge public distribution rather than bucket privacy.
+    if (env("S3_PUBLIC_DISTRIBUTION_CONFIRMED") != "true") throw std::runtime_error("Confirm uploaded objects are publicly distributed before enabling S3 storage.");
     const auto style = env("S3_PATH_STYLE", "true");
     if (style != "true" && style != "false") throw std::runtime_error("Invalid S3_PATH_STYLE.");
     return {env("S3_ENDPOINT"), env("S3_REGION", "us-east-1"), env("S3_BUCKET"), env("S3_ACCESS_KEY_ID"),
@@ -43,6 +45,10 @@ std::map<std::string, std::string> signS3(const S3Config& config, const std::str
     const std::string scope = timestamp.substr(0, 8) + "/" + config.region + "/s3/aws4_request";
     std::map<std::string, std::string> headers{{"host", host}, {"x-amz-content-sha256", payloadHash}, {"x-amz-date", timestamp}};
     if (method == "PUT") {
+        // Ceph RGW (e.g. RainYun ROS) rejects PutObject with 403 AccessDenied unless
+        // Content-Type is present AND part of the signed headers, so it must be added
+        // here (before signing) with the exact value the request body carries.
+        headers["content-type"] = "application/octet-stream";
         headers["x-amz-acl"] = "private";
         headers["if-none-match"] = "*";
     }
@@ -91,7 +97,7 @@ drogon::HttpResponsePtr S3ObjectStorage::request(drogon::HttpMethod method, cons
     req->addHeader("accept-encoding", "identity");
     if (method == drogon::Get && readLimit) req->addHeader("range", "bytes=0-" + std::to_string(readLimit - 1));
     for (const auto& [name, value] : signS3(config_, verb, host_, basePath_ + key, sha256(bytes), now())) req->addHeader(name, value);
-    if (method == drogon::Put) { req->setBody(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size())); req->addHeader("content-type", "application/octet-stream"); }
+    if (method == drogon::Put) req->setBody(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
     auto client = drogon::HttpClient::newHttpClient(origin_, loop_.getLoop(), false, true);
     // No redirects and no credential-bearing URLs; diagnostics never expose provider responses.
     const auto [result, response] = client->sendRequest(req, 15.0);

@@ -26,7 +26,7 @@ function errorState(error: unknown): MidiFileImportState {
       INVALID_MIDI: "文件不是有效的 SMF 0、1 或 2 格式 MIDI，请检查文件内容。",
       FILE_TOO_LARGE: "文件超过大小限制；单个文件最大 1 MiB（1,048,576 字节）。",
       INVALID_FILE: "请选择一个非空的 .mid 或 .midi 文件，不支持 ZIP、批量或远程网址导入。",
-      RIGHTS_CONFIRMATION_REQUIRED: "请先确认你有权将此文件私下归档。",
+      RIGHTS_CONFIRMATION_REQUIRED: "请先确认你有权公开分发此文件。",
       STORAGE_UNAVAILABLE: "存储服务暂时不可用。请先刷新检查已存记录，核对后再决定是否重试。",
       IMPORT_DISABLED: "文件导入尚未启用或已暂停，请联系站点维护者；可刷新查看已有记录。",
       SERVER_BUSY: "服务繁忙，请先刷新检查已存记录，核对后再稍后重试。",

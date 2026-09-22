@@ -1,6 +1,6 @@
 # Lost MIDI Archive 部署与运行手册
 
-适用版本：当前仓库的一次性安装、单管理员档案管理，以及默认关闭的私有单文件 MIDI 导入（local / S3）。导入已在本地实现，真实桶认证、私有策略和联调待验证。
+适用版本：当前仓库的一次性安装、单管理员档案管理，以及默认关闭的管理员单文件 MIDI 导入（local / S3）。导入已实现并对真实 S3 桶完成联调验证；生产启用需配置 S3 变量并确认公开分发。
 
 本文指导 Vercel 前后端独立项目、旧 VPS / Compose 单机方案、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
 
@@ -27,7 +27,7 @@ Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可
 
 后端容器接受平台 `PORT`，优先于 `BACKEND_PORT`；监听 `0.0.0.0`，默认 `DB_POOL_SIZE=2`、`HTTP_THREADS=2`、`WORKER_THREADS=2`。`DATABASE_URL` 使用现有 Neon 连接配置，数据库与存储密钥仅放在后端项目、按 Production / Preview 隔离；不要复制 Compose 的 `postgres` DNS 名称到云端。前端继续 Root Directory=`frontend`，只配置 `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE`。
 
-云容器 `/tmp` 不持久，导入默认关闭；只有完成第 3.3 节的真实桶认证与私有策略验证后，才可启用 S3 导入。保持小连接池，避免自动反复云构建、密集轮询和生产写入测试；已有桶无需新建存储产品。完整设置见 [Vercel 部署指引](docs/vercel-assessment.md)。
+云容器 `/tmp` 不持久，导入默认关闭；按第 3.3 节配置真实 S3 桶并设置 `S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 后，才可启用 S3 导入。保持小连接池，避免自动反复云构建、密集轮询和生产写入测试；已有桶无需新建存储产品。完整设置见 [Vercel 部署指引](docs/vercel-assessment.md)。
 
 ### 仍可用：前端 Vercel、后端 VPS / Compose
 
@@ -195,24 +195,24 @@ sudo install -d -o 10001 -g 10001 -m 0750 ./storage
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 仅后端服务端密钥，示例留空；撤销并更换已暴露旧密钥，不能复用 |
 | `S3_PREFIX` | 默认 `lostmidi`；非空，每段仅字母、数字、`_`、`-`，段间用 `/`，不得有空段或 `..` |
 | `S3_PATH_STYLE` | `true` / `false`，默认 `true`，需验证供应商兼容性 |
-| `S3_PRIVATE_CONFIRMED` | 模板默认 `false`；必须先人工验证桶/专用前缀不匿名可读，再设 `true` |
+| `S3_PUBLIC_DISTRIBUTION_CONFIRMED` | 模板默认 `false`；确认上传对象将公开分发（允许匿名读取）后再设 `true` |
 
-`S3_PRIVATE_CONFIRMED=true` 仅是操作者 ACK，**不是权限校验**；PUT 的 private ACL 不能覆盖允许公开读取的桶策略。先在服务商控制台核对桶策略、ACL、专用前缀及任何公开访问入口，并对已知对象进行无凭据读取验证（不存在对象的 404 不证明私有）。若无法证明禁止匿名读取，不启用 S3 导入。密钥按专用前缀授予所需对象读/写/删除权限，不授予公共访问；实现不列桶、不扫目录。真实认证、私有策略、PUT private ACL、`If-None-Match: *` 条件写入与 Range GET 兼容性目前都未验证；客户端不会在出错后回退到无条件覆盖写入，但供应商是否遵守这些请求语义仍须实测。TLS 证书验证保持开启；运行镜像已通过 `SSL_CERT_FILE` 指向系统 CA，原生环境应配置可信 CA，不关闭验证。
+`S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 仅是操作者 ACK，**不是权限校验**。本项目产品决策为“上传即同意公开分发”：对象存入后允许任何人匿名读取，桶策略对 `Principal:*` 开放 `GetObject`/`ListBucket`/`GetBucketLocation`。密钥按专用前缀授予对象读/写/删除权限；实现不列桶、不扫目录。已对真实雨云 ROS（Ceph RGW）桶联调验证：签名读写、`PUT` 携 `Content-Type`（必须纳入 SigV4 签名头，否则 RGW 返回 `403 AccessDenied`）、`If-None-Match: *` 条件写入返回 `412`、Range GET 与 DELETE 均正常；客户端不会在出错后回退到无条件覆盖写入。TLS 证书验证保持开启；运行镜像已通过 `SSL_CERT_FILE` 指向系统 CA，原生环境应配置可信 CA，不关闭验证。
 
-只有在隔离测试库 + 独立测试前缀验证后，才为正式后端设置真实 S3 配置、`STORAGE_BACKEND=s3` 与 `MIDI_IMPORT_ENABLED=true`。选择 S3 时即使导入关闭也需要完整 S3 配置与私有确认；未准备好时保留 `local` + 导入关闭。改变 backend/bucket/prefix 不会搬迁已有对象，数据库与存储定位必须一致；不要让测试库与生产共用对象命名空间。
+只有在隔离测试库 + 独立测试前缀验证后，才为正式后端设置真实 S3 配置、`STORAGE_BACKEND=s3` 与 `MIDI_IMPORT_ENABLED=true`。选择 S3 时即使导入关闭也需要完整 S3 配置与公开分发确认；未准备好时保留 `local` + 导入关闭。改变 backend/bucket/prefix 不会搬迁已有对象，数据库与存储定位必须一致；不要让测试库与生产共用对象命名空间。
 
 根 `.dockerignore` 排除真实环境文件、工具缓存、存储数据及平台产物，仍保留项目构建源码；前端独立 context 为 `./frontend`，继续使用其自己的 `.dockerignore`，不依赖父目录。
 
-### 3.4 管理员私有单文件导入与失败清理
+### 3.4 管理员单文件导入与失败清理
 
-接口为 `GET/POST /api/v1/admin/midis/{id}/files`，两者均需 `Authorization: Bearer <管理员会话>`。GET 读取私有文件管理数据；POST 请求体是单个 MIDI 的原始字节，不是 multipart：
+接口为 `GET/POST /api/v1/admin/midis/{id}/files`，两者均需 `Authorization: Bearer <管理员会话>`。GET 读取文件管理数据；POST 请求体是单个 MIDI 的原始字节，不是 multipart：
 
 - `Content-Type: application/octet-stream`
 - `X-File-Name: encodeURIComponent(原文件名)`
 - `X-Entry-Revision: 当前档案 revision`
-- `X-Rights-Confirmed: true`（确认有权私有归档，不是公开分发授权）
+- `X-Rights-Confirmed: true`（确认有权公开分发此文件）
 
-只接受单个 `.mid` / `.midi`、SMF 0/1/2，文件不超过 **1 MiB（1,048,576 字节）**；前端 Server Action 请求上限是 `2mb`，用于容纳表单开销，并不放宽文件限制。浏览器经 Next.js 服务端向 C++ 转发 Bearer；密钥不会传到前端。文件完全私有，不提供公开下载、试听或对象 URL，不修改版权、分发许可或归档状态。
+只接受单个 `.mid` / `.midi`、SMF 0/1/2，文件不超过 **1 MiB（1,048,576 字节）**；前端 Server Action 请求上限是 `2mb`，用于容纳表单开销，并不放宽文件限制。浏览器经 Next.js 服务端向 C++ 转发 Bearer；密钥不会传到前端。上传即同意公开分发：对象存入后允许匿名读取，但本后台页仅展示文件元数据，不在该页提供下载、试听或对象 URL，也不修改版权、分发许可或归档状态。
 
 相同档案相同 SHA-256 内容幂等；跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`。新增文件登记与父档案 revision 递增原子提交，共用基本信息、来源、寻回、署名的版本边界；旧表单需刷新并合并，不能直接覆盖。HTTP 使用 `MidiImportService`，旧内部 `MidiFileService` 不是此导入入口。
 
@@ -250,7 +250,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-当前应用需要执行全部迁移至 `006_midi_import_journal.sql`：002 新增管理员会话及档案 revision，003 新增人物 revision，004 允许未知寻回日期为 NULL，005 保存站点配置与持久安装锁，006 新增导入 journal 与私有归档确认字段，均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，旧环境管理员首次升级安装功能时保留完整凭据，不要修改已应用迁移。启动和 `/ready` 检查 006 记录、`midi_import_objects` 及 `midi_files.private_archive_confirmed`，继续检查 005 安装表与 004 日期可空性；关闭导入也不能跳过。缺少迁移会启动失败，运行中结构缺失或不可查询时返回 503，不解释为未安装。
+当前应用需要执行全部迁移至 `006_midi_import_journal.sql`：002 新增管理员会话及档案 revision，003 新增人物 revision，004 允许未知寻回日期为 NULL，005 保存站点配置与持久安装锁，006 新增导入 journal 与分发确认字段（列名保留 `private_archive_confirmed`，现记录公开分发确认），均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，旧环境管理员首次升级安装功能时保留完整凭据，不要修改已应用迁移。启动和 `/ready` 检查 006 记录、`midi_import_objects` 及 `midi_files.private_archive_confirmed`，继续检查 005 安装表与 004 日期可空性；关闭导入也不能跳过。缺少迁移会启动失败，运行中结构缺失或不可查询时返回 503，不解释为未安装。
 
 ## 5. 部署验收
 

@@ -1,6 +1,6 @@
 # Lost MIDI Archive
 
-一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前代码包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、单管理员后台、档案管理，以及默认关闭的管理员私有单文件 MIDI 导入（local / S3）。导入已在本地实现，真实桶认证、私有策略及联调仍待验证。
+一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前代码包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、单管理员后台、档案管理，以及默认关闭的管理员单文件 MIDI 导入（local / S3，上传即同意公开分发）。导入已实现并对真实 S3 桶完成联调验证。
 
 这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
 
@@ -212,7 +212,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 | S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY | 仅后端密钥，示例留空，禁止复用已暴露旧密钥 |
 | S3_PREFIX | 默认 lostmidi；非空安全目录段，仅字母、数字、下划线、连字符，段间用 /；无空段或路径穿越 |
 | S3_PATH_STYLE | true / false，默认 true |
-| S3_PRIVATE_CONFIRMED | 默认 false；人工验证桶/专用前缀禁止匿名读取后才能设 true。只是 ACK，不是权限校验；PUT private ACL 不覆盖公共桶策略 |
+| S3_PUBLIC_DISTRIBUTION_CONFIRMED | 默认 false；确认上传对象将公开分发（允许匿名读取）后设 true。只是 ACK，不是权限校验 |
 | DB_POOL_SIZE | 数据库连接数；容器与模板默认 2，原生 Config 未设置时为 4，允许 1–64 |
 | HTTP_THREADS | HTTP 事件循环线程，默认 2，允许 1–64 |
 | WORKER_THREADS | 同步工作线程；容器与模板默认 2，原生 Config 未设置时为 4，允许 1–64 |
@@ -234,7 +234,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events；另有 admin_sessions、site_installation 与 midi_import_objects（导入 journal）。
 
-迁移 `004_optional_recovery_date.sql` 允许寻回日期为 NULL，保留原有日期。来源、寻回、基础资料、署名及新文件导入共用作品 revision。005 保存安装配置与持久锁；新增 `006_midi_import_journal.sql` 添加导入 journal 和私有归档确认字段，不改旧迁移。启动及 `/ready` 检查 006 记录与实际结构，同时保留 005 安装表和 004 日期可空检查；即使关闭导入也须先迁移。生产目前到 005，先备份并用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 更新已有库至 006，再发布新版，不使用要求空库的 `.tools` 临时脚本。
+迁移 `004_optional_recovery_date.sql` 允许寻回日期为 NULL，保留原有日期。来源、寻回、基础资料、署名及新文件导入共用作品 revision。005 保存安装配置与持久锁；新增 `006_midi_import_journal.sql` 添加导入 journal 和分发确认字段（列名保留 `private_archive_confirmed`，现记录公开分发确认），不改旧迁移。启动及 `/ready` 检查 006 记录与实际结构，同时保留 005 安装表和 004 日期可空检查；即使关闭导入也须先迁移。生产已迁移至 006；升级其他库时先备份并用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 更新至 006，再发布新版，不使用要求空库的 `.tools` 临时脚本。
 
 `site_installation` 至多一行 `id=1`，保存 `site_name`、`site_description` 和 `auth_source`（database 或 environment）。database 时保存用户名及随机盐 PBKDF2-HMAC-SHA256、600,000 次哈希；environment 时 username/password_hash 均为 NULL。事务和主键保证安装并发只有一个成功，提交确认后返回；移除令牌或重启不清除锁，无重装/reset 接口。
 
@@ -260,11 +260,11 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 
 列表目前采用 count、列表和逐条署名查询，最多 100 条。并发写入时计数和行不保证同一快照；数据量增长后，根据真实测量批量读取署名并改进事务边界。
 
-管理员 HTTP 导入使用 `MidiImportService`：校验单文件 SMF 0/1/2、大小与私有归档权利确认，按 SHA-256 去重；同档案同内容幂等，跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`。新文件登记与父 revision 递增原子提交。旧内部 `MidiFileService` 保留，但不用于 HTTP 导入。
+管理员 HTTP 导入使用 `MidiImportService`：校验单文件 SMF 0/1/2、大小与公开分发权利确认，按 SHA-256 去重；同档案同内容幂等，跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`。新文件登记与父 revision 递增原子提交。旧内部 `MidiFileService` 保留，但不用于 HTTP 导入。
 
 对象与数据库不能共用事务。新导入在写存储前先持久化 journal，以同 digest 的数据库 advisory lock 串行化导入与清理。显式 `lostmidi_api --cleanup-imports` 只处理超过 24 小时且无引用的 journal，每次最多 100 条，不列桶、不扫目录；必须使用相同数据库与存储 backend/bucket/prefix（local 使用相同路径），禁止拿生产清理做测试。操作边界见 [RUN.md](RUN.md)。
 
-本地存储接受 SHA-256 key，拒绝路径穿越和对象符号链接；目录由后端独占管理。S3 使用已有私有桶及专用前缀，密钥仅在后端配置。`S3_PRIVATE_CONFIRMED` 是人工 ACK，不证明权限正确，PUT private ACL 不能覆盖公共桶策略；真实认证、权限及联调仍待验证。云 `/tmp` 不能代替持久存储。
+本地存储接受 SHA-256 key，拒绝路径穿越和对象符号链接；目录由后端独占管理。S3 使用已有桶及专用前缀，密钥仅在后端配置。`S3_PUBLIC_DISTRIBUTION_CONFIRMED` 是人工 ACK，不证明权限正确；产品决策为上传即同意公开分发，对象允许匿名读取。已对真实雨云 ROS（Ceph RGW）桶联调验证：签名读写、PUT 必须携带并签名 `Content-Type`（否则 RGW 返回 `403 AccessDenied`）、`If-None-Match: *` 条件写入返回 `412`、Range GET 与 DELETE 均正常。云 `/tmp` 不能代替持久存储。
 
 ## API
 
@@ -337,7 +337,7 @@ python scripts/smoke.py --api-only
 
 私有导入检查使用 `python scripts/midi_import_smoke.py --api <专用测试后端> --allow-writes`；可选浏览器检查为 `python scripts/midi_import_browser_smoke.py --frontend <专用测试前端> --allow-writes`，使用已安装的 Playwright / Edge，可指定 `--channel` 与 `--screenshots`。两者从 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD` 读取测试凭据，会保留测试档案和文件，必须使用独立数据库与独立 local 目录或 S3 前缀。禁用模式可在后端关闭导入后给 API 脚本加 `--expect-disabled`。
 
-2026-09-22 本地已通过 50 项后端测试（含隔离 PostgreSQL 集成测试）、迁移与重复迁移、导入/禁用 HTTP 检查、前端 lint/类型检查/生产构建，以及桌面和手机宽度的浏览器导入验收。使用本地对象目录，真实 S3 认证、私有策略及供应商条件 PUT / Range GET 兼容性未验证；没有执行本轮云构建或发布。
+2026-09-22 本地已通过 50 项后端测试（含隔离 PostgreSQL 集成测试）、迁移与重复迁移、导入/禁用 HTTP 检查、前端 lint/类型检查/生产构建，以及桌面和手机宽度的浏览器导入验收。已对真实雨云 ROS（Ceph RGW）桶联调验证签名读写、条件 PUT（`412`）、Range GET 与 DELETE，并定位/修复了 PUT 必须签名 `Content-Type` 的兼容性问题；此前使用本地对象目录的测试不覆盖真实桶。
 
 认证与写入检查使用 `python scripts/admin_smoke.py --api http://127.0.0.1:8080 --allow-writes`。先将该后端连接到**专用测试数据库**并配置测试管理员，通过环境变量 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供同一账号的明文测试凭据。脚本会创建并保留测试档案，验证未登录访问、错误登录、登录限流、注销、字段校验、slug 唯一性及 revision 冲突；不要对正式数据运行。后台浏览器操作验收见 [RUN.md](RUN.md)。
 
@@ -368,7 +368,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过一次性数据库安装建立，完整有效的环境凭据可优先覆盖；浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。管理员私有单文件 MIDI 导入已在本地实现，默认关闭，真实桶认证与私有策略待验证；不开放下载试听或对象 URL。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
+统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过一次性数据库安装建立，完整有效的环境凭据可优先覆盖；浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。管理员单文件 MIDI 导入已实现，默认关闭，已对真实 S3 桶联调验证；上传即同意公开分发，本后台页仅展示元数据、不开放下载试听或对象 URL。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 

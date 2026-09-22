@@ -20,7 +20,7 @@ export default async function MidiFilesPage({ params }: { params: Promise<{ id: 
     throw error;
   }
   return <>
-    <AdminPageHeader eyebrow={`Collection / ${id} / Files`} title={`MIDI 文件 · ${data.entry.title}`} description="为当前作品私下归档单个 MIDI 文件，核对已有文件与去重结果。本页仅展示文件元数据，不提供公开下载链接或对象地址。" />
+    <AdminPageHeader eyebrow={`Collection / ${id} / Files`} title={`MIDI 文件 · ${data.entry.title}`} description="为当前作品上传单个 MIDI 文件（上传即同意公开分发），核对已有文件与去重结果。本页仅展示文件元数据，不在此处提供下载链接或对象地址。" />
     <nav aria-label="作品资料管理" className="mb-6 flex flex-wrap gap-5 text-sm">
       <Link className="underline" href={`/admin/midis/${id}/edit`}>返回基础资料</Link>
       <Link className="underline" href={`/admin/midis/${id}/credits`}>管理作品署名</Link>
@@ -32,7 +32,7 @@ export default async function MidiFilesPage({ params }: { params: Promise<{ id: 
         <h2 id="midi-files-heading" className="mb-5 text-lg font-semibold">已存文件（{data.files.length}）</h2>
         {data.files.length ? <ul className="space-y-5">{data.files.map(file => <li key={file.id} className="min-w-0 space-y-2 border-t border-line pt-5">
           <h3 className="font-semibold">{file.original_filename}</h3>
-          <p className="text-xs leading-6 text-muted">编号 {file.id} · {file.file_size.toLocaleString("zh-CN")} 字节<br />归档时间：{file.created_at}</p>
+          <p className="text-xs leading-6 text-muted">编号 {file.id} · {file.file_size.toLocaleString("zh-CN")} 字节<br />上传时间：{file.created_at}</p>
           <p className="text-xs leading-6 text-muted">SHA-256：<span className="font-mono">{file.sha256}</span></p>
         </li>)}</ul> : <p className="text-sm text-muted">当前档案尚无已存文件。</p>}
       </section>

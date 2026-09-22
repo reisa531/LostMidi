@@ -2,7 +2,7 @@
 
 当前方案（2026-09-22）：同一 Git 仓库、两个独立 Vercel 项目。`frontend/` 是 Next.js 项目；生产后端已使用 Vercel 容器 + Neon Free，不是把 Compose 或 PostgreSQL 持久卷搬到 Vercel。旧 VPS / Compose 后端方案仍可用。
 
-**发布边界：** 生产数据库上次迁移至 005，新增 `006_midi_import_journal.sql` 尚未执行，当前代码尚未发布。私有单文件导入已在本地实现，但已有 S3 桶的名称、认证和私有策略尚未验证；本轮配置整理不代表真实桶联调、云构建或部署成功。
+**发布边界：** 生产数据库已迁移至 006（`006_midi_import_journal.sql` 已应用），当前代码已发布。管理员单文件导入已实现并对真实雨云 ROS（Ceph RGW）桶联调验证签名读写；上线时默认 `MIDI_IMPORT_ENABLED=false`、`STORAGE_BACKEND=local`，接桶并设好存储参数后再启用导入。
 
 ## 1. 前端直接关联当前仓库
 
@@ -35,9 +35,9 @@
 
 后端变量参考根 [`.env.production.example`](../.env.production.example)，只在后端项目设置数据库、管理员/安装令牌与存储参数；不上传真实 `.env`，不使用 `NEXT_PUBLIC_`。保持 `STORAGE_BACKEND=local`、`MIDI_IMPORT_ENABLED=false` 可作为未接桶时的安全状态，但容器 `/tmp/lostmidi-storage` **不持久，不能用于云端归档**。
 
-接入已有桶时需填写 `S3_ENDPOINT`（HTTPS、无路径）、真实 `S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`；桶名未知，示例留空，已暴露的旧密钥必须撤销并更换。`S3_REGION` 默认 `us-east-1`，`S3_PREFIX` 默认 `lostmidi`（非空目录段仅含字母、数字、`_`、`-`，以 `/` 分隔，无空段），`S3_PATH_STYLE` 默认 `true`。先人工核对桶/专用前缀策略并以已知对象验证拒绝匿名读取，再设 `S3_PRIVATE_CONFIRMED=true` 和 `STORAGE_BACKEND=s3`；完成隔离验证后才启用 `MIDI_IMPORT_ENABLED=true`。ACK 不等于权限校验，PUT private ACL 不能覆盖公共桶策略；当前尚未验证真实认证与私有策略，不提供公开 URL 或下载试听。
+接入已有桶时需填写 `S3_ENDPOINT`（HTTPS、无路径）、真实 `S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`；已暴露的旧密钥必须撤销并更换。`S3_REGION` 默认 `us-east-1`，`S3_PREFIX` 默认 `lostmidi`（非空目录段仅含字母、数字、`_`、`-`，以 `/` 分隔，无空段），`S3_PATH_STYLE` 默认 `true`。产品决策为“上传即同意公开分发”，对象允许匿名读取；确认无误后设 `S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 和 `STORAGE_BACKEND=s3`，再启用 `MIDI_IMPORT_ENABLED=true`。ACK 不等于权限校验。已对真实雨云 ROS（Ceph RGW）桶联调验证签名读写、条件 PUT（`412`）、Range GET 与 DELETE，并修复了 PUT 必须签名 `Content-Type`（否则 `403 AccessDenied`）的兼容性问题；后台页不提供公开 URL 或下载试听。
 
-导入与清理完整契约见 [RUN.md](../RUN.md)：管理员单文件最大 1 MiB、Server Action 上限 `2mb`，仅私有归档；清理需显式 `lostmidi_api --cleanup-imports`，只处理超过 24 小时无引用 journal、每次最多 100 条，不列桶不扫目录，须同一数据库/backend/bucket/prefix。禁止拿生产清理做测试。先本地与隔离环境验收，避免重复云构建、生产写入或高频探测消耗额度。
+导入与清理完整契约见 [RUN.md](../RUN.md)：管理员单文件最大 1 MiB、Server Action 上限 `2mb`，上传即同意公开分发（对象允许匿名读取）；清理需显式 `lostmidi_api --cleanup-imports`，只处理超过 24 小时无引用 journal、每次最多 100 条，不列桶不扫目录，须同一数据库/backend/bucket/prefix。禁止拿生产清理做测试。先本地与隔离环境验收，避免重复云构建、生产写入或高频探测消耗额度。
 
 ## 2. 一键创建副本并部署前端
 
@@ -63,7 +63,7 @@ Vercel 中的 `localhost`、`127.0.0.1` 或 `http://backend:8080` 不会指向�
 
 ### `/install` 配置与一次性初始化
 
-1. 部署者在后端准备数据库连接，使用现有幂等迁移脚本应用全部迁移至 `006_midi_import_journal.sql`，确认 `/ready` 可用。安装页不创建数据库、不自动迁移或 seed；005 安装锁保留，006 新增导入 journal 与私有归档确认字段，不改旧迁移。
+1. 部署者在后端准备数据库连接，使用现有幂等迁移脚本应用全部迁移至 `006_midi_import_journal.sql`，确认 `/ready` 可用。安装页不创建数据库、不自动迁移或 seed；005 安装锁保留，006 新增导入 journal 与分发确认字段（列名保留 `private_archive_confirmed`，现记录“有权公开分发”的确认，仅写入不经 API 暴露），不改旧迁移。
 2. 新站保持后端 `ADMIN_PASSWORD_HASH` 为空，使用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成安装令牌，仅将其设为后端 `INSTALLATION_TOKEN`。空值禁用安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`。它不是 Vercel API token，不得放进 `NEXT_PUBLIC_`、URL、部署按钮参数或任何前端环境变量。
 3. 前端缺少后端配置时可打开 `/install` 的配置表单，它**只能生成** `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE` 三项变量文本。用户自行复制到 Vercel Project Settings → Environment Variables，选择正确环境、保存并 **Redeploy**；仅在表单填值或仅保存项目变量不会更新已部署进程。页面不写 `.env`、不持久化平台配置、不调用 Vercel API。
 4. URL 文本生成不会探测用户输入的地址；连接诊断只访问已部署环境中的 `BACKEND_API_URL`，不是任意地址的 SSRF 探针。若诊断仍指向旧地址，先检查变量作用环境与重新部署结果。
