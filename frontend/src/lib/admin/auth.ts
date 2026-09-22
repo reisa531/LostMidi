@@ -4,10 +4,10 @@ import { redirect } from "next/navigation";
 import { ApiError, apiRequest } from "@/lib/api/client";
 
 export const sessionCookie = "lostmidi_admin";
-export async function adminRequest<T>(path: string, options: RequestInit = {}) {
+export async function adminRequest<T>(path: string, options: RequestInit = {}, timeoutMs?: number) {
   const token = (await cookies()).get(sessionCookie)?.value;
   if (!token) throw new ApiError(401, "UNAUTHORIZED");
-  return apiRequest<T>(path, { ...options, headers: { ...options.headers, Authorization: `Bearer ${token}` } });
+  return apiRequest<T>(path, { ...options, headers: { ...options.headers, Authorization: `Bearer ${token}` } }, timeoutMs);
 }
 export async function requireAdmin() {
   try { return await adminRequest<{ username: string }>("/api/v1/admin/session"); }

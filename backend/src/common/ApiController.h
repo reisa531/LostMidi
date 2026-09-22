@@ -9,6 +9,7 @@
 #include "midi/MidiWriteService.h"
 #include "recovery/RecoveryWriteService.h"
 #include "installation/InstallationService.h"
+#include "midi/MidiImportService.h"
 
 namespace lostmidi {
 class ApiController {
@@ -16,7 +17,8 @@ public:
     ApiController(midi::MidiService& midis, person::PersonService& people,
                   drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth,
                   midi::MidiWriteService& writer, person::PersonWriteService& personWriter,
-                  recovery::RecoveryWriteService& recoveryWriter, installation::InstallationService& installation);
+                  recovery::RecoveryWriteService& recoveryWriter, installation::InstallationService& installation,
+                  midi::MidiImportService& importer);
     void registerRoutes();
 private:
     using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
@@ -24,6 +26,7 @@ private:
     void registerAdminRoutes();
     void registerAdminRecoveryRoutes();
     void registerInstallationRoutes();
+    void registerAdminFileRoutes();
     midi::MidiService& midis_;
     person::PersonService& people_;
     drogon::orm::DbClientPtr db_;
@@ -32,7 +35,9 @@ private:
     person::PersonWriteService& personWriter_;
     recovery::RecoveryWriteService& recoveryWriter_;
     installation::InstallationService& installation_;
+    midi::MidiImportService& importer_;
     std::atomic<int> pending_{0};
+    std::atomic<int> importsPending_{0};
     // Declared last: joins its worker threads before the dependencies die.
     trantor::ConcurrentTaskQueue workers_;
 };

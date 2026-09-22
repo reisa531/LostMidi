@@ -1,12 +1,12 @@
 # Lost MIDI Archive
 
-一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前版本包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、单管理员后台、档案基本信息新增与编辑、数据库迁移和文件存储边界。
+一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前代码包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、单管理员后台、档案管理，以及默认关闭的管理员私有单文件 MIDI 导入（local / S3）。导入已在本地实现，真实桶认证、私有策略及联调仍待验证。
 
 这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
 
 部署与运维请从 [RUN.md](RUN.md) 开始：包含环境配置、启动验收、服务器访问、更新、备份恢复与故障排查。
 
-前后端保留在同一 Git 仓库，但 `frontend/` 是完整、可独立复制和部署的 Next.js 项目。前端部署到 Vercel 时，导入当前仓库并将 Root Directory 设为 `frontend`；后端、数据库和文件存储继续单独运行。详见 [前端 Vercel 部署指引与一键部署入口](docs/vercel-assessment.md)。
+前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端已使用独立 Vercel 容器项目 + Neon Free，根 `vercel.backend.json` 是后端配置。旧 VPS / Compose 部署仍可用。生产数据库上次迁移至 005，新增 006 尚未执行、当前代码尚未发布；更新应用前必须先安全迁移。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
 ## Architecture
 
@@ -17,11 +17,11 @@ flowchart TD
   Controller --> Service[C++ Services: midi / person / recovery]
   Service --> Repository[PostgreSQL Repositories]
   Repository --> DB[(PostgreSQL)]
-  Import[Future import / upload] -.-> FileService[MidiFileService]
-  FileService --> Repository
-  FileService --> Storage[IObjectStorage]
-  Storage --> Local[LocalObjectStorage / storage directory]
-  Storage -. future .-> S3[S3-compatible storage]
+  Next -->|Private admin import / Bearer| Import[MidiImportService]
+  Import --> Repository
+  Import --> Storage[IObjectStorage]
+  Storage --> Local[LocalObjectStorage / durable storage directory]
+  Storage --> S3[Private S3-compatible storage]
 ```
 
 后端是 **Modular Monolith**：一个程序、一个数据库，内部按领域分模块。Next.js 只负责页面和渲染，业务数据全部来自 C++ API。没有 Next.js 数据库连接，也没有 Redis、消息队列或额外搜索服务。
@@ -41,7 +41,7 @@ backend/src/auth/         密码验证、管理员会话与接口授权
 backend/src/midi/         档案与文件登记 Service、Repository、模型
 backend/src/person/       人物、昵称、署名的查询与模型
 backend/src/recovery/     历史来源、寻回记录；未来外部档案接口
-backend/src/storage/      对象存储接口、本地实现、SHA-256
+backend/src/storage/      对象存储接口、local / S3 实现、SHA-256
 backend/tests/            GoogleTest 业务与存储测试
 database/migrations/      版本化 schema SQL
 database/seeds/           单独启用的虚构数据
@@ -116,7 +116,7 @@ docker compose down
 
 普通 down 保留 PostgreSQL named volume 和宿主 storage/；不要为了升级 schema 删除 volume。修改数据库初始账号变量不会自动改变已有数据库，需要同步修改数据库账号和 DATABASE_URL。
 
-后端容器以 UID 10001 运行。Linux 下测试文件写入时应让 storage/ 对该 UID 可写，由后端独占管理；当前后台仅写档案元数据，不写入文件。数据库和对象目录分别备份、恢复。
+后端容器以 UID 10001 运行。Linux 下测试文件写入时应让 storage/ 对该 UID 可写，由后端独占管理；启用私有导入后会写入所选 local / S3 存储，不提供公开对象访问。数据库和对象目录分别备份、恢复。
 
 ### Native workflow: Linux / macOS
 
@@ -129,7 +129,7 @@ export PGPASSWORD=lostmidi_dev_only
 SEED_DEMO=false sh database/migrate.sh
 ```
 
-仅专用演示/测试库可将 `SEED_DEMO` 显式改为 true。不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库；应用全部迁移至 005 后再启动后端。从根目录构建后端：
+仅专用演示/测试库可将 `SEED_DEMO` 显式改为 true。不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库；应用全部迁移至 006 后再启动后端。从根目录构建后端：
 
 ```sh
 python3 -m venv .venv
@@ -190,7 +190,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
 
-原生新站在可信终端安全保存生成的安装令牌，在 `frontend/.env.local` 配置 `BACKEND_API_URL`、`ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`，启动后访问 `/install`；成功后单独登录，可移除后端令牌并重启。更新已有数据库时先执行全部待应用迁移（包含 002、003、004 和 `005_site_installation.sql`），第一次启动新版仍保留完整环境管理员凭据，确认 legacy 标记写入后再改配置。不要用清空旧站凭据的方式进入安装页。
+原生新站在可信终端安全保存生成的安装令牌，在 `frontend/.env.local` 配置 `BACKEND_API_URL`、`ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`，启动后访问 `/install`；成功后单独登录，可移除后端令牌并重启。更新已有数据库时先执行全部待应用迁移（包含 002–005 和 `006_midi_import_journal.sql`），第一次启动新版仍保留完整环境管理员凭据，确认 legacy 标记写入后再改配置。不要用清空旧站凭据的方式进入安装页。
 
 ## Environment Variables
 
@@ -200,14 +200,22 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 | POSTGRES_PORT | 宿主数据库端口，5432；容器内固定 5432 |
 | DATABASE_URL | 后端必填 PostgreSQL URI；Compose 主机 postgres，原生改 127.0.0.1 |
 | BACKEND_API_URL | Next.js 服务端后端地址；Compose http://backend:8080，原生 http://127.0.0.1:8080 |
-| BACKEND_HOST | 后端必填监听地址；原生建议 127.0.0.1，Compose 注入 0.0.0.0 |
-| BACKEND_PORT | 后端必填端口，Compose 示例 8080 |
+| BACKEND_HOST | 后端必填监听地址；原生建议 127.0.0.1，容器监听 0.0.0.0 |
+| BACKEND_PORT | 未提供 PORT 时的后端端口，Compose 示例 8080 |
 | FRONTEND_PORT | Compose 前端端口，3000 |
-| PORT / HOSTNAME | Compose 为 standalone Next.js 注入的端口/监听地址 |
-| STORAGE_PATH | 后端必填对象路径；原生建议绝对路径，Compose /app/storage 挂载 ./storage |
-| DB_POOL_SIZE | 数据库连接数，默认 4，允许 1–64 |
+| PORT / HOSTNAME | Compose 为 standalone Next.js 注入端口/监听地址；后端也读取平台 PORT，优先于 BACKEND_PORT，勿覆盖云平台值 |
+| STORAGE_BACKEND | 仅后端，local / s3，默认 local |
+| MIDI_IMPORT_ENABLED | 仅后端，true / false，默认 false；验证私有持久存储后才启用 |
+| STORAGE_PATH | local 必填；原生建议绝对路径，Compose /app/storage 挂载 ./storage；云容器 /tmp 不持久 |
+| S3_ENDPOINT / S3_REGION | HTTPS endpoint 无路径；region 默认 us-east-1，按真实服务确认 |
+| S3_BUCKET | 现有真实桶名，尚未知；示例留空，不可用占位名启用 |
+| S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY | 仅后端密钥，示例留空，禁止复用已暴露旧密钥 |
+| S3_PREFIX | 默认 lostmidi；非空安全目录段，仅字母、数字、下划线、连字符，段间用 /；无空段或路径穿越 |
+| S3_PATH_STYLE | true / false，默认 true |
+| S3_PRIVATE_CONFIRMED | 默认 false；人工验证桶/专用前缀禁止匿名读取后才能设 true。只是 ACK，不是权限校验；PUT private ACL 不覆盖公共桶策略 |
+| DB_POOL_SIZE | 数据库连接数；容器与模板默认 2，原生 Config 未设置时为 4，允许 1–64 |
 | HTTP_THREADS | HTTP 事件循环线程，默认 2，允许 1–64 |
-| WORKER_THREADS | 同步查询工作线程，默认 4，允许 1–64 |
+| WORKER_THREADS | 同步工作线程；容器与模板默认 2，原生 Config 未设置时为 4，允许 1–64 |
 | SEED_DEMO | migration 与环境模板默认 false；仅专用演示/测试库显式 true |
 | PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD | migration 和 psql 标准变量；runner 的 DATABASE_URL 优先 |
 | NEXT_TELEMETRY_DISABLED | Compose 中设为 1 |
@@ -224,9 +232,9 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 ## Database
 
-详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events；另有 admin_sessions 与 site_installation。
+详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events；另有 admin_sessions、site_installation 与 midi_import_objects（导入 journal）。
 
-迁移 `004_optional_recovery_date.sql` 允许寻回日期为 NULL，保留原有日期。所有来源与寻回编辑保留记录 ID、寻回创建时间，和基础资料及署名共用作品 revision。新增 `005_site_installation.sql` 只加安装表，不改旧迁移；当前启动及 `/ready` 检查 005 记录与表可查询，并继续核对 004 已应用且日期列实际可空。先执行全部迁移再启动新后端。
+迁移 `004_optional_recovery_date.sql` 允许寻回日期为 NULL，保留原有日期。来源、寻回、基础资料、署名及新文件导入共用作品 revision。005 保存安装配置与持久锁；新增 `006_midi_import_journal.sql` 添加导入 journal 和私有归档确认字段，不改旧迁移。启动及 `/ready` 检查 006 记录与实际结构，同时保留 005 安装表和 004 日期可空检查；即使关闭导入也须先迁移。生产目前到 005，先备份并用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 更新已有库至 006，再发布新版，不使用要求空库的 `.tools` 临时脚本。
 
 `site_installation` 至多一行 `id=1`，保存 `site_name`、`site_description` 和 `auth_source`（database 或 environment）。database 时保存用户名及随机盐 PBKDF2-HMAC-SHA256、600,000 次哈希；environment 时 username/password_hash 均为 NULL。事务和主键保证安装并发只有一个成功，提交确认后返回；移除令牌或重启不清除锁，无重装/reset 接口。
 
@@ -252,16 +260,18 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 
 列表目前采用 count、列表和逐条署名查询，最多 100 条。并发写入时计数和行不保证同一快照；数据量增长后，根据真实测量批量读取署名并改进事务边界。
 
-MidiFileService 是未来导入基础：计算散列、检查重复、写入内容寻址对象，并用数据库 UNIQUE 处理并发重复。目前不验证 MIDI 格式、没有公开上传接口。文件与数据库不能共用事务；数据库写入失败可能留下对象供重试，将来需要清理流程。重复登记返回原记录，不改写它的归属。
+管理员 HTTP 导入使用 `MidiImportService`：校验单文件 SMF 0/1/2、大小与私有归档权利确认，按 SHA-256 去重；同档案同内容幂等，跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`。新文件登记与父 revision 递增原子提交。旧内部 `MidiFileService` 保留，但不用于 HTTP 导入。
 
-本地存储只接受小写 SHA-256 key，拒绝路径穿越和对象符号链接，临时文件写完后 rename，重复写入核对内容。目录必须由后端独占管理；mutex 只保护同一实例，不提供分布式协调或断电后的事务保证。
+对象与数据库不能共用事务。新导入在写存储前先持久化 journal，以同 digest 的数据库 advisory lock 串行化导入与清理。显式 `lostmidi_api --cleanup-imports` 只处理超过 24 小时且无引用的 journal，每次最多 100 条，不列桶、不扫目录；必须使用相同数据库与存储 backend/bucket/prefix（local 使用相同路径），禁止拿生产清理做测试。操作边界见 [RUN.md](RUN.md)。
+
+本地存储接受 SHA-256 key，拒绝路径穿越和对象符号链接；目录由后端独占管理。S3 使用已有私有桶及专用前缀，密钥仅在后端配置。`S3_PRIVATE_CONFIRMED` 是人工 ACK，不证明权限正确，PUT private ACL 不能覆盖公共桶策略；真实认证、权限及联调仍待验证。云 `/tmp` 不能代替持久存储。
 
 ## API
 
 | 请求 | 行为 |
 | --- | --- |
 | GET /health | 进程存活，`{"status":"ok"}`；不代表数据库正常 |
-| GET /ready | 查询已迁移数据库，包含 005 安装表与 004 日期可空检查；失败 503 |
+| GET /ready | 查询已迁移数据库，含 006 导入结构、005 安装表与 004 日期可空检查；失败 503，不验证桶权限 |
 | GET /api/v1/installation | 公开、no-store；返回 installed、installation_enabled、site: {name, description}，无秘密 |
 | POST /api/v1/installation | X-Installation-Token 授权；仅 site_name、site_description、username、password，成功 201、同 GET 响应；并发仅一成功 |
 | GET /api/v1/midis?page=1&pageSize=20 | 有序分页，每项包含 credits |
@@ -273,6 +283,10 @@ MidiFileService 是未来导入基础：计算散列、检查重复、写入内�
 | POST /api/v1/admin/midis | 验证管理员后新增基本信息，成功 201 |
 | GET /api/v1/admin/midis/:id | 验证管理员后读取编辑数据和 revision |
 | PUT /api/v1/admin/midis/:id | 验证管理员后更新基本信息；slug 冲突或旧 revision 返回 409 |
+| GET /api/v1/admin/midis/{id}/files | Bearer 管理员读取私有文件管理数据 |
+| POST /api/v1/admin/midis/{id}/files | Bearer 管理员私有单文件导入，默认关闭；新文件原子递增父 revision |
+
+导入 POST 使用 `application/octet-stream` 原始字节，带 `X-File-Name=encodeURIComponent(文件名)`、`X-Entry-Revision`、`X-Rights-Confirmed=true`。只接受单个 `.mid` / `.midi`、SMF 0/1/2、最大 1 MiB；前端 Server Action 上限 `2mb` 不放宽文件限制。同档案同内容幂等、跨档案 `409 FILE_OWNERSHIP_CONFLICT`；不改变版权、分发许可或归档状态，不提供公开下载、试听或对象 URL。
 
 page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回 400；超出末页返回空 data 和原 total。slug 最多 160 个小写字母、数字和词间连字符；人物 ID 为正数 BIGINT 范围。
 
@@ -286,7 +300,7 @@ page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回
 {"error": {"code": "MIDI_NOT_FOUND", "message": "The requested MIDI entry does not exist."}}
 ```
 
-异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志记录 startup、数据库连接、HTTP 错误和意外异常，不记录连接串或异常原文。公开查询无需登录；后台接口在 C++ 验证会话，写入立即反映到公开站点。字段合约和错误码见 [后台平台说明](docs/admin.md)。尚无上传、下载接口。
+异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志不记录连接串或异常原文。公开查询无需登录；后台接口在 C++ 验证会话，基本资料写入立即反映到公开站点，但文件导入完全私有。已有管理员导入接口，无公开上传、下载或试听接口；导入及清理契约见 [RUN.md](RUN.md)，其他后台合约见 [后台平台说明](docs/admin.md)。
 
 ## Testing
 
@@ -298,7 +312,7 @@ npm run lint
 npm run typecheck
 ```
 
-后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期、档案及来源寻回写入冲突、跨作品归属和失败回滚；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。新增 installation 集成测试创建隔离 schema，测试用户需要 CREATE SCHEMA 权限；仍不可使用生产库。
+后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期、档案及来源寻回写入冲突、跨作品归属和失败回滚；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。installation 与 import 集成测试创建隔离 schema，测试用户需要 CREATE SCHEMA 权限；仍不可使用生产库。导入测试还覆盖 SMF 0/1/2、1 MiB 边界、独立 SigV4 签名向量、连续并发重试、真实 SQL/提交失败、journal 保留与只清理过期无引用对象。
 
 安装测试另备**两个各自全新、已迁移的专用测试库及对应后端**，保持环境密码哈希为空并配置安装令牌。`python scripts/installation_smoke.py --api <专用测试后端> --allow-install` 要求 `INSTALLATION_TEST_TOKEN` 与后端令牌一致；`python scripts/installation_browser_smoke.py --frontend <另一个专用测试前端> --allow-install` 还要求 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`，可加 `--channel msedge`、`--screenshots <目录>`（需 Playwright 和相应浏览器）。两个脚本均永久安装，不能顺序指向同库，也不能在已安装或生产站点运行。本地验收结果与尚未执行的部署检查见 [Implementation Report](docs/implementation-report.md)。
 
@@ -321,6 +335,10 @@ python scripts/smoke.py --api-only
 
 来源寻回检查使用 `python scripts/recovery_smoke.py --api http://127.0.0.1:8080 --allow-writes`，只能指向专用测试库；它会留下带 recovery-check 前缀的记录。与人物及浏览器验收一起先执行，再执行会耗尽登录限流额度的 admin_smoke。
 
+私有导入检查使用 `python scripts/midi_import_smoke.py --api <专用测试后端> --allow-writes`；可选浏览器检查为 `python scripts/midi_import_browser_smoke.py --frontend <专用测试前端> --allow-writes`，使用已安装的 Playwright / Edge，可指定 `--channel` 与 `--screenshots`。两者从 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD` 读取测试凭据，会保留测试档案和文件，必须使用独立数据库与独立 local 目录或 S3 前缀。禁用模式可在后端关闭导入后给 API 脚本加 `--expect-disabled`。
+
+2026-09-22 本地已通过 50 项后端测试（含隔离 PostgreSQL 集成测试）、迁移与重复迁移、导入/禁用 HTTP 检查、前端 lint/类型检查/生产构建，以及桌面和手机宽度的浏览器导入验收。使用本地对象目录，真实 S3 认证、私有策略及供应商条件 PUT / Range GET 兼容性未验证；没有执行本轮云构建或发布。
+
 认证与写入检查使用 `python scripts/admin_smoke.py --api http://127.0.0.1:8080 --allow-writes`。先将该后端连接到**专用测试数据库**并配置测试管理员，通过环境变量 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供同一账号的明文测试凭据。脚本会创建并保留测试档案，验证未登录访问、错误登录、登录限流、注销、字段校验、slug 唯一性及 revision 冲突；不要对正式数据运行。后台浏览器操作验收见 [RUN.md](RUN.md)。
 
 ## Development Philosophy
@@ -340,7 +358,7 @@ python scripts/smoke.py --api-only
 以下内容均未实现：
 
 - **User System**：面向用户的注册、多账号与角色权限；当前仅有数据库安装或环境覆盖的单管理员登录，人物档案与登录账号分离。
-- **Contribution System**：提交 MIDI / 历史资料，先设计格式校验与失败清理。
+- **Contribution System**：面向贡献者的 MIDI / 历史资料提交；当前仅实现管理员私有单文件导入，不是公开投稿。
 - **Moderation**：审核贡献、署名和权利信息。
 - **Community**：帖子、评论、讨论，有需求后加入内部模块。
 - **Wanted MIDI**：可考虑 OPEN、POSSIBLE_LEAD、CANDIDATE_FOUND、VERIFIED、RECOVERED。
@@ -350,7 +368,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过一次性数据库安装建立，完整有效的环境凭据可优先覆盖；浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)，下一阶段见 [开发路线](docs/roadmap.md)。
+统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过一次性数据库安装建立，完整有效的环境凭据可优先覆盖；浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。管理员私有单文件 MIDI 导入已在本地实现，默认关闭，真实桶认证与私有策略待验证；不开放下载试听或对象 URL。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 

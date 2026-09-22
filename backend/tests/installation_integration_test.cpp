@@ -57,7 +57,7 @@ protected:
     }
     void SetUp() override {
         const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
-        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a dedicated test database migrated through 005.";
+        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a dedicated test database migrated through 006.";
         url_ = url;
         owner_ = drogon::orm::DbClient::newPgClient(url_, 1);
         owner_->setTimeout(10.0);
@@ -72,7 +72,9 @@ protected:
         db_->execSqlSync("CREATE TABLE people (revision BIGINT)");
         db_->execSqlSync("CREATE TABLE recovery_events (recovered_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY)");
-        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql')");
+        db_->execSqlSync("CREATE TABLE midi_import_objects (sha256 TEXT, storage_key TEXT, touched_at TIMESTAMPTZ)");
+        db_->execSqlSync("CREATE TABLE midi_files (private_archive_confirmed BOOLEAN)");
+        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql')");
     }
     void TearDown() override {
         db_.reset();
@@ -262,6 +264,10 @@ TEST_F(InstallationPostgres, ReadinessRequiresLedgerAndQueryableTableAndStatusPr
     db_->execSqlSync("DELETE FROM schema_migrations WHERE version='005_site_installation.sql'");
     expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
     db_->execSqlSync("INSERT INTO schema_migrations VALUES('005_site_installation.sql')");
+    EXPECT_NO_THROW(requireDatabaseReady(db_));
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='006_midi_import_journal.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('006_midi_import_journal.sql')");
     EXPECT_NO_THROW(requireDatabaseReady(db_));
     installation::InstallationRepository repository(db_);
     installation::InstallationService service(repository, installationToken, false, limiter_);

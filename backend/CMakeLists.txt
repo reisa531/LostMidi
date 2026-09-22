@@ -22,6 +22,8 @@ add_library(lostmidi_core
     src/midi/MidiWriteService.cpp
     src/midi/MidiService.cpp
     src/midi/MidiFileService.cpp
+    src/midi/MidiValidator.cpp
+    src/midi/MidiImportService.cpp
     src/storage/Sha256.cpp
     src/storage/LocalObjectStorage.cpp)
 target_include_directories(lostmidi_core PUBLIC src)
@@ -32,18 +34,21 @@ add_library(lostmidi_postgres
     src/installation/InstallationService.cpp
     src/midi/PostgresMidiRepository.cpp
     src/person/PostgresPersonRepository.cpp
-    src/recovery/PostgresRecoveryRepository.cpp)
-target_link_libraries(lostmidi_postgres PUBLIC lostmidi_core Drogon::Drogon)
+    src/recovery/PostgresRecoveryRepository.cpp
+    src/storage/S3ObjectStorage.cpp)
+target_link_libraries(lostmidi_postgres PUBLIC lostmidi_core Drogon::Drogon PRIVATE OpenSSL::Crypto)
 
 add_executable(lostmidi_api src/main.cpp src/common/ApiController.cpp
-    src/common/AdminController.cpp src/common/AdminRecoveryController.cpp src/common/InstallationController.cpp)
+    src/common/AdminController.cpp src/common/AdminRecoveryController.cpp src/common/InstallationController.cpp
+    src/common/AdminFileController.cpp)
 target_link_libraries(lostmidi_api PRIVATE lostmidi_postgres)
 
 include(CTest)
 if(BUILD_TESTING)
     find_package(GTest CONFIG REQUIRED)
     add_executable(lostmidi_tests tests/services_test.cpp tests/repository_integration_test.cpp tests/admin_test.cpp
-        tests/installation_test.cpp tests/installation_integration_test.cpp)
+        tests/installation_test.cpp tests/installation_integration_test.cpp
+        tests/midi_import_test.cpp tests/midi_import_integration_test.cpp)
     target_link_libraries(lostmidi_tests PRIVATE lostmidi_postgres GTest::gtest_main)
     include(GoogleTest)
     gtest_discover_tests(lostmidi_tests)

@@ -8,7 +8,7 @@ BEGIN
         SELECT 1 FROM midi_entries
         WHERE slug IN ('example-midi', 'clockwork-tide', 'lantern-map')
            OR slug LIKE 'admin-check-%' OR slug LIKE 'repository-test-%' OR slug LIKE 'people-check-%'
-           OR slug LIKE 'recovery-check-%'
+           OR slug LIKE 'recovery-check-%' OR slug LIKE 'import-check-%' OR slug LIKE 'file-browser-%'
            OR title ILIKE '%(fictional)%'
     ) OR EXISTS (
         SELECT 1 FROM people

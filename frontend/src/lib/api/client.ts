@@ -8,13 +8,13 @@ export async function apiGet<T>(path: string): Promise<T> {
   return apiRequest<T>(path);
 }
 
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(path: string, options: RequestInit = {}, timeoutMs = 8000): Promise<T> {
   const base = process.env.BACKEND_API_URL;
   if (!base) throw new ApiError(503);
   let response: Response;
   try {
     response = await fetch(`${base.replace(/\/$/, "")}${path}`, {
-      ...options, cache: "no-store", signal: AbortSignal.timeout(8000), headers: { Accept: "application/json", ...options.headers },
+      ...options, cache: "no-store", signal: AbortSignal.timeout(timeoutMs), headers: { Accept: "application/json", ...options.headers },
     });
   } catch { throw new ApiError(503); }
   if (!response.ok) {

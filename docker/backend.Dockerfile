@@ -23,5 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY --from=build /out/bin/lostmidi_api /app/lostmidi_api
 RUN mkdir /app/storage && chown archive:archive /app/storage
+# Compose overrides STORAGE_PATH with its durable volume. Cloud imports require S3.
+ENV BACKEND_HOST=0.0.0.0 BACKEND_PORT=8080 STORAGE_PATH=/tmp/lostmidi-storage \
+    MIDI_IMPORT_ENABLED=false DB_POOL_SIZE=2 HTTP_THREADS=2 WORKER_THREADS=2 \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 USER archive
+EXPOSE 8080
+# The application reads the platform-provided PORT before BACKEND_PORT.
 CMD ["/app/lostmidi_api"]
