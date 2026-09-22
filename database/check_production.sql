@@ -14,6 +14,8 @@ BEGIN
         SELECT 1 FROM people
         WHERE display_name IN ('Mira Pixel (fictional)', 'Rowan Archive (fictional)')
            OR display_name LIKE 'people-check-%' OR display_name LIKE 'recovery-check-%'
+    ) OR EXISTS (
+        SELECT 1 FROM site_installation WHERE site_name LIKE 'installation-check%'
     ) THEN
         RAISE EXCEPTION 'Possible demo/test records remain. Review the target database before production release; no data was changed.';
     END IF;

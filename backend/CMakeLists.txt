@@ -29,19 +29,21 @@ target_link_libraries(lostmidi_core PUBLIC lostmidi_options PRIVATE OpenSSL::Cry
 
 add_library(lostmidi_postgres
     src/auth/AuthService.cpp
+    src/installation/InstallationService.cpp
     src/midi/PostgresMidiRepository.cpp
     src/person/PostgresPersonRepository.cpp
     src/recovery/PostgresRecoveryRepository.cpp)
 target_link_libraries(lostmidi_postgres PUBLIC lostmidi_core Drogon::Drogon)
 
 add_executable(lostmidi_api src/main.cpp src/common/ApiController.cpp
-    src/common/AdminController.cpp src/common/AdminRecoveryController.cpp)
+    src/common/AdminController.cpp src/common/AdminRecoveryController.cpp src/common/InstallationController.cpp)
 target_link_libraries(lostmidi_api PRIVATE lostmidi_postgres)
 
 include(CTest)
 if(BUILD_TESTING)
     find_package(GTest CONFIG REQUIRED)
-    add_executable(lostmidi_tests tests/services_test.cpp tests/repository_integration_test.cpp tests/admin_test.cpp)
+    add_executable(lostmidi_tests tests/services_test.cpp tests/repository_integration_test.cpp tests/admin_test.cpp
+        tests/installation_test.cpp tests/installation_integration_test.cpp)
     target_link_libraries(lostmidi_tests PRIVATE lostmidi_postgres GTest::gtest_main)
     include(GoogleTest)
     gtest_discover_tests(lostmidi_tests)

@@ -1,6 +1,6 @@
 # Lost MIDI Archive 部署与运行手册
 
-适用版本：当前仓库基础工程、单管理员认证、档案与人物管理；2026-09-22 补充前端独立部署说明。
+适用版本：当前仓库基础工程、一次性安装与双来源单管理员认证、档案与人物管理；包含前端独立部署说明。
 
 本文指导单机部署、前端 Vercel 分离部署、启动验收、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
 
@@ -17,7 +17,7 @@
 
 默认只将端口发布到宿主机 `127.0.0.1`，适合本机试运行，或置于服务器的 HTTPS 反向代理后。项目当前没有自带域名、证书、反向代理或高可用部署。
 
-Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可新增、编辑 MIDI 基本信息。管理员由部署环境配置，无公开注册或多角色管理。保存的档案立即出现在公开站点；归档状态不控制可见性。对外部署需使用 HTTPS 和 Secure Cookie。完整单机模式下 PostgreSQL 与后端不需要直接暴露到公网，`noindex` 仅控制索引。
+Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可新增、编辑 MIDI 基本信息。管理员来自一次性数据库安装，或优先使用完整有效的环境凭据，无公开注册或多角色管理。保存的档案立即出现在公开站点；归档状态不控制可见性。对外部署需使用 HTTPS 和 Secure Cookie。完整单机模式下 PostgreSQL 与后端不需要直接暴露到公网，`noindex` 仅控制索引。
 
 ### 前端 Vercel、后端独立运行
 
@@ -31,7 +31,7 @@ docker compose --env-file .env up --build -d backend
 
 Compose 仍会解析完整配置，因此根目录 `.env` 保留模板要求的变量；这些配置不会自动同步到 Vercel。这个命令不停止已经在运行的前端容器，也不删除数据卷。
 
-在服务器部署 HTTPS 反向代理，将后端域名转发到 `http://127.0.0.1:8080`（端口以实际配置为准），让 Vercel 能访问其公开 API 和受认证保护的管理 API；数据库继续仅在本机或私网可达。在 Vercel 单独设置 `BACKEND_API_URL=https://api.example.com`、精确匹配前端域名的 `ADMIN_ORIGIN` 和 `ADMIN_COOKIE_SECURE=true`。示例域名必须替换成自己的地址，不要把 Docker 内部名称 `backend` 或 localhost 填进 Vercel。
+在服务器部署 HTTPS 反向代理，将后端域名转发到 `http://127.0.0.1:8080`（端口以实际配置为准），让 Vercel 能访问其公开 API 和受认证保护的管理 API；数据库继续仅在本机或私网可达。在 Vercel 单独设置 `BACKEND_API_URL=https://api.example.com`、精确匹配前端域名的 `ADMIN_ORIGIN` 和 `ADMIN_COOKIE_SECURE=true`，保存项目变量后重新部署；`/install` 只能生成这三项配置文本，不会代写变量或调用 Vercel API。安装令牌仅配置在后端，详见第 3.1 节。示例域名必须替换成自己的地址，不要把 Docker 内部名称 `backend` 或 localhost 填进 Vercel。
 
 Vercel 使用原生 Next.js 构建；`frontend/Dockerfile` 在构建时设置 `NEXT_OUTPUT_STANDALONE=true`，仅供自托管镜像生成 standalone 输出。原有整栈 Compose 的前端 build context 现在是 `./frontend`，因此独立构建同样可以使用 `docker build -t lostmidi-frontend ./frontend`。
 
@@ -66,7 +66,7 @@ git status --short
 
 ## 3. 首次配置
 
-### 3.1 创建环境文件
+### 3.1 首次配置与一次性安装
 
 仅在 `.env` 不存在时复制，不要覆盖已有部署配置。以下使用生产模板，默认关闭示例数据并启用 Secure Cookie，数据库密码和站点来源必须填写；本机 HTTP 试运行使用 `.env.example`。
 
@@ -103,28 +103,45 @@ SEED_DEMO=false
 
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH=
+INSTALLATION_TOKEN=
 ADMIN_ORIGIN=https://archive.example.org
 ADMIN_COOKIE_SECURE=true
 ```
 
-保留 `.env.example` 中其他配置即可。占位密码必须替换，`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须对应。建议使用随机的 URL 安全字符；如果密码有 `@`、`:`、`/` 等保留字符，只在 URI 中进行百分号编码，数据库密码变量保留原值。
+保留环境模板中其他配置即可。占位密码必须替换，`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须对应。建议使用随机的 URL 安全字符；如果密码有 `@`、`:`、`/` 等保留字符，只在 URI 中进行百分号编码，数据库密码变量保留原值。
 
 - `SEED_DEMO=true`：写入三条虚构档案，用于开发、演示和 smoke 检查。
 - `SEED_DEMO=false`：空档案站点，适合正式数据环境。
 - 从 true 改为 false **不会删除**此前已写入的示例。
 - 不要提交 `.env`，也不要把完整的解析后 Compose 配置粘贴到公开日志；其中可能包含密码。
 
-启用后台前运行以下命令，交互输入并确认至少 12 个字符的管理员密码：
+**新站一次性安装：**
 
-```sh
-python scripts/admin_password.py
-```
+1. 部署者准备数据库、连接凭据与存储；启动前应用全部迁移至 `005_site_installation.sql`（Compose 由 migrate 服务执行）。安装页不创建数据库、不自动迁移或 seed。
+2. 保持后端 `ADMIN_PASSWORD_HASH` 为空，用下列命令生成令牌，安全保存后填入后端 `INSTALLATION_TOKEN`：
 
-把输出的整行 `ADMIN_PASSWORD_HASH=pbkdf2_sha256:600000:...` 替换到 `.env`。密码哈希采用随机盐和 PBKDF2-HMAC-SHA256；不要把明文密码填入哈希变量。`ADMIN_USERNAME` 最长 100 UTF-8 字节；空用户名或空哈希会关闭管理员登录，公开查询仍可使用。非空但格式错误的哈希会使后端启动失败。不存在预置管理员密码。
+   ```sh
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   空令牌禁用安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，格式无效不能使用。令牌**只配置在后端**，不得放入 `NEXT_PUBLIC_`、URL、前端环境变量或公开日志。它不是管理员密码或 Vercel API token。
+3. 核对下述 `ADMIN_ORIGIN` 和 Cookie 配置，按第 4 节启动。从实际前端来源打开 `/install`，填写站点名称、简介、用户名、密码及确认密码，并输入安装令牌。
+4. 名称 trim 后为 1–200 UTF-8 字节，简介 trim 后为 0–1000 字节；用户名不 trim，必须为 ASCII `[A-Za-z0-9_.-]{3,64}`；密码不 trim，为 12–1024 UTF-8 字节。拒绝 NUL。数据库保存随机盐 PBKDF2-HMAC-SHA256（600,000 次）哈希，不保存明文密码。
+5. 安装成功不自动登录，另行前往 `/admin/login`。可移除 `INSTALLATION_TOKEN`，再用 `docker compose up -d --wait backend` 更新容器环境；原生后端移除变量后重启。`site_installation(id=1)` 的持久锁仍有效，`/install` 只显示已安装，不能重装或重置。
+
+安装提交在同一事务保存站点与账号，主键保证并发只有一个成功，等待 commit 确认后响应。超时后刷新状态核对，不能假定已经回滚或删除安装记录重试。数据库故障返回 503，不能当作未安装。安装 API、错误码与字段详见 [Admin 文档](docs/admin.md)。没有重装/reset、站点设置编辑或密码重置页。
+
+**前端配置与 Vercel：** `/install` 的配置表单只能生成 `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE` 变量文本，不写 `.env`，不调用 Vercel API。Vercel 用户需自行保存到项目相应环境变量并重新部署；本机用户自行写入前端环境配置并重启/重新部署。生成文本不探测用户输入的 URL，诊断仅使用当前已部署环境目标；修改表单不会立刻切换后端。数据库保存的站点名称用于页眉、页脚和标题，简介用于 meta description。
+
+公开站点 `/(site)` 与 `/admin` 父 layout 在请求时检查状态：缺后端配置或明确 `installed=false` 才跳 `/install`；旧后端 404、非法响应或离线仅显示不可用，不开放安装。前端无后端也可构建，但运行必须 API 可用。
+
+**旧环境管理员与应急覆盖：** 完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` 继续优先，哈希用 `python scripts/admin_password.py` 生成，环境用户名沿用最多 100 UTF-8 字节的旧规则。不要把明文密码填进哈希变量；非法非空哈希使后端启动失败。没有完整覆盖时读取数据库管理员，默认 `ADMIN_USERNAME=admin` 加空哈希不会遮盖它。覆盖只改变选用的认证凭据，不修改数据库站点设置或账号。
+
+旧站第一次运行新版必须保留完整环境凭据，待成功写入 `auth_source=environment` 的持久标记后才能改配置；标记的 username/password_hash 为 NULL，不复制环境哈希。之后移除凭据仍 installed，但登录禁用，需恢复环境或维护者应急覆盖，不能删除表重装。升级前先移除凭据时系统无法推断曾安装，详见第 7.2 节。
 
 `ADMIN_ORIGIN` 是浏览器看到的完整来源，必须包含协议、主机和非默认端口，不能包含路径或末尾 `/`。上例域名必须换成实际域名。本机 HTTP 使用 `.env.example` 的 `ADMIN_ORIGIN=http://localhost:3000` 和 `ADMIN_COOKIE_SECURE=false`；若用 `http://127.0.0.1:3000`，必须相应修改来源。正式部署使用 HTTPS 与 `ADMIN_COOKIE_SECURE=true`，不要保留开发示例的 false。
 
-修改用户名或重新生成密码哈希后，使用 `docker compose up -d --wait` 重建后端容器使配置生效；旧会话随新的凭据标识失效。会话最长 8 小时，不随访问续期。退出登录撤销当前会话，其他浏览器会话保留。单后端进程每分钟最多接受 10 次登录尝试（包括成功登录），超出返回 429；这不是跨实例的限流机制。
+修改环境凭据后，使用 `docker compose up -d --wait` 重建后端容器；无完整环境覆盖时，每次登录和鉴权重新读取数据库凭据，当前选用的用户名与哈希决定会话 identity。不匹配的 session 被拒绝，但恢复旧凭据可能让未过期旧 session 再次匹配，不能称为永久撤销。会话最长 8 小时，不随访问续期；退出只撤销当前会话。单后端进程每分钟最多 10 次登录尝试（包括成功登录），安装另有独立的每进程 10 次/分钟额度，分别超限返回 429，不跨实例共享。
 
 ### 3.2 地址与端口对照
 
@@ -135,7 +152,8 @@ python scripts/admin_password.py
 | `BACKEND_API_URL` | `http://backend:8080` | `http://127.0.0.1:8080` |
 | `BACKEND_HOST` | Compose 固定注入 `0.0.0.0` | 建议 `127.0.0.1` |
 | `STORAGE_PATH` | Compose 固定 `/app/storage` | 建议使用绝对路径 |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` | 仅注入 backend | 在后端进程环境中设置 |
+| `INSTALLATION_TOKEN` | 仅注入 backend，空值禁用新安装 | 仅在后端进程环境中设置 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` | 仅注入 backend；完整有效时覆盖数据库管理员 | 在后端进程环境中设置；新安装保持哈希为空，升级保留完整旧凭据 |
 | `ADMIN_ORIGIN` / `ADMIN_COOKIE_SECURE` | 仅注入 frontend | 在 frontend/.env.local 中设置 |
 
 容器内的 `localhost` 指容器自己，不能用它连接另一个服务。`POSTGRES_PORT` 只改变宿主映射，不改变容器间的 5432。修改 `BACKEND_PORT` 后需同步修改 `BACKEND_API_URL` 中的端口。
@@ -182,7 +200,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-当前应用需要执行全部迁移至 `004_optional_recovery_date.sql`：002 新增管理员会话及档案 revision，003 新增人物 revision，004 允许未知寻回日期为 NULL，均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，不要修改已应用的迁移文件。启动时和 `/ready` 同时检查 004 迁移记录及 recovered_at 实际可空性；缺少迁移会导致启动失败，运行中结构缺失或不可查询时 `/ready` 返回 503。
+当前应用需要执行全部迁移至 `005_site_installation.sql`：002 新增管理员会话及档案 revision，003 新增人物 revision，004 允许未知寻回日期为 NULL，005 仅新增站点配置与持久安装锁表，均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，首次新版启动保留完整环境凭据，不要修改已应用的迁移文件。启动和 `/ready` 检查 005 迁移记录与安装表可查询，并继续检查 004 记录及 recovered_at 实际可空性；缺少迁移会导致启动失败，运行中结构缺失或不可查询时返回 503，不解释为未安装。
 
 ## 5. 部署验收
 
@@ -198,14 +216,16 @@ docker compose run --rm migrate psql -X -v ON_ERROR_STOP=1 -f /database/check_pr
 
 | 地址 | 预期 |
 | --- | --- |
-| `http://127.0.0.1:3000/` | 公开首页 |
-| `http://127.0.0.1:3000/midis` | 档案列表或正常空状态 |
-| `http://localhost:3000/admin/login` | 管理员登录页；与默认 ADMIN_ORIGIN 一致 |
-| `http://localhost:3000/admin` | 未登录转登录页，登录后显示工作台 |
+| `http://127.0.0.1:3000/` | 已安装显示公开首页；缺后端配置或明确未安装跳 `/install`，API 故障显示不可用 |
+| `http://127.0.0.1:3000/midis` | 已安装时显示档案列表或正常空状态 |
+| `http://localhost:3000/install` | 新站安装/配置引导；已安装只显示锁定；表单来源需匹配 ADMIN_ORIGIN |
+| `http://localhost:3000/admin/login` | 已安装时显示管理员登录页；与默认 ADMIN_ORIGIN 一致 |
+| `http://localhost:3000/admin` | 已安装但未登录转登录页，登录后显示工作台 |
 | `http://localhost:3000/admin/midis` | 登录后显示后台档案表格与新增、编辑入口 |
 | `http://localhost:3000/admin/modules` | 登录后显示模块目录 |
 | `http://127.0.0.1:8080/health` | `{"status":"ok"}`，仅表示进程存活 |
-| `http://127.0.0.1:8080/ready` | 200，确认数据库、作品/人物 revision、会话表及迁移 004 的实际结构 |
+| `http://127.0.0.1:8080/ready` | 200，确认数据库、作品/人物 revision、会话表、005 安装表及 004 日期可空 |
+| `http://127.0.0.1:8080/api/v1/installation` | 公开 no-store；installed、installation_enabled 和 site: {name, description}，不返回秘密 |
 | `http://127.0.0.1:8080/api/v1/midis?page=1&pageSize=20` | 包含 data 与 pagination 的 JSON |
 
 Linux / macOS：
@@ -226,7 +246,26 @@ python scripts/smoke.py
 python scripts/smoke.py --api-only
 ```
 
-脚本假定至少存在三条示例及 `example-midi`，不能用于无 seed 的正式数据环境。除了检查 HTTP 状态，还需打开 `/midis` 和 `/admin` 确认实际数据显示；前端连接失败时可能呈现提示页，单独首页 200 不代表完整链路正常。
+脚本假定至少存在三条示例及 `example-midi`，不能用于无 seed 的正式数据环境。包含前端的普通 smoke 应先完成安装或已成功写入 legacy 标记，否则页面会转向 `/install`。除了检查 HTTP 状态，还需打开 `/midis` 和 `/admin` 确认实际数据显示；前端连接失败时可能呈现提示页，单独首页 200 不代表完整链路正常。
+
+**安装专项检查必须另备两个独立的全新已迁移专用测试库**，不能顺序指向同库；两个脚本都会永久安装。不要在生产库、已安装库或普通 seed 验收栈上试图重装。两个后端均保持 `ADMIN_PASSWORD_HASH` 为空、配置有效 `INSTALLATION_TOKEN`，并先用 GET 确认 `installed=false`、`installation_enabled=true`。不要通过删除安装行来重复测试。
+
+- API 测试进程设置 `INSTALLATION_TEST_TOKEN`，与第一个后端令牌一致：
+
+  ```sh
+  python scripts/installation_smoke.py --api http://127.0.0.1:8080 --allow-install
+  ```
+
+- 浏览器测试使用**另一个**后端/新库，前端指向该后端且 `ADMIN_ORIGIN` 与浏览器来源一致。测试进程设置其 `INSTALLATION_TEST_TOKEN`，另设符合安装规则的 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`；这是要创建的新管理员，不是已有环境覆盖。安装 Playwright 及相应浏览器后执行：
+
+  ```sh
+  python scripts/installation_browser_smoke.py --frontend http://localhost:3000 --allow-install
+  # 可选参数：--channel msedge --screenshots <截图目录>
+  ```
+
+安装验收应核对首次跳转、无令牌/错误令牌拒绝、输入校验、并发仅一成功、超时后的状态核对、成功后单独登录、数据库保存的站点名称/简介展示，以及重启/新浏览器下锁仍有效。数据库不可用、旧 API 404 和非法响应只能提示不可用，不得变成可安装状态。不要把测试秘密写进命令行、截图或日志。
+
+CTest 的 `LOSTMIDI_TEST_DATABASE_URL` 仍使用已迁移且带 demo seed 的专用测试库；新增 installation 集成测试建立隔离 schema，连接用户需 CREATE SCHEMA 权限。此库与两种安装 smoke 的新库分开。本地验收结果及尚未执行的场景见 [Implementation Report](docs/implementation-report.md)；部署到目标环境后仍需按本节核对。
 
 后台功能在独立测试环境完成以下验收。登录页面必须从 `ADMIN_ORIGIN` 配置的来源打开：
 
@@ -302,9 +341,9 @@ docker compose stop
 采用可接受短暂停机的单机流程：
 
 1. 记录旧提交、环境配置及镜像信息，按第 8 节备份。
-2. 将部署代码更新到已经测试的目标提交；保留 `.env`、storage 和 Compose 项目标识。
+2. 将部署代码更新到已经测试的目标提交；保留 `.env`、storage 和 Compose 项目标识。旧环境管理员首次升级至含安装功能的版本时，**必须保留完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`**，不要先清空凭据。
 3. 构建新镜像；构建失败时先修复，不继续切换。
-4. 停止应用，执行数据库迁移，再启动新应用。
+4. 停止应用，执行全部待应用迁移至 005，再启动新应用。005 仅新增安装表，不改旧迁移。
 
 ```sh
 docker compose build
@@ -315,7 +354,11 @@ docker compose run --rm migrate
 docker compose up -d --wait --wait-timeout 180
 ```
 
-最后按第 5 节验收。迁移脚本对已执行版本校验并跳过，不会重复 seed；已应用 SQL 文件不能直接改写。`docker compose restart` 不会重建镜像，也不会更新容器环境变量；修改源码或 `.env` 后应使用相应的 build / up 流程。
+旧环境部署启动成功后会在 `site_installation(id=1)` 写入 `auth_source=environment` 的持久 legacy 标记，不复制用户名或哈希。先确认 `/ready`、`GET /api/v1/installation` 的 `installed=true`，并可由维护者只读查询 `SELECT id, auth_source FROM site_installation WHERE id=1;` 核对标记，再调整配置。仅应用 005 不等于旧站标记已经写入；在第一次运行新版前移除环境凭据，系统无法推断曾安装。
+
+移除 legacy 环境凭据不会重新开放安装，而是保留 installed 并禁用登录；需恢复原凭据或维护者应急覆盖，不得删表/行重装。数据库安装的账号在无完整环境覆盖时使用，完整环境覆盖不更改站点设置或数据库账号。
+
+最后按第 5 节验收。迁移脚本对已执行版本校验并跳过，不会重复 seed；已应用 SQL 文件不能直接改写。`docker compose restart` 不会重建镜像，也不会更新容器环境变量；修改源码或 `.env` 后应使用相应的 build / up 流程。Vercel 项目变量修改后也须重新部署，不会自动同步后端配置。
 
 ### 7.3 回退
 
@@ -345,7 +388,7 @@ docker compose exec -T postgres pg_restore --list /tmp/lostmidi-backup.dump
 
 逐项确认命令成功、备份文件存在后，执行 `docker compose up -d --wait` 恢复服务。`pg_restore --list` 只检查归档可读取，不替代实际恢复演练。数据库归档先写到容器再 `compose cp`，避免 Windows PowerShell 旧版本重定向二进制造成损坏；Windows 操作者需将目录变量和文件操作改为对应 PowerShell 命令。
 
-`.env` 备份包含数据库密码与管理员密码哈希，应使用受控权限和备份加密。数据库归档也包含会话摘要；正式恢复时重新生成管理员密码哈希并更新配置，使备份中的旧会话失效。不要把整个 PostgreSQL 正在运行的数据目录当普通文件复制作为逻辑备份。
+`.env` 备份可能包含数据库密码、环境管理员哈希和安装令牌；数据库归档现在还可能包含 `site_installation` 中的数据库管理员哈希，以及 `admin_sessions` 会话摘要，不能只保护环境哈希。两类备份都应使用受控权限与备份加密。正式恢复时明确撤销历史 sessions，或改用不同于历史的有效凭据，并防止以后恢复旧凭据重新匹配未过期会话。不要把整个 PostgreSQL 正在运行的数据目录当普通文件复制作为逻辑备份。
 
 ### 8.2 恢复演练：新数据库，不覆盖原库
 
@@ -363,17 +406,27 @@ sudo tar -xzf "$backup_dir/storage.tar.gz" -C "$backup_dir/restore-check"
 
 本例不会删除原数据库或替换当前 storage。若测试库名已存在，应另选名称；不要直接对已有库执行覆盖恢复。`--no-owner` 和 `--no-privileges` 适用于当前单应用账号模型，有多角色部署时需另行恢复角色与授权。归档恢复参数见 [PostgreSQL 17 pg_restore 文档](https://www.postgresql.org/docs/17/app-pgrestore.html)。
 
-正式切换恢复数据时，先停止所有应用和写入程序，恢复匹配的 storage，检查 UID 10001 的目录权限，将 `.env` 中 `POSTGRES_DB` 与 `DATABASE_URL` 指向已恢复的库，选定兼容的代码版本，再运行迁移及启动验收。不要在共享正式数据库上运行演练写入或盲目切换。
+正式切换恢复数据时，先停止所有应用和写入程序，恢复匹配的 storage，检查 UID 10001 的目录权限，将 `.env` 中 `POSTGRES_DB` 与 `DATABASE_URL` 指向已恢复的库，选定兼容的代码版本，再运行迁移及启动验收。恢复含 005 的备份时保留安装行；旧环境部署备份则必须带完整有效环境凭据完成首次新版启动和 legacy 标记写入。不要在共享正式数据库上运行演练写入或盲目切换。
+
+开放恢复站点前，维护者应明确撤销恢复库中的历史 `admin_sessions`（维护窗口内、确认目标库后清除会话记录，不是删除安装表），或配置新的有效凭据使历史会话不再匹配。仅临时覆盖后又恢复原用户名与哈希，可能让尚未过期的历史 session 再次有效；因此采用凭据切换时还须防止恢复旧 identity，不能把它当作永久撤销。
+
+### 8.3 忘记管理员密码 / 环境凭据丢失
+
+1. 不要清空安装行、删除表、重装或删除数据卷；`/install` 锁定是预期行为，没有密码重置页或 reset API。
+2. 在可信终端运行 `python scripts/admin_password.py` 生成**新**随机盐哈希，将它与有效的 `ADMIN_USERNAME` 一起配置在后端，作为完整环境应急覆盖；重建容器或重启原生后端使环境生效，不向前端/Vercel配置这些凭据。
+3. 环境覆盖优先于数据库管理员，但不更改数据库账号、站点名称或简介。保持覆盖直到维护者妥善维护数据库凭据；撤掉覆盖会重新选用原数据库账号，这不是自动永久重置。若是 environment 标记的旧站，标记本身没有账号哈希，必须保留/恢复有效环境凭据才能登录。
+4. 按前述方式处理历史 sessions；无完整环境覆盖时，每次登录/鉴权重读数据库凭据，切换时不匹配的会话被拒绝，但恢复旧凭据可重新匹配未过期会话。完成登录与授权核对后再恢复对外服务。
 
 ## 9. 不使用 Docker 的原生运行
 
 原生编译命令按平台见 [README 的 Local Development](README.md#local-development)。基本顺序不能省略：
 
 1. 安装 Node 22.13+（22.x）、npm、C++20 编译器、CMake 3.24+、Conan 2、PostgreSQL 17 与 psql。
-2. 创建数据库和用户，设置 libpq 连接变量，执行 `sh database/migrate.sh`；Windows 可用 Git Bash。
+2. 创建数据库和用户，设置 libpq 连接变量，执行 `sh database/migrate.sh`，应用至 005；Windows 可用 Git Bash。连接/迁移由部署者准备，不由安装页执行。
 3. Conan 安装依赖，CMake configure / build / CTest。
-4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH，以及 ADMIN_USERNAME、ADMIN_PASSWORD_HASH，运行后端可执行程序。
+4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH。新站保持 ADMIN_PASSWORD_HASH 为空、仅在后端设置有效 INSTALLATION_TOKEN；旧环境部署首次新版启动保留完整 ADMIN_USERNAME、ADMIN_PASSWORD_HASH。运行后端可执行程序。
 5. 在 frontend 目录配置 BACKEND_API_URL、ADMIN_ORIGIN、ADMIN_COOKIE_SECURE；开发使用 `.env.local`，生产使用 `.env.production.local`，然后构建并运行前端。
+6. 新站按第 3.1 节访问 `/install` 完成一次性初始化，成功后单独登录；可移除后端令牌并重启，数据库锁仍有效。已有站点则核对 installed 和所选凭据来源，不重新安装。
 
 原生前端生产模式示例（仅在目标文件不存在时复制）：
 
@@ -397,18 +450,26 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 | Docker named pipe 不存在 / Cannot connect to daemon | 启动 Docker Engine / Desktop，确认 Linux containers；先让 docker info 成功 |
 | 缺少环境变量 | 确认根目录 .env 存在，运行 config --quiet；不要输出含密码的完整配置 |
 | 端口被占用 | 停止旧的本机服务或调整宿主端口；同步后端 URL，注意数据库内部仍用 5432 |
-| Backend 启动失败或 /ready 503 | 查看 backend、migrate、postgres 日志；核对 URI、密码、表是否迁移，以及是否混用了容器 localhost |
+| Backend 启动失败或 /ready 503 | 查看 backend、migrate、postgres 日志；核对连接、005 迁移记录和安装表可查询，以及 004 日期实际可空；不要将数据库故障当作未安装 |
 | 改密码后仍无法连接 | PostgreSQL 初始化变量只用于首次初始化；已有库需要实际修改数据库角色密码，再同步 URI |
 | migrate Exited (0) | 正常的一次性任务结束，不要手工强制保持运行 |
 | migrate 非零退出 / checksum changed | 找出失败 SQL；恢复被改写的历史 migration，以新文件表达变更，不跳过失败或删迁移历史 |
 | storage Permission denied | 检查宿主挂载目录及 UID 10001 的访问权限，不使用全员可写作为常规修复 |
 | 首页可开，列表提示不可用 | 首页成功不代表 API 可用；检查 BACKEND_API_URL 与 /ready |
 | /admin 404 或页面仍为旧版 | 确认请求到本项目进程；重建前端并重建容器，原生模式重新 build、重启 |
-| 管理员账号尚未配置 / ADMIN_DISABLED | 为后端配置非空 ADMIN_USERNAME 和生成器输出的 ADMIN_PASSWORD_HASH；重建容器或重启原生进程 |
-| 管理员配置无效导致后端退出 | 检查是否误填明文密码、哈希是否完整、用户名是否超过 100 UTF-8 字节 |
-| 请求来源与后台配置不一致 | ADMIN_ORIGIN 必须精确匹配浏览器协议、主机和端口，无末尾斜杠；检查反向代理转发的 Host |
-| 登录成功后仍返回登录页 | 检查 Cookie 是否写入及发送；本机 HTTP 使用 false，正式 HTTPS 使用 true；核对新旧后端实例的凭据是否一致 |
-| 登录尝试过多 / 429 | 等当前一分钟窗口结束；单进程计数包含成功登录，自动测试也会消耗次数 |
+| 未安装但 INSTALLATION_DISABLED / 403 | 后端 INSTALLATION_TOKEN 为空；仅在后端配置有效令牌后更新容器环境或重启，不将令牌写到前端 |
+| INVALID_INSTALLATION_TOKEN / 403 | 核对输入与后端环境令牌，令牌须匹配 `[A-Za-z0-9_-]{32,128}`；不得在 URL 或日志传递 |
+| 安装 INVALID_INPUT / 400 | 核对 UTF-8 字节长度、用户名 ASCII 规则、密码不 trim、NUL 和未知字段；确认密码不是后端 API 字段 |
+| 安装 ALREADY_INSTALLED / 409 或页面锁定 | 持久安装锁正常生效；刷新核对，不删除安装行/表，不通过清空凭据重装 |
+| 安装提交超时 | 刷新安装状态核对是否已提交；超时不证明回滚，数据库不可用时先恢复服务，不能假定未安装 |
+| 安装状态 API 404 / 非法响应 / 离线 | 升级并检查已部署后端目标及 /ready；仅显示不可用是预期行为，不应开放安装 |
+| 前端配置生成后仍使用旧地址 | 表单只生成文本且不探测新 URL；用户自行保存 Vercel 项目对应环境变量并 Redeploy，诊断只用已部署目标 |
+| 管理员账号尚未配置 / ADMIN_DISABLED | 无完整环境覆盖时需有数据库管理员；新站先安装。legacy 标记没有数据库凭据，恢复有效环境凭据或按第 8.3 节应急覆盖，不能删表重装 |
+| 忘记数据库管理员密码 | 用 scripts/admin_password.py 生成新环境应急覆盖并保持，直到维护者妥善维护数据库凭据；无自动永久重置，处理历史 sessions 见第 8.3 节 |
+| 管理员配置无效导致后端退出 | 检查是否误填明文密码、哈希是否完整、环境用户名是否超过 100 UTF-8 字节；安装表单用户名另用 ASCII 3–64 字符规则 |
+| 请求来源与后台配置不一致 | ADMIN_ORIGIN 必须精确匹配浏览器协议、主机和端口，无末尾斜杠；安装同样受检查，反向代理需保留 Host |
+| 登录成功后仍返回登录页 | 检查 Cookie 是否写入及发送；本机 HTTP 使用 false，正式 HTTPS 使用 true；核对实例的凭据来源及当前用户名/哈希是否一致 |
+| 登录或安装尝试过多 / 429 | LOGIN_RATE_LIMITED 与 INSTALLATION_RATE_LIMITED 各为每进程 10 次/分钟、互不共用；等相应窗口结束，自动测试也会消耗次数 |
 | 编辑提示版本冲突 | 保留当前输入，重新打开编辑页获得新版本后合并修改；不能直接重复提交旧 revision |
 | 修改 slug 后旧链接 404 | 当前无 slug 历史与重定向，使用保存后的公开链接并更新引用 |
 | 没有档案 / example-midi 404 | SEED_DEMO=false 的空库正常；不要为通过演示测试向正式库注入示例 |
@@ -420,6 +481,6 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 
 当前支持前端独立部署到 Vercel，同时保留 Compose 整栈模式。2026-09-15 放弃的是“将数据库、迁移和持久存储一起搬到 Vercel”的整站方案，不是前端部署；配置方法与边界见 [Vercel 部署指引](docs/vercel-assessment.md)。
 
-本手册根据当前 Dockerfile、Compose、配置读取逻辑和迁移脚本核对。用户已确认此前整站部署验收完成；此确认属于基础站点阶段，不自动覆盖本次新增的管理员认证和档案写入。代理实际执行的编译与检查、本次后台运行验证的限制见 [Implementation Report](docs/implementation-report.md)。备份恢复仍需在目标环境单独演练并记录结果。
+本手册说明部署契约与验收步骤。本次一次性安装、双来源认证、升级兼容及故障处理的本地验收已通过，实际执行范围与限制见 [Implementation Report](docs/implementation-report.md)。本轮未执行远程 CI、Linux Docker 镜像及容器验收、Vercel 发布或生产迁移；目标环境部署验收与备份恢复仍需单独执行并记录结果。
 
 每次修改端口、存储挂载、环境变量、migration 策略、权限模型或构建路径时，同步更新本文件。发布记录至少保存提交号、部署时间、迁移结果、验收结果及备份位置；不记录明文密码。

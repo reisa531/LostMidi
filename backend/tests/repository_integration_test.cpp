@@ -32,8 +32,9 @@ TEST(PostgresIntegration, AdministratorSessionLifecycle) {
     db->setTimeout(5.0);
     auto transaction = db->newTransaction();
     Rollback cleanup{transaction};
-    // Shadow the real table so credential cleanup never affects other sessions.
+    // Shadow both tables: disabled-auth checks must not pick up a real installed administrator.
     transaction->execSqlSync("CREATE TEMP TABLE admin_sessions (LIKE public.admin_sessions INCLUDING ALL) ON COMMIT DROP");
+    transaction->execSqlSync("CREATE TEMP TABLE site_installation (LIKE public.site_installation INCLUDING ALL) ON COMMIT DROP");
     auth::AuthRepository repository(transaction);
     // Public test fixture only; never used as a deployment default.
     const std::string hash = "pbkdf2_sha256:600000:00000000000000000000000000000000:73cce23bed8110946640df7fee25f986fdd0ec35066980f5cfa99f6905bcbeb0";

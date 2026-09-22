@@ -26,8 +26,29 @@ bool verifyPassword(const std::string& password, const std::string& encoded) {
         throw std::runtime_error("Password verification failed.");
     return CRYPTO_memcmp(actual.data(), expected.data(), actual.size()) == 0;
 }
+std::string hashPassword(const std::string& password) {
+    if (password.size() < 12 || password.size() > 1024 || password.find('\0') != std::string::npos)
+        throw std::invalid_argument("Invalid password length or content.");
+    std::array<unsigned char, 16> salt{};
+    std::array<unsigned char, 32> hash{};
+    if (RAND_bytes(salt.data(), static_cast<int>(salt.size())) != 1)
+        throw std::runtime_error("Random generator failed.");
+    if (PKCS5_PBKDF2_HMAC(password.data(), static_cast<int>(password.size()), salt.data(),
+            static_cast<int>(salt.size()), 600000, EVP_sha256(), static_cast<int>(hash.size()), hash.data()) != 1)
+        throw std::runtime_error("Password hashing failed.");
+    constexpr char hex[] = "0123456789abcdef";
+    std::string encoded = "pbkdf2_sha256:600000:";
+    for (auto byte : salt) { encoded += hex[byte >> 4]; encoded += hex[byte & 15]; }
+    encoded += ':';
+    for (auto byte : hash) { encoded += hex[byte >> 4]; encoded += hex[byte & 15]; }
+    return encoded;
+}
 std::string digest(const std::string& value) {
     return storage::sha256(std::as_bytes(std::span(value.data(), value.size())));
+}
+bool constantTimeEqual(const std::string& left, const std::string& right) {
+    const auto leftDigest = digest(left), rightDigest = digest(right);
+    return CRYPTO_memcmp(leftDigest.data(), rightDigest.data(), leftDigest.size()) == 0;
 }
 std::string randomToken() {
     std::array<unsigned char, 32> bytes{};

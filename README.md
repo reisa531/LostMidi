@@ -1,6 +1,6 @@
 # Lost MIDI Archive
 
-一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前版本包含公开查询 REST API、服务端渲染页面、单管理员后台、档案基本信息新增与编辑、数据库迁移和文件存储边界。
+一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前版本包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、单管理员后台、档案基本信息新增与编辑、数据库迁移和文件存储边界。
 
 这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
 
@@ -80,25 +80,33 @@ storage/                  本地对象目录，内容不进入 Git
 
 ### Docker workflow
 
-在仓库根目录运行：
+在仓库根目录操作；仅当 `.env` 不存在时复制：
 
 ```sh
 cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+# 将生成值填入 .env 的 INSTALLATION_TOKEN；新站保持 ADMIN_PASSWORD_HASH 为空
+# 核对数据库连接、ADMIN_ORIGIN 与 ADMIN_COOKIE_SECURE 后再启动
 docker compose config --quiet
 docker compose up --build
 ```
 
-PowerShell 第一步使用 `Copy-Item .env.example .env`。示例密码是公开的本地开发值；真实 `.env` 已被忽略。服务仅发布到宿主 `127.0.0.1`。默认 `SEED_DEMO=false`，新库为空；仅在独立开发或测试库显式设置 true 以加载虚构示例。生产部署从 `.env.production.example` 配置，步骤见 [RUN.md](RUN.md)。
+PowerShell 第一步使用 `Copy-Item .env.example .env`。示例数据库密码是公开的本地开发值；真实 `.env` 已被忽略。服务仅发布到宿主 `127.0.0.1`。默认 `SEED_DEMO=false`，新库为空；仅在独立开发或测试库显式设置 true 以加载虚构示例。生产部署从 `.env.production.example` 配置，步骤见 [RUN.md](RUN.md)。
 
-启用后台前运行 `python scripts/admin_password.py`，把输出的 `ADMIN_PASSWORD_HASH=...` 填入 `.env`，并设置 `ADMIN_USERNAME`。空哈希会禁用管理员登录，公开查询仍可使用。`ADMIN_ORIGIN` 必须与浏览器访问地址完全一致且没有末尾斜杠，默认 `http://localhost:3000`；使用 `127.0.0.1`、其他端口或域名访问时同步修改。正式部署使用 HTTPS 并设 `ADMIN_COOKIE_SECURE=true`。详细步骤见 [RUN.md](RUN.md)。
+新站由部署者先准备数据库连接并应用全部迁移（Compose 的 migrate 服务负责执行），再访问 `/install`，填写站点名称、简介、管理员用户名、密码及确认密码，并输入安装令牌。`INSTALLATION_TOKEN` 仅配置到后端，空值禁用安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量。安装成功不自动登录；请另行访问 `/admin/login`。之后可移除令牌并重建后端容器，数据库中的持久安装锁不会消失。安装页不创建数据库、不自动迁移或 seed，也没有重装、设置编辑或密码重置页。
 
-- 页面：<http://localhost:3000>
+`ADMIN_ORIGIN` 必须与浏览器访问地址完全一致且没有末尾斜杠，默认 `http://localhost:3000`；使用 `127.0.0.1`、其他端口或域名访问时同步修改。正式部署使用 HTTPS 并设 `ADMIN_COOKIE_SECURE=true`。前端配置表单仅生成 `BACKEND_API_URL` / `ADMIN_ORIGIN` / `ADMIN_COOKIE_SECURE` 变量文本，不写环境文件、不调用 Vercel API；Vercel 用户需自行保存项目变量后重新部署。
+
+已有环境管理员部署继续支持完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`，并优先于数据库账号。升级第一次运行新版时必须保留这两项，待后端成功写入持久 environment 标记后才能改配置；提前移除会使系统无法推断曾安装。默认 `ADMIN_USERNAME=admin` 加空哈希不会遮盖新安装的数据库管理员。凭据恢复与会话注意事项见 [RUN.md](RUN.md)。
+
+- 页面：<http://localhost:3000>；未安装时跳转 `/install`
+- 一次性安装：<http://localhost:3000/install>；已安装时仅显示锁定状态
 - 存活检查：<http://localhost:8080/health>
 - 数据库就绪：<http://localhost:8080/ready>
 - 档案列表：<http://localhost:3000/midis>；只有显式加载示例后才存在 `/midis/example-midi`
 - 管理员登录：<http://localhost:3000/admin/login>
 
-启动顺序：PostgreSQL 健康检查 → 一次性 migrate 服务 → Backend 就绪检查 → Frontend。前端构建无需后端在线。Compose 运行构建后的程序，改源码后重新 `docker compose up --build`；前端热更新使用原生 `npm run dev`。
+启动顺序：PostgreSQL 健康检查 → 一次性 migrate 服务 → Backend 就绪检查 → Frontend。前端构建无需后端在线，但运行时必须能访问安装状态 API。公开站点与 `/admin` 父 layout 在请求时判断：缺后端配置或明确 `installed=false` 才跳 `/install`；旧后端 404、非法响应或离线只显示不可用，不开放安装。Compose 运行构建后的程序，改源码后重新 `docker compose up --build`；前端热更新使用原生 `npm run dev`。
 
 ```sh
 docker compose logs -f backend
@@ -118,10 +126,10 @@ docker compose down
 docker compose up -d postgres
 export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=lostmidi PGDATABASE=lostmidi
 export PGPASSWORD=lostmidi_dev_only
-SEED_DEMO=true sh database/migrate.sh
+SEED_DEMO=false sh database/migrate.sh
 ```
 
-不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库。从根目录构建后端：
+仅专用演示/测试库可将 `SEED_DEMO` 显式改为 true。不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库；应用全部迁移至 005 后再启动后端。从根目录构建后端：
 
 ```sh
 python3 -m venv .venv
@@ -136,8 +144,13 @@ ctest --test-dir backend/build/Release --output-on-failure
 
 export DATABASE_URL=postgresql://lostmidi:lostmidi_dev_only@127.0.0.1:5432/lostmidi
 export BACKEND_HOST=127.0.0.1 BACKEND_PORT=8080 STORAGE_PATH="$PWD/storage"
+# 仅全新站点；升级旧环境管理员部署时保留原来的完整凭据
+export ADMIN_USERNAME=admin ADMIN_PASSWORD_HASH=
+export INSTALLATION_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ./backend/build/Release/lostmidi_api
 ```
+
+启动后端前，在可信终端安全保存 `INSTALLATION_TOKEN` 的值，稍后在 `/install` 输入，不要粘贴到公开日志。
 
 已有 Conan profile 时先检查编译器，不必重复 detect。Conan 生成的 CMakeUserPresets.json 不提交。单配置生成器默认用 backend/build/Release；Visual Studio 多配置生成器用 backend/build，不能混用同一个构建目录。
 
@@ -168,12 +181,16 @@ $env:DATABASE_URL='postgresql://lostmidi:lostmidi_dev_only@127.0.0.1:5432/lostmi
 $env:BACKEND_HOST='127.0.0.1'
 $env:BACKEND_PORT='8080'
 $env:STORAGE_PATH="$PWD\storage"
+# 仅全新站点；旧站升级保留原来的完整环境凭据
+$env:ADMIN_USERNAME='admin'
+$env:ADMIN_PASSWORD_HASH=''
+$env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(32))")
 .\backend\build\Release\lostmidi_api.exe
 ```
 
 迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
 
-原生模式启用后台时，在启动后端的环境中另外设置 `ADMIN_USERNAME` 和密码生成器输出的 `ADMIN_PASSWORD_HASH`；在 `frontend/.env.local` 设置 `ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`。更新已有数据库时必须先执行全部待应用迁移（包含 002、003 和 `004_optional_recovery_date.sql`），再启动新后端。
+原生新站在可信终端安全保存生成的安装令牌，在 `frontend/.env.local` 配置 `BACKEND_API_URL`、`ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`，启动后访问 `/install`；成功后单独登录，可移除后端令牌并重启。更新已有数据库时先执行全部待应用迁移（包含 002、003、004 和 `005_site_installation.sql`），第一次启动新版仍保留完整环境管理员凭据，确认 legacy 标记写入后再改配置。不要用清空旧站凭据的方式进入安装页。
 
 ## Environment Variables
 
@@ -191,24 +208,29 @@ $env:STORAGE_PATH="$PWD\storage"
 | DB_POOL_SIZE | 数据库连接数，默认 4，允许 1–64 |
 | HTTP_THREADS | HTTP 事件循环线程，默认 2，允许 1–64 |
 | WORKER_THREADS | 同步查询工作线程，默认 4，允许 1–64 |
-| SEED_DEMO | migration 默认 false；开发示例 .env 显式 true |
+| SEED_DEMO | migration 与环境模板默认 false；仅专用演示/测试库显式 true |
 | PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD | migration 和 psql 标准变量；runner 的 DATABASE_URL 优先 |
 | NEXT_TELEMETRY_DISABLED | Compose 中设为 1 |
-| ADMIN_USERNAME | 后端单管理员用户名；Compose 默认 admin；最长 100 UTF-8 字节 |
-| ADMIN_PASSWORD_HASH | 后端密码哈希，由 scripts/admin_password.py 生成；空值禁用登录，非法格式导致启动失败 |
-| ADMIN_ORIGIN | 前端必填的完整浏览器来源，例如 http://localhost:3000 或 https://archive.example.org；无路径与末尾斜杠 |
+| INSTALLATION_TOKEN | 仅后端；空值禁用安装，非空须匹配 `[A-Za-z0-9_-]{32,128}`；生成方式见上文，禁止放入 URL、NEXT_PUBLIC_ 或前端变量 |
+| ADMIN_USERNAME | 后端环境覆盖用户名；Compose 默认 admin，沿用最长 100 UTF-8 字节的旧规则；安装表单另用 ASCII 3–64 字符规则 |
+| ADMIN_PASSWORD_HASH | 后端环境覆盖哈希，由 scripts/admin_password.py 生成；完整有效环境凭据优先。空值不遮盖数据库管理员，无任一可用来源才禁用登录；非法非空格式导致启动失败 |
+| ADMIN_ORIGIN | 前端安装/后台表单使用的完整浏览器来源，例如 http://localhost:3000 或 https://archive.example.org；无路径与末尾斜杠 |
 | ADMIN_COOKIE_SECURE | 前端仅在值为 false 时允许 HTTP Cookie；正式 HTTPS 部署设 true |
-| LOSTMIDI_TEST_DATABASE_URL | 可选 C++ 集成测试连接串，指向已迁移且含 demo seed 的专用测试库；未设置时跳过该测试 |
+| LOSTMIDI_TEST_DATABASE_URL | 可选 C++ 集成测试连接串，仍指向已迁移且含 demo seed 的专用测试库；installation 用例创建隔离 schema，需 CREATE SCHEMA 权限；未设置时跳过数据库集成测试 |
+| INSTALLATION_TEST_TOKEN | 仅安装 smoke 进程使用，应与专用测试后端的 INSTALLATION_TOKEN 一致，不是前端部署变量 |
+| ADMIN_TEST_USERNAME / ADMIN_TEST_PASSWORD | 测试脚本凭据；安装浏览器 smoke 用于创建并登录新管理员，不用于生产环境 |
 
 修改后端端口时同步修改 BACKEND_API_URL。修改数据库密码时同步修改 DATABASE_URL，URI 密码中的保留字符需要 URL 编码。不要使用 NEXT_PUBLIC 暴露后端配置，也不要提交真实密码。
 
 ## Database
 
-详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events。
+详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events；另有 admin_sessions 与 site_installation。
 
-迁移 `004_optional_recovery_date.sql` 允许寻回日期为 NULL，保留原有日期。所有来源与寻回编辑保留记录 ID、寻回创建时间，和基础资料及署名共用作品 revision。当前后端启动及 `/ready` 检查 004 已应用且列实际可空；先迁移再启动新后端。
+迁移 `004_optional_recovery_date.sql` 允许寻回日期为 NULL，保留原有日期。所有来源与寻回编辑保留记录 ID、寻回创建时间，和基础资料及署名共用作品 revision。新增 `005_site_installation.sql` 只加安装表，不改旧迁移；当前启动及 `/ready` 检查 005 记录与表可查询，并继续核对 004 已应用且日期列实际可空。先执行全部迁移再启动新后端。
 
-迁移 `002_admin_sessions_and_revision.sql` 另增 `admin_sessions` 会话表，以及 `midi_entries.revision` 和自动递增触发器。管理员账号来自部署配置，不属于人物表；数据库仅存会话令牌的 SHA-256 摘要及凭据标识，不存原始令牌。修改档案时必须提交读取时的 revision，以检测并发修改。
+`site_installation` 至多一行 `id=1`，保存 `site_name`、`site_description` 和 `auth_source`（database 或 environment）。database 时保存用户名及随机盐 PBKDF2-HMAC-SHA256、600,000 次哈希；environment 时 username/password_hash 均为 NULL。事务和主键保证安装并发只有一个成功，提交确认后返回；移除令牌或重启不清除锁，无重装/reset 接口。
+
+迁移 `002_admin_sessions_and_revision.sql` 另增 `admin_sessions` 会话表，以及 `midi_entries.revision` 和自动递增触发器。管理员来自数据库安装或完整环境覆盖，不属于人物表；会话表仅存令牌 SHA-256 摘要及凭据标识，不存原始令牌。选用的用户名与哈希决定会话 identity，切换期间不匹配的会话拒绝，但恢复旧凭据可能重新匹配未过期旧会话。数据库备份现可能含管理员密码哈希，恢复时需明确撤销历史 sessions 或使用新凭据，防止重新启用旧会话。修改档案时必须提交读取时的 revision，以检测并发修改。
 
 - MidiEntry 是作品；MidiFile 是二进制版本，SHA-256 全局唯一。相同文件当前归属一个作品，真实需要跨作品复用后再拆关联表。
 - 所有实体 ID 在 JSON 中使用字符串，避免 JavaScript 大整数丢失精度。
@@ -239,7 +261,9 @@ MidiFileService 是未来导入基础：计算散列、检查重复、写入内�
 | 请求 | 行为 |
 | --- | --- |
 | GET /health | 进程存活，`{"status":"ok"}`；不代表数据库正常 |
-| GET /ready | 查询已迁移数据库，失败 503 |
+| GET /ready | 查询已迁移数据库，包含 005 安装表与 004 日期可空检查；失败 503 |
+| GET /api/v1/installation | 公开、no-store；返回 installed、installation_enabled、site: {name, description}，无秘密 |
+| POST /api/v1/installation | X-Installation-Token 授权；仅 site_name、site_description、username、password，成功 201、同 GET 响应；并发仅一成功 |
 | GET /api/v1/midis?page=1&pageSize=20 | 有序分页，每项包含 credits |
 | GET /api/v1/midis/:slug | entry、credits、people、historical_sources、recovery_events、files |
 | GET /api/v1/people/:id | person、aliases、midis |
@@ -274,7 +298,9 @@ npm run lint
 npm run typecheck
 ```
 
-后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期、档案及来源寻回写入冲突、跨作品归属和失败回滚；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。
+后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期、档案及来源寻回写入冲突、跨作品归属和失败回滚；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。新增 installation 集成测试创建隔离 schema，测试用户需要 CREATE SCHEMA 权限；仍不可使用生产库。
+
+安装测试另备**两个各自全新、已迁移的专用测试库及对应后端**，保持环境密码哈希为空并配置安装令牌。`python scripts/installation_smoke.py --api <专用测试后端> --allow-install` 要求 `INSTALLATION_TEST_TOKEN` 与后端令牌一致；`python scripts/installation_browser_smoke.py --frontend <另一个专用测试前端> --allow-install` 还要求 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`，可加 `--channel msedge`、`--screenshots <目录>`（需 Playwright 和相应浏览器）。两个脚本均永久安装，不能顺序指向同库，也不能在已安装或生产站点运行。本地验收结果与尚未执行的部署检查见 [Implementation Report](docs/implementation-report.md)。
 
 在专用测试库运行数据库检查，所有测试行回滚；identity 序列可能递增：
 
@@ -282,7 +308,7 @@ npm run typecheck
 psql -X -v ON_ERROR_STOP=1 -f database/tests/constraints.sql
 ```
 
-完整测试栈显式设置 `SEED_DEMO=true` 并执行迁移后运行（不用于生产库）：
+普通整栈 smoke 使用显式 `SEED_DEMO=true` 的专用测试库，执行全部迁移并完成安装或持久化 legacy 标记后运行（不用于生产库，也不是上面两个全新安装测试库）：
 
 ```sh
 python scripts/smoke.py
@@ -313,7 +339,7 @@ python scripts/smoke.py --api-only
 
 以下内容均未实现：
 
-- **User System**：面向用户的注册、多账号与角色权限；当前仅有部署配置的单管理员登录，人物档案与登录账号分离。
+- **User System**：面向用户的注册、多账号与角色权限；当前仅有数据库安装或环境覆盖的单管理员登录，人物档案与登录账号分离。
 - **Contribution System**：提交 MIDI / 历史资料，先设计格式校验与失败清理。
 - **Moderation**：审核贡献、署名和权利信息。
 - **Community**：帖子、评论、讨论，有需求后加入内部模块。
@@ -324,7 +350,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过部署配置建立，浏览器使用 HttpOnly Cookie；Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)，下一阶段见 [开发路线](docs/roadmap.md)。
+统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过一次性数据库安装建立，完整有效的环境凭据可优先覆盖；浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)，下一阶段见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 

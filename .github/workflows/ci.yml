@@ -58,6 +58,41 @@ jobs:
         run: python3 scripts/recovery_smoke.py --allow-writes
       - name: Administrator session and archive regression checks
         run: python3 scripts/admin_smoke.py --allow-writes
+      - name: One-time installation on a separate fresh database
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, secrets, subprocess, time, urllib.error, urllib.parse, urllib.request
+          compose = ['docker', 'compose', '--env-file', '.env.example']
+          example = dict(line.split('=', 1) for line in pathlib.Path('.env.example').read_text().splitlines() if line and not line.startswith('#'))
+          token = secrets.token_urlsafe(32)
+          print(f'::add-mask::{token}', flush=True)
+          url = urllib.parse.urlsplit(example['DATABASE_URL'])
+          database_url = urllib.parse.urlunsplit(url._replace(path='/lostmidi_install_check'))
+          env = {**os.environ, 'DATABASE_URL': database_url, 'INSTALLATION_TOKEN': token, 'INSTALLATION_TEST_TOKEN': token}
+          name = 'lostmidi-installation-check'
+          def run(*args, **kwargs):
+              subprocess.run([*compose, *args], check=True, **kwargs)
+          run('exec', '-T', 'postgres', 'sh', '-c', 'createdb -U "$POSTGRES_USER" lostmidi_install_check')
+          run('run', '--rm', '--no-deps', '-e', 'PGDATABASE=lostmidi_install_check', '-e', 'SEED_DEMO=false', 'migrate')
+          try:
+              run('run', '-d', '--no-deps', '--name', name, '-p', '127.0.0.1:18080:8080',
+                  '-e', 'DATABASE_URL', '-e', 'INSTALLATION_TOKEN', '-e', 'ADMIN_USERNAME=', '-e', 'ADMIN_PASSWORD_HASH=', 'backend', env=env)
+              opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              deadline = time.monotonic() + 60
+              while True:
+                  try:
+                      with opener.open('http://127.0.0.1:18080/ready', timeout=3) as response:
+                          if response.status == 200:
+                              break
+                  except (OSError, urllib.error.URLError):
+                      pass
+                  if time.monotonic() >= deadline:
+                      raise RuntimeError('Installation test backend did not become ready')
+                  time.sleep(.5)
+              subprocess.run(['python3', 'scripts/installation_smoke.py', '--api', 'http://127.0.0.1:18080', '--allow-install'], env=env, check=True)
+          finally:
+              subprocess.run(['docker', 'rm', '-f', name], check=False)
+          PY
       - name: Diagnostic logs
         if: failure()
         run: docker compose --env-file .env.example logs --no-color

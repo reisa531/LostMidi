@@ -28,10 +28,14 @@ int main() {
         const auto environment = [](const char* name) { const char* value = std::getenv(name); return std::string(value ? value : ""); };
         auth::AuthRepository authRepository(db);
         auth::AuthService auth(authRepository, environment("ADMIN_USERNAME"), environment("ADMIN_PASSWORD_HASH"));
+        installation::InstallationRepository installationRepository(db);
+        installation::InstallationService installation(installationRepository, environment("INSTALLATION_TOKEN"), auth.hasEnvironmentCredentials());
+        // Ready checks precede the atomic legacy marker; no routes are exposed until it commits.
+        installation.initializeLegacy();
         midi::MidiWriteService writer(midiRepository);
         person::PersonWriteService personWriter(personRepository);
         recovery::RecoveryWriteService recoveryWriter(recoveryRepository);
-        ApiController controller(midis, people, db, config.workerThreads, auth, writer, personWriter, recoveryWriter);
+        ApiController controller(midis, people, db, config.workerThreads, auth, writer, personWriter, recoveryWriter, installation);
         drogon::app().setClientMaxBodySize(128 * 1024);
         controller.registerRoutes();
         drogon::app().setThreadNum(static_cast<std::size_t>(config.httpThreads));

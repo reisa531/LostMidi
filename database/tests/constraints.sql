@@ -103,5 +103,93 @@ BEGIN
     END IF;
 END;
 $$;
+-- Clone constraints, not rows: installation checks never modify a real installation marker.
+CREATE TEMP TABLE installation_constraint_test (LIKE site_installation INCLUDING ALL) ON COMMIT DROP;
+DO $$
+DECLARE
+    fixture_hash TEXT := 'pbkdf2_sha256:600000:' || repeat('0',32) || ':' || repeat('0',64);
+BEGIN
+    BEGIN
+        INSERT INTO installation_constraint_test(id,site_name,site_description,auth_source)
+            VALUES(2,'Archive','','environment');
+        RAISE EXCEPTION 'Expected non-singleton installation id to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source)
+            VALUES('   ','','environment');
+        RAISE EXCEPTION 'Expected empty site name to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source)
+            VALUES(repeat('档',67),'','environment');
+        RAISE EXCEPTION 'Expected site name over 200 UTF8 bytes to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source)
+            VALUES('Archive',repeat('x',1001),'environment');
+        RAISE EXCEPTION 'Expected site description over 1000 bytes to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source)
+            VALUES('Archive','','other');
+        RAISE EXCEPTION 'Expected unknown authentication source to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source,username,password_hash)
+            VALUES('Archive','','environment','admin',fixture_hash);
+        RAISE EXCEPTION 'Expected environment credentials in DB to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source)
+            VALUES('Archive','','database');
+        RAISE EXCEPTION 'Expected absent database credentials to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source,username)
+            VALUES('Archive','','database','admin');
+        RAISE EXCEPTION 'Expected missing password hash to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source,password_hash)
+            VALUES('Archive','','database',fixture_hash);
+        RAISE EXCEPTION 'Expected missing username to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source,username,password_hash)
+            VALUES('Archive','','database','用户',fixture_hash);
+        RAISE EXCEPTION 'Expected non-ASCII username to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source,username,password_hash)
+            VALUES('Archive','','database','admin','plaintext');
+        RAISE EXCEPTION 'Expected invalid password hash to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    INSERT INTO installation_constraint_test(site_name,site_description,auth_source)
+        VALUES('Archive','','environment');
+    IF (SELECT installed_at IS NULL FROM installation_constraint_test) THEN
+        RAISE EXCEPTION 'Expected installation timestamp';
+    END IF;
+    BEGIN
+        INSERT INTO installation_constraint_test(site_name,site_description,auth_source,username,password_hash)
+            VALUES('Another archive','','database','admin',fixture_hash);
+        RAISE EXCEPTION 'Expected second installation to fail';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+    DELETE FROM installation_constraint_test;
+    INSERT INTO installation_constraint_test(site_name,site_description,auth_source,username,password_hash)
+        VALUES('Database archive','','database','admin',fixture_hash);
+END;
+$$;
 ROLLBACK;
 \echo Database constraint checks passed (test rows rolled back).

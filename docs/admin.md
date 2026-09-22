@@ -1,11 +1,12 @@
 # Admin 平台
 
-统一入口为 `/admin`，支持单管理员登录、退出、会话验证，以及 MIDI 基本信息新增和编辑。保存立即反映到公开站点，没有草稿或发布审核状态。
+统一入口为 `/admin`，支持单管理员登录、退出、会话验证，以及 MIDI 基本信息新增和编辑。新站先通过 `/install` 一次性初始化，成功后另行登录。保存立即反映到公开站点，没有草稿或发布审核状态。
 
 ## 当前页面
 
 | 路径 | 用途 |
 | --- | --- |
+| `/install` | 一次性站点与管理员初始化；已安装仅显示锁定，不提供重装、设置编辑或密码重置 |
 | `/admin/login` | 管理员登录，无公开注册 |
 | `/admin` | 真实档案总数、查询连接状态、档案速览与模块入口 |
 | `/admin/midis` | 档案分页表格、新增入口、编辑及公开详情链接 |
@@ -22,9 +23,10 @@
 
 ## 结构与扩展
 
-- `app/layout.tsx` 仅保留全局 HTML、样式和元数据。
-- `app/(site)/layout.tsx` 保留公开站点的页眉页脚；route group 不改变原有 URL。
-- `app/admin/layout.tsx` 设置后台索引元数据；`app/admin/(workspace)/layout.tsx` 验证会话并提供侧栏、移动端导航、顶栏和退出入口。
+- `app/layout.tsx` 保留全局 HTML、样式和元数据；数据库站点名称用于页眉、页脚及标题，简介用于 meta description。
+- `app/(site)/layout.tsx` 保留公开站点的页眉页脚，并在请求时检查安装状态；route group 不改变原有 URL。
+- `app/admin/layout.tsx` 在请求时检查安装状态并设置后台索引元数据；`app/admin/(workspace)/layout.tsx` 验证会话并提供侧栏、移动端导航、顶栏和退出入口。
+- `app/install/`、`components/install/` 与 `lib/install/` 承担一次性安装和前端配置文本生成；没有 Next.js 数据库访问或部署平台写入。
 - `lib/admin/auth.ts` 仅在服务端读取 Cookie、验证会话并调用 API；`actions.ts` 执行来源检查及登录、退出、保存操作。
 - `lib/admin/modules.ts` 集中定义模块名称、路径和开放状态，并生成导航。
 - `components/admin/ui.tsx` 提供页面标题、内容面板和不可用提示。
@@ -35,13 +37,54 @@
 
 ## 访问边界
 
-按 [RUN.md](../RUN.md) 运行 `python scripts/admin_password.py`，将生成的随机盐 PBKDF2-HMAC-SHA256（600,000 次）哈希配置为后端的 `ADMIN_PASSWORD_HASH`，同时设置 `ADMIN_USERNAME`。没有预置密码；空用户名或空哈希禁用登录，非法非空哈希使后端启动失败。
+管理员有两个来源，没有预置密码或公开注册：
 
-Next.js 服务端将令牌存入 HttpOnly、SameSite=Strict、Path=/admin Cookie，不传给客户端组件或 localStorage。生产 HTTPS 使用 `ADMIN_COOKIE_SECURE=true`；本机 HTTP 才设置 false。后台调用 C++ 时使用 Bearer 头，每次受保护请求均校验会话。公开查询无需登录。`noindex` 仅控制索引。
+- **数据库安装**：新站保持后端 `ADMIN_PASSWORD_HASH` 为空，经 `/install` 创建单管理员；`site_installation` 保存用户名与随机盐 PBKDF2-HMAC-SHA256（600,000 次）哈希，不保存明文密码。
+- **环境兼容/应急覆盖**：完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` 始终优先；哈希用 `python scripts/admin_password.py` 生成，环境用户名沿用最多 100 UTF-8 字节的旧规则，不套用安装用户名的新规则。非法非空哈希使后端启动失败。没有完整环境覆盖时读取数据库管理员；默认 `ADMIN_USERNAME=admin` 与空哈希不会遮盖数据库账号，没有任一可用来源才禁用登录。
 
-会话固定有效 8 小时，不自动续期；数据库仅保存令牌 SHA-256 摘要、凭据标识和有效期。退出撤销当前令牌，其他浏览器会话保留；退出失败显示错误并保留 Cookie 以便重试。修改用户名或重新生成密码哈希并重启后端，旧凭据会话失效。单后端进程每分钟最多接受 10 次登录尝试（包含成功登录），超限返回 429，计数不跨实例共享。
+旧环境部署第一次运行新版必须保留完整有效凭据，启动成功写入 `auth_source=environment` 的持久标记，`username` / `password_hash` 两列为 NULL，不复制环境哈希。移除环境凭据后仍为 installed，但登录禁用；必须恢复凭据或由维护者应急覆盖，不能删表重装。升级前先移除凭据时系统无法推断曾安装。环境覆盖数据库账号不修改数据库站点设置或账号。
 
-所有管理表单要求 Origin 精确等于 `ADMIN_ORIGIN`，另受 Next.js Server Actions 来源检查保护。配置含协议、主机和非默认端口，不带路径或末尾斜杠；反向代理需正确保留 Host。`localhost` 与 `127.0.0.1` 是不同来源。
+Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin Cookie，不传给客户端组件或 localStorage。生产 HTTPS 使用 `ADMIN_COOKIE_SECURE=true`；本机 HTTP 才设置 false。后台调用 C++ 时使用 Bearer 头，每次受保护请求均校验会话。公开查询无需登录。`noindex` 仅控制索引。
+
+无完整环境覆盖时，每次登录与鉴权重新读取数据库凭据；当前选用的用户名与哈希决定会话 identity。会话固定有效 8 小时，不自动续期；`admin_sessions` 仅保存令牌 SHA-256 摘要、凭据标识和有效期。切换凭据时不匹配的 session 被拒绝，但恢复旧凭据可能让未过期的旧 session 再次匹配，不能称为永久撤销。退出撤销当前令牌，其他浏览器会话保留；退出失败显示错误并保留 Cookie 以便重试。单后端进程每分钟最多接受 10 次登录尝试（包含成功登录），超限返回 429，计数不跨实例共享，且与安装限流分开。
+
+忘记密码可按 [RUN.md](../RUN.md) 用 `scripts/admin_password.py` 生成新的环境应急覆盖；保持覆盖直到维护者妥善维护数据库凭据，没有自动永久重置。生产数据库备份现含数据库管理员哈希和会话摘要，应与环境哈希一起受保护；恢复时明确撤销历史 sessions 或使用新凭据，并防止重新启用旧会话。
+
+所有管理及安装表单要求 Origin 精确等于 `ADMIN_ORIGIN`，另受 Next.js Server Actions 来源检查保护。配置含协议、主机和非默认端口，不带路径或末尾斜杠；反向代理需正确保留 Host。`localhost` 与 `127.0.0.1` 是不同来源。
+
+## 一次性安装 API 与页面
+
+部署者先准备数据库连接并执行全部迁移至 `005_site_installation.sql`；安装页不创建数据库、不自动迁移或 seed。后端 `INSTALLATION_TOKEN` 为空时禁用新安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，可用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。令牌只配置在后端，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量，也不是管理员会话令牌。
+
+公开站点 `/(site)` 与 `/admin` 父 layout 在请求时检查安装状态。缺少后端配置或明确 `installed=false` 才跳 `/install`；旧后端 404、非法响应或离线仅显示不可用，不开放安装。构建可不连接后端，运行必须有可用 API。已安装的 `/install` 仅显示锁定；数据库保存的站点名称用于页眉、页脚与标题，简介用于 meta description。
+
+前端配置表单只生成 `BACKEND_API_URL` / `ADMIN_ORIGIN` / `ADMIN_COOKIE_SECURE` 变量文本，用户自行保存 Vercel 项目变量并重新部署；不写 `.env`，不调用 Vercel API。生成 URL 文本不探测用户输入地址，诊断仅使用已部署环境目标，不提供 SSRF 探针。连接就绪后，安装表单填写站点名称、简介、用户名、密码及确认密码和令牌；确认密码只用于前端一致性校验，成功不自动登录。
+
+| 方法与路径 | 授权与响应 |
+| --- | --- |
+| `GET /api/v1/installation` | 公开、`Cache-Control: no-store`；仅返回 `{installed: boolean, installation_enabled: boolean, site: {name, description}}`，不返回令牌、用户名、密码哈希等秘密 |
+| `POST /api/v1/installation` | 使用 `X-Installation-Token` 头；JSON 仅接受 `site_name`、`site_description`、`username`、`password`；成功 201，响应同 GET 形状，带 no-store |
+
+`installed` 表示持久安装状态；`installation_enabled` 仅在未安装且后端令牌已启用时为 true。成功响应为 `installed=true`、`installation_enabled=false`，并返回持久化的公开站点名称和简介。
+
+| 安装字段 | 规则 |
+| --- | --- |
+| `site_name` | 字符串，trim 后 1–200 UTF-8 字节 |
+| `site_description` | 字符串，trim 后 0–1000 UTF-8 字节 |
+| `username` | ASCII `[A-Za-z0-9_.-]{3,64}`，不 trim |
+| `password` | 12–1024 UTF-8 字节，不 trim |
+
+拒绝 NUL、未知字段和非法类型；安装令牌不放在 JSON 中，确认密码不是 API 字段。
+
+| 状态 | 错误码 / 处理 |
+| --- | --- |
+| 400 | `INVALID_INPUT` |
+| 403 | `INSTALLATION_DISABLED` / `INVALID_INSTALLATION_TOKEN` |
+| 409 | `ALREADY_INSTALLED` |
+| 429 | `INSTALLATION_RATE_LIMITED`；每进程每分钟 10 次安装尝试，与登录额度分开，不跨实例共享 |
+| 503 | 数据库失败；必须显示不可用，不能当作未安装 |
+
+站点设置与管理员在同一事务写入 `site_installation(id=1)`，主键保证并发只有一个安装成功，等待 commit 确认后返回。超时后刷新 GET 或页面核对，不能假定回滚。成功后可移除令牌并重启后端，持久锁仍有效；无重装/reset 接口，也没有设置编辑或密码重置页，不得删除安装表/记录来恢复账号。
 
 ## API 与写入规则
 
@@ -118,10 +161,14 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 ## 验证
 
-数据库必须应用全部迁移至 `004_optional_recovery_date.sql`，不能只更新前端。该迁移只移除寻回日期的 NOT NULL，保留已有资料；启动和 `/ready` 同时检查迁移记录及实际列状态。
+数据库必须应用全部迁移至 `005_site_installation.sql`，不能只更新前端。005 只新增安装表；启动和 `/ready` 检查 005 记录及表可查询，继续检查 004 记录与寻回日期实际可空，不修改旧迁移。
+
+安装 API 检查：`python scripts/installation_smoke.py --api <测试后端> --allow-install`，要求环境变量 `INSTALLATION_TEST_TOKEN` 与该后端令牌一致。浏览器检查：`python scripts/installation_browser_smoke.py --frontend <测试前端> --allow-install`，另需 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD` 用于创建及登录新管理员，可加 `--channel msedge`、`--screenshots <目录>`，需 Playwright 及相应浏览器。两个脚本都会永久安装，必须各自使用独立、全新、已迁移的专用测试库，后端保持环境密码哈希为空；不能顺序指向同库，不得用于生产或已安装站点。
+
+CTest 新增 installation 测试使用隔离 schema，测试数据库用户需有 CREATE SCHEMA 权限。`LOSTMIDI_TEST_DATABASE_URL` 仍指向已迁移且含 demo seed 的专用测试库，与上述永久安装 smoke 的两个新库分开准备。本地验收结果及尚未执行的部署检查见 [Implementation Report](implementation-report.md)。
 
 在专用测试库运行 `python scripts/people_smoke.py --api http://127.0.0.1:8080 --allow-writes` 及 `python scripts/recovery_smoke.py --api http://127.0.0.1:8080 --allow-writes`。凭据使用 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`。脚本覆盖人物昵称、署名、来源寻回 CRUD、日期精度、空日期与人物、归属校验、并发版本与回滚，留下 people-check / recovery-check 前缀的测试资料。两者及浏览器验收应先于会触发登录限流的 admin_smoke 执行。
 
 可选浏览器验收：在独立 Python 环境安装 `playwright` 并运行 `python -m playwright install chromium`，再使用相同测试凭据执行 `python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes`。也可传 `--channel msedge` 使用已安装的 Edge；`--screenshots <目录>` 保存验收截图。浏览器地址必须与测试前端的 ADMIN_ORIGIN 一致。脚本会创建人物和作品，只能指向专用测试环境。
 
-运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。数据库需应用全部迁移至 004。运行中的 API 可用 `python scripts/admin_smoke.py --allow-writes` 检查，通过 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供测试凭据；脚本保留新增档案，只在专用测试数据库运行。浏览器验收见 [RUN.md](../RUN.md)，实际执行结果及限制见 [验证记录](implementation-report.md)。
+运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。数据库需应用全部迁移至 005。运行中的 API 可用 `python scripts/admin_smoke.py --allow-writes` 检查，通过 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供测试凭据；脚本保留新增档案，只在专用测试数据库运行。浏览器验收见 [RUN.md](../RUN.md)，实际执行结果及限制见 [验证记录](implementation-report.md)。

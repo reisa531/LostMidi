@@ -19,9 +19,10 @@ drogon::HttpResponsePtr errorResponse(int status, const std::string& code, const
 ApiController::ApiController(midi::MidiService& midis, person::PersonService& people,
                              drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth,
                              midi::MidiWriteService& writer, person::PersonWriteService& personWriter,
-                             recovery::RecoveryWriteService& recoveryWriter)
+                             recovery::RecoveryWriteService& recoveryWriter, installation::InstallationService& installation)
     : midis_(midis), people_(people), db_(std::move(db)), auth_(auth), writer_(writer),
-      personWriter_(personWriter), recoveryWriter_(recoveryWriter), workers_(static_cast<std::size_t>(workerCount), "archive") {}
+      personWriter_(personWriter), recoveryWriter_(recoveryWriter), installation_(installation),
+      workers_(static_cast<std::size_t>(workerCount), "archive") {}
 
 void ApiController::dispatch(Callback callback, std::function<Json::Value()> work, int successStatus) {
     if (pending_.fetch_add(1) >= 256) {
@@ -52,6 +53,7 @@ void ApiController::dispatch(Callback callback, std::function<Json::Value()> wor
 void ApiController::registerRoutes() {
     registerAdminRoutes();
     registerAdminRecoveryRoutes();
+    registerInstallationRoutes();
     drogon::app().setCustomErrorHandler([](drogon::HttpStatusCode status) {
         return errorResponse(static_cast<int>(status), "HTTP_ERROR", "The request could not be processed.");
     });

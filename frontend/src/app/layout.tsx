@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { installedSite } from "@/lib/install/state";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: { default: "Lost MIDI Archive · 失落的音序", template: "%s · Lost MIDI Archive" },
-  description: "记录早期网络 MIDI 的作品、人物、历史来源与寻回过程。",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const site = await installedSite();
+  return { title: { default: site.name, template: `%s · ${site.name}` }, description: site.description };
+}
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="zh-CN"><body className="antialiased">

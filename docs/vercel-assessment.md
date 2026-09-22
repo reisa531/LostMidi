@@ -39,9 +39,22 @@
 | `ADMIN_ORIGIN` | `https://archive.example.com` | 浏览器实际访问前端的完整来源，不含路径或末尾斜杠 |
 | `ADMIN_COOKIE_SECURE` | `true` | HTTPS 部署必须使用安全 Cookie |
 
-Vercel 中的 `localhost`、`127.0.0.1` 或 `http://backend:8080` 不会指向你的服务器。应让 HTTPS 反向代理转发到后端，并保持 PostgreSQL 不对公网开放。管理员用户名和密码哈希、数据库连接串、`STORAGE_PATH` 仍只配置在后端；Vercel 不需要它们。浏览器不直接请求 C++ API，现有服务端转发模式无需为此放宽 CORS 或 Origin 校验。
+Vercel 中的 `localhost`、`127.0.0.1` 或 `http://backend:8080` 不会指向你的服务器。应让 HTTPS 反向代理转发到后端，并保持 PostgreSQL 不对公网开放。环境管理员用户名和密码哈希、`INSTALLATION_TOKEN`、数据库连接串、`STORAGE_PATH` 只配置在后端，不能存入 Vercel 前端项目变量；新安装管理员则持久化在后端数据库。浏览器不直接请求 C++ API，现有服务端转发模式无需为此放宽 CORS 或 Origin 校验。
 
-首次部署前填写预期的前端域名。Vercel 项目名称不保证对应你预期的可用域名；部署分配域名后核对 `ADMIN_ORIGIN`，不一致时修改并重新部署，之后再使用后台。绑定或更换自定义域名也必须更新。未匹配的来源应被拒绝，不要用通配符绕过。
+首次部署前填写预期的前端域名。Vercel 项目名称不保证对应你预期的可用域名；部署分配域名后核对 `ADMIN_ORIGIN`，不一致时修改并重新部署，之后再安装或使用后台。绑定或更换自定义域名也必须更新。未匹配的来源应被拒绝，不要用通配符绕过。
+
+### `/install` 配置与一次性初始化
+
+1. 部署者在后端准备数据库连接，应用全部迁移至 `005_site_installation.sql`，确认 `/ready` 可用。安装页不创建数据库、不自动迁移或 seed；005 只加安装表，不改旧迁移。
+2. 新站保持后端 `ADMIN_PASSWORD_HASH` 为空，使用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成安装令牌，仅将其设为后端 `INSTALLATION_TOKEN`。空值禁用安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`。它不是 Vercel API token，不得放进 `NEXT_PUBLIC_`、URL、部署按钮参数或任何前端环境变量。
+3. 前端缺少后端配置时可打开 `/install` 的配置表单，它**只能生成** `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE` 三项变量文本。用户自行复制到 Vercel Project Settings → Environment Variables，选择正确环境、保存并 **Redeploy**；仅在表单填值或仅保存项目变量不会更新已部署进程。页面不写 `.env`、不持久化平台配置、不调用 Vercel API。
+4. URL 文本生成不会探测用户输入的地址；连接诊断只访问已部署环境中的 `BACKEND_API_URL`，不是任意地址的 SSRF 探针。若诊断仍指向旧地址，先检查变量作用环境与重新部署结果。
+5. 重新部署后从精确匹配 `ADMIN_ORIGIN` 的域名访问 `/install`，填写站点名称、简介、用户名、密码和确认密码，并输入令牌。令牌仅作为本次安装提交的秘密，由前端服务端向后端发送 `X-Installation-Token`，不成为前端配置。成功不自动登录，请另行前往 `/admin/login`。
+6. 安装成功可移除后端令牌并重启后端，数据库单行持久锁仍有效；已安装的 `/install` 只显示锁定。没有重装/reset、站点设置编辑或密码重置页。数据库中的名称用于页眉、页脚和标题，简介用于 meta description。
+
+公开站点与 `/admin` 父 layout 在请求时判断安装状态：缺少后端配置或 API 明确返回 `installed=false` 才跳 `/install`；旧后端 404、非法响应、离线或数据库故障只显示不可用，不开放安装。数据库故障返回 503，不能当作新站。安装提交须等待 commit 确认；超时后刷新核对，不能假定回滚或删除锁重试。前端可在无后端时完成 build，但运行必须有可用 API。
+
+已有环境管理员升级时，第一次运行新版须保留完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`，成功持久化 environment 标记后才能改配置。环境凭据优先但不修改数据库站点设置；移除 legacy 凭据不会重新开放安装，只会禁用登录，需恢复或提供维护者应急覆盖。密码恢复及历史会话处理见 [RUN.md](../RUN.md)。
 
 Production 与 Preview 的环境变量应分开配置。默认将生产值仅用于 Production；需要后台预览验收时使用专用测试后端及固定的预览域名，并填写对应的精确 `ADMIN_ORIGIN`。随机预览域名不会自动获得生产后台操作权限，也不要让预览构建指向正式数据做写入测试。
 
@@ -76,9 +89,11 @@ docker build -t lostmidi-frontend ./frontend
 
 ## 5. 验收与限制
 
-构建成功不等于 API 已连通。发布后应检查公开列表、真实档案详情、人物页及后台登录；首页 200 可能只是“档案暂时无法读取”的提示页，不能作为完整验收。后台写入、注销和来源校验仅在专用测试环境做自动化验收。
+构建成功不等于 API 已连通。发布后应检查安装状态、公开列表、真实档案详情、人物页及后台登录；首页 200 可能只是不可用提示页，不能作为完整验收。后台写入、注销和来源校验仅在专用测试环境做自动化验收。
 
-CI 的 `frontend` 作业会把前端复制到独立临时目录，在无根目录文件、无后端的条件下执行 `npm ci` 和 `npm run check`；`stack` 作业保留 Compose 整栈检查。提供配置不等于已完成远程 CI 或线上发布，实际执行记录见 [Implementation Report](implementation-report.md)。
+安装 API smoke 使用 `python scripts/installation_smoke.py --api <测试后端> --allow-install`，要求 `INSTALLATION_TEST_TOKEN`；浏览器 smoke 使用 `python scripts/installation_browser_smoke.py --frontend <测试前端> --allow-install`，还要求 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`，可加 `--channel msedge`、`--screenshots <目录>`。两者都会永久安装，必须各用独立、全新、已迁移的专用测试库，不能顺序指向同一个库或生产后端。完整准备步骤见 [RUN.md](../RUN.md)。
+
+CI 的 `frontend` 作业会把前端复制到独立临时目录，在无根目录文件、无后端的条件下执行 `npm ci` 和 `npm run check`；`stack` 作业保留 Compose 整栈检查。本地安装、前端独立构建及浏览器回归已通过；本轮未执行远程 GitHub Actions、Linux Docker 镜像及容器验收或 Vercel 发布。实际执行记录与限制见 [Implementation Report](implementation-report.md)。
 
 ## 历史：2026-09-15 的整站评估
 
