@@ -10,7 +10,7 @@
 .tools
 .venv
 .vscode
-storage
+/storage
 node_modules
 **/node_modules
 **/build

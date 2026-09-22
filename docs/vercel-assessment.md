@@ -25,11 +25,11 @@
 
 ### 后端独立项目：正式根配置
 
-后端项目 Root Directory 为仓库根目录，使用 [`vercel.backend.json`](../vercel.backend.json)，不是 `frontend/vercel.json`：
+后端项目 Root Directory 为仓库根目录，使用 [`vercel.json`](../vercel.json)，不是 `frontend/vercel.json`：
 
 - `services.backend.root='.'`，`entrypoint='docker/backend.Dockerfile'`，后端构建 context 为仓库根。
 - region 为 `iad1`；`/(.*)` rewrite 到 backend 服务。
-- 经确认发布时显式选择该配置（CLI 参数 `--local-config vercel.backend.json`），并核对目标是后端项目。不是在前端项目修改 Root Directory，也不是 Vercel Compose 部署。
+- 经确认发布时显式选择该配置（CLI 参数 `--local-config vercel.json`），并核对目标是后端项目。不是在前端项目修改 Root Directory，也不是 Vercel Compose 部署。
 - 平台注入的 `PORT` 优先于 `BACKEND_PORT`，无需手工覆盖；容器监听 `0.0.0.0`，默认 2 个数据库连接、2 个 HTTP 线程、2 个 worker，适合先控制 Neon Free 用量。
 - 后端使用现有 Neon `DATABASE_URL`；迁移不是镜像启动或 `/install` 的一部分。更新应用前，在受控维护环境备份并使用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 迁移已有库至 006，保留 005 安装锁和原数据；不得用要求空库的 `.tools` 临时脚本。具体步骤见 [RUN.md 第 7.2 节](../RUN.md#72-更新发布)。即使关闭导入，新版也要求 006。
 

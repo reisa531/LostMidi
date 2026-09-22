@@ -23,7 +23,7 @@ Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可
 
 ### 当前生产：Vercel 前后端独立项目 + Neon Free
 
-后端项目使用仓库根目录及正式配置 `vercel.backend.json`：`services.backend.root='.'`、`entrypoint='docker/backend.Dockerfile'`、region `iad1`，`/(.*)` rewrite 指向 backend。它不是前端配置，也不包含数据库或迁移任务；未来经确认发布时须显式选择此配置（CLI 对应 `--local-config vercel.backend.json`），不能误部署到前端项目。
+后端项目使用仓库根目录及正式配置 `vercel.json`：`services.backend.root='.'`、`entrypoint='docker/backend.Dockerfile'`、region `iad1`，`/(.*)` rewrite 指向 backend。它不是前端配置，也不包含数据库或迁移任务；未来经确认发布时须显式选择此配置（CLI 对应 `--local-config vercel.json`），不能误部署到前端项目。
 
 后端容器接受平台 `PORT`，优先于 `BACKEND_PORT`；监听 `0.0.0.0`，默认 `DB_POOL_SIZE=2`、`HTTP_THREADS=2`、`WORKER_THREADS=2`。`DATABASE_URL` 使用现有 Neon 连接配置，数据库与存储密钥仅放在后端项目、按 Production / Preview 隔离；不要复制 Compose 的 `postgres` DNS 名称到云端。前端继续 Root Directory=`frontend`，只配置 `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE`。
 
@@ -402,7 +402,7 @@ docker compose stop
 
    脚本支持已有库，以事务和 advisory lock 串行迁移，校验并跳过已应用版本；`DATABASE_URL` 非空时优先于 `PG*`。保留原 001–005 与校验和，不使用要求空库的 `.tools` 临时脚本，不直接只跑 006 SQL 绕过迁移账本。
 3. 退出码必须为 0，再只读核对 `schema_migrations` 中的 `006_midi_import_journal.sql` 与新增结构，保留 `site_installation` 锁及已有资料。失败先排障，不能发布新版绕过检查。
-4. 本地检查及迁移确认后，另行确认发布到**后端独立项目**并显式选择 `vercel.backend.json`，再更新前端；不反复触发云构建。核对 `/ready`、已有安装状态与只读页面。真实桶未验证前保持导入关闭；S3 配置与密钥不得复制到前端。
+4. 本地检查及迁移确认后，另行确认发布到**后端独立项目**并显式选择 `vercel.json`，再更新前端；不反复触发云构建。核对 `/ready`、已有安装状态与只读页面。真实桶未验证前保持导入关闭；S3 配置与密钥不得复制到前端。
 
 本轮没有执行上述迁移、云构建或发布，不能据此声称联调成功。
 

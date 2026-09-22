@@ -24,6 +24,6 @@
 
 生产已运行于独立 Vercel 后端容器项目 + Neon Free，数据库上次迁移到 005；当前代码尚未发布，`006_midi_import_journal.sql` 尚未在生产执行。新版启动及 `/ready` 还会检查 006 journal 和私有归档确认字段，**即使关闭导入也须先迁移**。已有库先备份，使用现有幂等 `database/migrate.sh` 执行全部待应用迁移至 006，再更新应用；不要修改旧迁移或使用要求空库的 `.tools` 临时脚本。005 安装锁与已有数据保留；旧环境管理员首次升级时仍须保留完整凭据直到 legacy 标记持久化，见 [RUN.md](../RUN.md)。
 
-本轮完成本地代码、配置与上述验证，不代表真实桶联调、云构建或部署验收通过。前端继续使用 Root Directory=`frontend`，后端使用根 `vercel.backend.json`，旧 VPS / Compose 方案仍可用。保持 2 个连接 / 2 个 worker、Preview 隔离和少量按需验收，避免反复云构建消耗额度。
+本轮完成本地代码、配置与上述验证，不代表真实桶联调、云构建或部署验收通过。前端继续使用 Root Directory=`frontend`，后端使用根 `vercel.json`，旧 VPS / Compose 方案仍可用。保持 2 个连接 / 2 个 worker、Preview 隔离和少量按需验收，避免反复云构建消耗额度。
 
 安装不创建数据库、不自动迁移或 seed，不提供重装/reset、设置编辑或密码重置页。安装功能边界见 [Admin 文档](admin.md)，历史本地验收记录见 [Implementation Report](implementation-report.md)，不是本轮导入验收证明。自动化写入检查只在专用测试库执行；两种安装 smoke 必须分别使用全新、已迁移的独立专用测试库，会永久安装，不能顺序指向同库。

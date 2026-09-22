@@ -6,7 +6,7 @@
 
 部署与运维请从 [RUN.md](RUN.md) 开始：包含环境配置、启动验收、服务器访问、更新、备份恢复与故障排查。
 
-前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端已使用独立 Vercel 容器项目 + Neon Free，根 `vercel.backend.json` 是后端配置。旧 VPS / Compose 部署仍可用。生产数据库上次迁移至 005，新增 006 尚未执行、当前代码尚未发布；更新应用前必须先安全迁移。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
+前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端已使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。生产数据库上次迁移至 005，新增 006 尚未执行、当前代码尚未发布；更新应用前必须先安全迁移。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
 ## Architecture
 

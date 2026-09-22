@@ -4,6 +4,7 @@
   "services": {
     "backend": {
       "root": ".",
+      "runtime": "container",
       "entrypoint": "docker/backend.Dockerfile"
     }
   },
