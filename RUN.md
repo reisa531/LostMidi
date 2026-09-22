@@ -1,12 +1,12 @@
 # Lost MIDI Archive 部署与运行手册
 
-适用版本：当前仓库基础工程、单管理员认证与档案基本信息管理。最后核对：2026-09-15。
+适用版本：当前仓库基础工程、单管理员认证、档案与人物管理；2026-09-22 补充前端独立部署说明。
 
-本文指导单机部署、启动验收、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
+本文指导单机部署、前端 Vercel 分离部署、启动验收、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
 
 ## 1. 部署方式与边界
 
-推荐使用仓库自带的 Docker Compose，一次部署四个服务：
+前后端是同仓库中的独立项目，可以选择完整 Compose 部署，或仅把 `frontend/` 部署到 Vercel。完整单机部署使用仓库自带的 Docker Compose，一次部署四个服务：
 
 | 服务 | 职责 | 数据与生命周期 |
 | --- | --- | --- |
@@ -17,7 +17,23 @@
 
 默认只将端口发布到宿主机 `127.0.0.1`，适合本机试运行，或置于服务器的 HTTPS 反向代理后。项目当前没有自带域名、证书、反向代理或高可用部署。
 
-Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可新增、编辑 MIDI 基本信息。管理员由部署环境配置，无公开注册或多角色管理。保存的档案立即出现在公开站点；归档状态不控制可见性。对外部署需使用 HTTPS 和 Secure Cookie。PostgreSQL 与后端不需要直接暴露到公网，`noindex` 仅控制索引。
+Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可新增、编辑 MIDI 基本信息。管理员由部署环境配置，无公开注册或多角色管理。保存的档案立即出现在公开站点；归档状态不控制可见性。对外部署需使用 HTTPS 和 Secure Cookie。完整单机模式下 PostgreSQL 与后端不需要直接暴露到公网，`noindex` 仅控制索引。
+
+### 前端 Vercel、后端独立运行
+
+前端目录已包含自己的 package/lockfile、Node 版本约束、环境示例、忽略规则、许可证、Dockerfile 和 `vercel.json`，可以不带父目录文件单独安装、构建。Vercel 中导入当前仓库并选择 Root Directory=`frontend`，不需要新建 Git 仓库。完整设置和可选的一键克隆部署按钮见 [前端 Vercel 部署指引](docs/vercel-assessment.md)。
+
+服务器仍按下文准备根目录 `.env`、数据库和存储，只需启动后端及其依赖，不启动本机前端：
+
+```sh
+docker compose --env-file .env up --build -d backend
+```
+
+Compose 仍会解析完整配置，因此根目录 `.env` 保留模板要求的变量；这些配置不会自动同步到 Vercel。这个命令不停止已经在运行的前端容器，也不删除数据卷。
+
+在服务器部署 HTTPS 反向代理，将后端域名转发到 `http://127.0.0.1:8080`（端口以实际配置为准），让 Vercel 能访问其公开 API 和受认证保护的管理 API；数据库继续仅在本机或私网可达。在 Vercel 单独设置 `BACKEND_API_URL=https://api.example.com`、精确匹配前端域名的 `ADMIN_ORIGIN` 和 `ADMIN_COOKIE_SECURE=true`。示例域名必须替换成自己的地址，不要把 Docker 内部名称 `backend` 或 localhost 填进 Vercel。
+
+Vercel 使用原生 Next.js 构建；`frontend/Dockerfile` 在构建时设置 `NEXT_OUTPUT_STANDALONE=true`，仅供自托管镜像生成 standalone 输出。原有整栈 Compose 的前端 build context 现在是 `./frontend`，因此独立构建同样可以使用 `docker build -t lostmidi-frontend ./frontend`。
 
 ## 2. 环境准备
 
@@ -166,7 +182,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-当前应用需要执行迁移 002 和 `003_person_revision.sql`：前者新增管理员会话表和档案 revision，后者新增人物 revision 与递增触发器，均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，不要修改已应用的迁移文件。启动时和 `/ready` 均检查新结构；缺少迁移会导致启动失败，运行中结构不可查询时 `/ready` 返回 503。
+当前应用需要执行全部迁移至 `004_optional_recovery_date.sql`：002 新增管理员会话及档案 revision，003 新增人物 revision，004 允许未知寻回日期为 NULL，均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，不要修改已应用的迁移文件。启动时和 `/ready` 同时检查 004 迁移记录及 recovered_at 实际可空性；缺少迁移会导致启动失败，运行中结构缺失或不可查询时 `/ready` 返回 503。
 
 ## 5. 部署验收
 
@@ -189,7 +205,7 @@ docker compose run --rm migrate psql -X -v ON_ERROR_STOP=1 -f /database/check_pr
 | `http://localhost:3000/admin/midis` | 登录后显示后台档案表格与新增、编辑入口 |
 | `http://localhost:3000/admin/modules` | 登录后显示模块目录 |
 | `http://127.0.0.1:8080/health` | `{"status":"ok"}`，仅表示进程存活 |
-| `http://127.0.0.1:8080/ready` | 200，确认数据库、档案 revision 和会话表可查询 |
+| `http://127.0.0.1:8080/ready` | 200，确认数据库、作品/人物 revision、会话表及迁移 004 的实际结构 |
 | `http://127.0.0.1:8080/api/v1/midis?page=1&pageSize=20` | 包含 data 与 pagination 的 JSON |
 
 Linux / macOS：
@@ -218,11 +234,17 @@ python scripts/smoke.py --api-only
 2. 错误密码显示错误；正确账号登录后进入工作台，Cookie 为 HttpOnly、SameSite=Strict、Path=/admin，HTTPS 部署还应为 Secure。
 3. 新增一条测试档案，检查成功提示、公开列表与详情；修改基本信息后公开详情应反映最新值。修改 slug 后旧 URL 返回 404，当前没有自动重定向。
 4. 重复 slug 和非法字段应显示错误且保留表单内容；两个标签页编辑同一档案时，后保存的旧版本应收到冲突提示，不能覆盖已保存内容。
-5. 退出后重新访问后台应要求登录，已撤销的令牌不能写入；会话到期后也应重新登录。
+5. 从作品编辑页进入「管理来源与寻回」：新增、编辑、删除来源和寻回记录，公开详情同步更新。未知时间、人物可留空；网址及 UTC 日期必须合法，来源首次时间不能晚于最后时间。
+6. 来源、寻回、署名及基础信息共用作品版本；并发旧表单不得覆盖新内容，401/409 保留输入，删除需确认且取消不丢输入。检查桌面及手机宽度。
+7. 退出后重新访问后台应要求登录，已撤销的令牌不能写入；会话到期后也应重新登录。
 
-管理员 API 自动检查命令：
+管理员自动检查命令（admin_smoke 会触发登录限流，放在最后）：
 
 ```sh
+python scripts/people_smoke.py --api http://127.0.0.1:8080 --allow-writes
+python scripts/recovery_smoke.py --api http://127.0.0.1:8080 --allow-writes
+# 可选：已安装 Playwright 及对应浏览器；可加 --channel msedge 使用 Edge
+python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes
 python scripts/admin_smoke.py --api http://127.0.0.1:8080 --allow-writes
 ```
 
@@ -347,18 +369,18 @@ sudo tar -xzf "$backup_dir/storage.tar.gz" -C "$backup_dir/restore-check"
 
 原生编译命令按平台见 [README 的 Local Development](README.md#local-development)。基本顺序不能省略：
 
-1. 安装 Node 22.13+、npm、C++20 编译器、CMake 3.24+、Conan 2、PostgreSQL 17 与 psql。
+1. 安装 Node 22.13+（22.x）、npm、C++20 编译器、CMake 3.24+、Conan 2、PostgreSQL 17 与 psql。
 2. 创建数据库和用户，设置 libpq 连接变量，执行 `sh database/migrate.sh`；Windows 可用 Git Bash。
 3. Conan 安装依赖，CMake configure / build / CTest。
 4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH，以及 ADMIN_USERNAME、ADMIN_PASSWORD_HASH，运行后端可执行程序。
-5. 在 frontend 目录配置 `.env.local` 中的 BACKEND_API_URL、ADMIN_ORIGIN、ADMIN_COOKIE_SECURE，构建并运行前端。
+5. 在 frontend 目录配置 BACKEND_API_URL、ADMIN_ORIGIN、ADMIN_COOKIE_SECURE；开发使用 `.env.local`，生产使用 `.env.production.local`，然后构建并运行前端。
 
-原生前端生产模式示例：
+原生前端生产模式示例（仅在目标文件不存在时复制）：
 
 ```sh
 cd frontend
-cp .env.example .env.local
-# 编辑 BACKEND_API_URL，并设置浏览器 ADMIN_ORIGIN 与 ADMIN_COOKIE_SECURE
+cp .env.production.example .env.production.local
+# 填入真实 BACKEND_API_URL、精确的 ADMIN_ORIGIN，并保持 ADMIN_COOKIE_SECURE=true
 npm ci
 npm run build
 npm run start
@@ -396,7 +418,7 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 
 ## 11. 验证记录与文档维护
 
-本轮评估后按需求放弃整站 Vercel 一键部署，保留 Compose。Vercel 虽支持容器，但现有数据库迁移与持久卷需要另行迁移和验证，详见 [Vercel 评估](docs/vercel-assessment.md)。
+当前支持前端独立部署到 Vercel，同时保留 Compose 整栈模式。2026-09-15 放弃的是“将数据库、迁移和持久存储一起搬到 Vercel”的整站方案，不是前端部署；配置方法与边界见 [Vercel 部署指引](docs/vercel-assessment.md)。
 
 本手册根据当前 Dockerfile、Compose、配置读取逻辑和迁移脚本核对。用户已确认此前整站部署验收完成；此确认属于基础站点阶段，不自动覆盖本次新增的管理员认证和档案写入。代理实际执行的编译与检查、本次后台运行验证的限制见 [Implementation Report](docs/implementation-report.md)。备份恢复仍需在目标环境单独演练并记录结果。
 

@@ -17,6 +17,7 @@ endif()
 
 add_library(lostmidi_core
     src/person/PersonWriteService.cpp
+    src/recovery/RecoveryWriteService.cpp
     src/auth/Password.cpp
     src/midi/MidiWriteService.cpp
     src/midi/MidiService.cpp
@@ -33,7 +34,8 @@ add_library(lostmidi_postgres
     src/recovery/PostgresRecoveryRepository.cpp)
 target_link_libraries(lostmidi_postgres PUBLIC lostmidi_core Drogon::Drogon)
 
-add_executable(lostmidi_api src/main.cpp src/common/ApiController.cpp src/common/AdminController.cpp)
+add_executable(lostmidi_api src/main.cpp src/common/ApiController.cpp
+    src/common/AdminController.cpp src/common/AdminRecoveryController.cpp)
 target_link_libraries(lostmidi_api PRIVATE lostmidi_postgres)
 
 include(CTest)

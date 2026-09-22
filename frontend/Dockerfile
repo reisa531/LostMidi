@@ -1,9 +1,9 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
-COPY frontend/package.json frontend/package-lock.json ./
+ENV NEXT_TELEMETRY_DISABLED=1 NEXT_OUTPUT_STANDALONE=true
+COPY package.json package-lock.json ./
 RUN npm ci
-COPY frontend/ ./
+COPY . ./
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

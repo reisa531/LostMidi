@@ -8,11 +8,12 @@ BEGIN
         SELECT 1 FROM midi_entries
         WHERE slug IN ('example-midi', 'clockwork-tide', 'lantern-map')
            OR slug LIKE 'admin-check-%' OR slug LIKE 'repository-test-%' OR slug LIKE 'people-check-%'
+           OR slug LIKE 'recovery-check-%'
            OR title ILIKE '%(fictional)%'
     ) OR EXISTS (
         SELECT 1 FROM people
         WHERE display_name IN ('Mira Pixel (fictional)', 'Rowan Archive (fictional)')
-           OR display_name LIKE 'people-check-%'
+           OR display_name LIKE 'people-check-%' OR display_name LIKE 'recovery-check-%'
     ) THEN
         RAISE EXCEPTION 'Possible demo/test records remain. Review the target database before production release; no data was changed.';
     END IF;

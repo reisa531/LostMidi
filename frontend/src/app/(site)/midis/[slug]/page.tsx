@@ -23,13 +23,13 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     <div className="mb-7 flex items-center gap-4"><Status status={entry.archive_status} /><span className="text-sm text-muted">推测年代：{entry.estimated_year ?? "不详"}</span></div>
     <p className="mb-9 whitespace-pre-wrap leading-8 text-muted">{entry.description ?? "尚无描述。"}</p>
     <Section title="人物与署名"><Credits credits={credits} /></Section>
-    <Section title="历史来源">{historical_sources.length ? historical_sources.map(source => <div key={source.id}>
+    <Section title="历史来源">{historical_sources.length ? historical_sources.map(source => <div className="min-w-0 [overflow-wrap:anywhere]" key={source.id}>
       <h3 className="font-semibold">{source.website_name}</h3>
       <p className="text-xs text-muted">首次记录 {dateLabel(source.first_seen_at)} · 最后记录 {dateLabel(source.last_seen_at)}</p>
       <div className="flex flex-wrap gap-5"><ExternalSource url={source.original_url} label="原始网址" /><ExternalSource url={source.wayback_url} label="历史快照" /></div>
       <p className="whitespace-pre-wrap">{source.notes ?? "暂无补充说明。"}</p>
     </div>) : <p className="text-muted">尚未登记历史来源。</p>}</Section>
-    <Section title="寻回记录">{recovery_events.length ? recovery_events.map(event => <div className="border-l-2 border-line pl-5" key={event.id}>
+    <Section title="寻回记录">{recovery_events.length ? recovery_events.map(event => <div className="min-w-0 border-l-2 border-line pl-5 [overflow-wrap:anywhere]" key={event.id}>
       <p className="mb-2 text-xs text-muted">{dateLabel(event.recovered_at)} · {event.recovered_by ? <Link className="archive-link" href={`/people/${event.recovered_by}`}>{event.recovered_by_name ?? "贡献者"}</Link> : "贡献者不详"}</p>
       <p className="whitespace-pre-wrap">{event.story}</p><p className="mt-3 whitespace-pre-wrap text-muted">证据说明：{event.evidence ?? "尚未补充"}</p>
     </div>) : <p className="text-muted">尚无寻回记录。</p>}</Section>

@@ -2,6 +2,7 @@
 #include <json/json.h>
 #include "midi/Models.h"
 #include "person/PersonWriteService.h"
+#include "recovery/RecoveryWriteService.h"
 
 namespace lostmidi {
 template <typename T>
@@ -77,6 +78,34 @@ template <typename T>
 Json::Value jsonArray(const std::vector<T>& values) {
     Json::Value j(Json::arrayValue);
     for (const auto& value : values) j.append(toJson(value));
+    return j;
+}
+inline Json::Value toJson(const recovery::HistoryEditor& editor) {
+    Json::Value j;
+    j["entry"]["id"] = std::to_string(editor.midiId);
+    j["entry"]["title"] = editor.title;
+    j["entry"]["slug"] = editor.slug;
+    j["entry"]["revision"] = Json::Int64(editor.revision);
+    j["historical_sources"] = jsonArray(editor.history.sources);
+    j["recovery_events"] = jsonArray(editor.history.events);
+    return j;
+}
+inline Json::Value toJson(const recovery::SourceWriteResult& result) {
+    Json::Value j;
+    j["revision"] = Json::Int64(result.revision);
+    j["source"] = toJson(result.source);
+    return j;
+}
+inline Json::Value toJson(const recovery::EventWriteResult& result) {
+    Json::Value j;
+    j["revision"] = Json::Int64(result.revision);
+    j["event"] = toJson(result.event);
+    return j;
+}
+inline Json::Value toJson(const recovery::DeleteResult& result) {
+    Json::Value j;
+    j["revision"] = Json::Int64(result.revision);
+    j["deleted_id"] = std::to_string(result.deletedId);
     return j;
 }
 inline Json::Value toJson(const midi::MidiDetail& d) {

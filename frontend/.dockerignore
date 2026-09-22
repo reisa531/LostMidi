@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+.vercel
+node_modules
+.next
+out
+coverage
+*.tsbuildinfo
+*.log
+.vscode
+.idea
+.DS_Store
+Thumbs.db

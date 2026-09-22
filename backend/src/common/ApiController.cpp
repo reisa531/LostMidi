@@ -1,4 +1,5 @@
 #include "common/ApiController.h"
+#include "common/Database.h"
 #include "common/Json.h"
 #include "common/Log.h"
 
@@ -10,13 +11,17 @@ drogon::HttpResponsePtr errorResponse(int status, const std::string& code, const
     body["error"]["message"] = message;
     auto response = drogon::HttpResponse::newHttpJsonResponse(body);
     response->setStatusCode(static_cast<drogon::HttpStatusCode>(status));
+    response->addHeader("Cache-Control", "no-store");
     logEvent("http_error", status);
     return response;
 }
 }
 ApiController::ApiController(midi::MidiService& midis, person::PersonService& people,
-                             drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth, midi::MidiWriteService& writer, person::PersonWriteService& personWriter)
-    : midis_(midis), people_(people), db_(std::move(db)), auth_(auth), writer_(writer), personWriter_(personWriter), workers_(static_cast<std::size_t>(workerCount), "archive") {}
+                             drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth,
+                             midi::MidiWriteService& writer, person::PersonWriteService& personWriter,
+                             recovery::RecoveryWriteService& recoveryWriter)
+    : midis_(midis), people_(people), db_(std::move(db)), auth_(auth), writer_(writer),
+      personWriter_(personWriter), recoveryWriter_(recoveryWriter), workers_(static_cast<std::size_t>(workerCount), "archive") {}
 
 void ApiController::dispatch(Callback callback, std::function<Json::Value()> work, int successStatus) {
     if (pending_.fetch_add(1) >= 256) {
@@ -46,6 +51,7 @@ void ApiController::dispatch(Callback callback, std::function<Json::Value()> wor
 
 void ApiController::registerRoutes() {
     registerAdminRoutes();
+    registerAdminRecoveryRoutes();
     drogon::app().setCustomErrorHandler([](drogon::HttpStatusCode status) {
         return errorResponse(static_cast<int>(status), "HTTP_ERROR", "The request could not be processed.");
     });
@@ -56,9 +62,7 @@ void ApiController::registerRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/ready", [this](const drogon::HttpRequestPtr&, Callback&& callback) {
         dispatch(std::move(callback), [this] {
-            db_->execSqlSync("SELECT revision FROM midi_entries LIMIT 1");
-            db_->execSqlSync("SELECT revision FROM people LIMIT 1");
-            db_->execSqlSync("SELECT token_hash FROM admin_sessions LIMIT 1");
+            requireDatabaseReady(db_);
             Json::Value body;
             body["status"] = "ok";
             return body;

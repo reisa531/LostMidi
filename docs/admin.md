@@ -12,12 +12,13 @@
 | `/admin/midis/new` | 新增档案基本信息 |
 | `/admin/midis/[id]/edit` | 编辑基本信息；保存后显示公开详情链接 |
 | `/admin/midis/[id]/credits` | 添加、调整或移除作品署名 |
+| `/admin/midis/[id]/history` | 逐条新增、编辑、删除历史来源与寻回记录 |
 | `/admin/people` | 人物分页列表、创建和编辑入口 |
 | `/admin/people/new` | 创建人物及历史昵称 |
 | `/admin/people/[id]/edit` | 编辑人物资料和昵称 |
 | `/admin/modules` | 管理功能目录，仅展示可使用的功能 |
 
-人物管理与作品署名已开放；来源与寻回仍在规划中。数据不可用时显示未知状态，不显示假的统计数字。
+人物管理、作品署名、来源与寻回已开放；后两者从作品编辑页进入。数据不可用时显示未知状态，不显示假的统计数字。
 
 ## 结构与扩展
 
@@ -58,6 +59,13 @@ Next.js 服务端将令牌存入 HttpOnly、SameSite=Strict、Path=/admin Cookie
 | `PUT /api/v1/admin/people/:id` | 按 revision 更新人物及完整昵称列表 |
 | `GET /api/v1/admin/midis/:id/credits` | 读取作品 revision 和署名列表 |
 | `PUT /api/v1/admin/midis/:id/credits` | 按作品 revision 替换完整署名列表 |
+| `GET /api/v1/admin/midis/:id/history` | 同一事务读取作品摘要、revision、来源及寻回记录 |
+| `POST /api/v1/admin/midis/:id/sources` | 创建一条来源，成功 201 |
+| `PUT /api/v1/admin/midis/:id/sources/:sourceId` | 原位编辑来源，成功 200 |
+| `DELETE /api/v1/admin/midis/:id/sources/:sourceId` | 删除本作品的一条来源，成功 200 JSON |
+| `POST /api/v1/admin/midis/:id/recovery-events` | 创建一条寻回记录，成功 201 |
+| `PUT /api/v1/admin/midis/:id/recovery-events/:eventId` | 原位编辑寻回记录，成功 200 |
+| `DELETE /api/v1/admin/midis/:id/recovery-events/:eventId` | 删除本作品的一条寻回记录，成功 200 JSON |
 
 除登录外均需要 Bearer 令牌。正常处理的管理响应带 `Cache-Control: no-store`。写入字段如下：
 
@@ -77,7 +85,7 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 重复 slug 返回 `409 SLUG_CONFLICT`；旧 revision 返回 `409 STALE_ENTRY`，避免覆盖其他页面已保存的修改。表单失败后保留输入，可在新页面登录或重新打开编辑页并手动合并。修改 slug 后旧公开 URL 返回 404，目前没有历史地址重定向；归档和权利状态不控制元数据可见性。
 
-其他错误包括 `400 INVALID_INPUT`、`401 INVALID_CREDENTIALS/UNAUTHORIZED`、`404 MIDI_NOT_FOUND`、`429 LOGIN_RATE_LIMITED` 和 `503 ADMIN_DISABLED/DATABASE_UNAVAILABLE`。没有注册、多角色、审核、删除或文件上传下载功能。
+其他错误包括 `400 INVALID_INPUT`、`401 INVALID_CREDENTIALS/UNAUTHORIZED`、`404 MIDI_NOT_FOUND`、`429 LOGIN_RATE_LIMITED` 和 `503 ADMIN_DISABLED/DATABASE_UNAVAILABLE`。没有注册、多角色、审核、作品或人物删除、文件上传下载功能；历史来源与寻回记录支持逐条删除。
 
 ## 人物与署名规则
 
@@ -85,12 +93,35 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 署名请求为 `{revision, credits: [{person_id: "123", role: "composer"}]}`，最多 100 项；角色为 composer、arranger、sequencer、contributor。人物 ID 使用十进制字符串。同一人物可承担多个角色，但不能重复相同人物与角色。空列表表示移除全部署名。响应为 `{revision, credits}`，每项包含人物名称。未知人物返回 `400 UNKNOWN_PERSON`，所有变更与作品版本一起回滚。
 
-人物编辑在一个事务内保存简介和昵称；署名编辑在一个事务内更新作品版本和完整署名列表。基本信息与署名共用作品版本，因此另一个页面保存后，旧表单会返回 `409 STALE_ENTRY`。错误时前端保留输入，重新打开页面后核对合并。保存立即在公开人物和作品详情生效。人物选项每次加载 100 条，可继续加载或创建人物后刷新；以编号区分同名人物。
+人物编辑在一个事务内保存简介和昵称；署名编辑在一个事务内更新作品版本和完整署名列表。基本信息、署名、来源及寻回共用作品版本，因此另一个页面保存后，旧表单会返回 `409 STALE_ENTRY`。错误时前端保留输入，重新打开页面后核对合并。保存立即在公开人物和作品详情生效。人物选项每次加载 100 条，可继续加载或创建人物后刷新；以编号区分同名人物。
+
+## 历史来源与寻回规则
+
+统一页 `/admin/midis/[id]/history` 每次只编辑一条记录。删除需二次确认，取消删除保留输入；保存后重新读取作品版本。失败保留字段，支持在新页面登录、核对并手动合并。超时不能证明事务未提交，重试新增前须先核对记录，避免重复创建。
+
+管理 GET 返回 `{entry: {id, title, slug, revision}, historical_sources, recovery_events}`。来源的 POST/PUT 使用扁平请求 `{revision, website_name, original_url, first_seen_at, last_seen_at, wayback_url, notes}`；寻回使用 `{revision, recovered_at, recovered_by, story, evidence}`。创建也必须携带当前作品 revision；PUT 的可空字段省略或 null 均清空。DELETE 仅接受 `{revision}`。
+
+| 字段 | 规则 |
+| --- | --- |
+| website_name | 必填，去首尾 ASCII 空白后非空，最多 300 UTF-8 字节 |
+| story | 必填，去首尾 ASCII 空白后非空，最多 20,000 UTF-8 字节 |
+| notes / evidence | 可空，各最多 20,000 UTF-8 字节；evidence 是文字，不是来源编号或附件 |
+| original_url / wayback_url | 可空，各最多 4,096 字节；严格 ASCII HTTP/HTTPS URI，必须有主机，禁止账户信息、空白、控制符、反斜杠；国际化域名使用 Punycode，非 ASCII 路径使用百分号编码；不会抓取网址 |
+| first_seen_at / last_seen_at / recovered_at | 可空，仅完整 UTC `YYYY-MM-DDTHH:mm:ss[.1–6 位小数]Z`，有效日历，年份 1–9999；读写标准化为六位小数；来源首次时间不晚于最后时间 |
+| recovered_by | 可空；已有的人物编号，JSON 十进制字符串，不是数字 |
+
+所有文字拒绝 NUL。未知日期不替换成当前时间，只有年份等不完整信息时将日期留空、在备注或证据中说明。浏览器时间控件按 UTC 使用，无本地时区转换；原有微秒值单独保留，控件显示毫秒，改动毫秒或清空重填会重置更细精度。寻回人支持分页、刷新，已有选中人物不因不在当前页而丢失。
+
+写入响应分别为 `{revision, source}` / `{revision, event}`；删除返回 200 JSON `{revision, deleted_id}`。不接受 id、midi_id、created_at、recovered_by_name 等只读字段。编辑保留子记录编号和寻回创建时间，不更改其他子记录、署名、文件或归档状态；未知日期的寻回记录排列在已知日期之后，以编号稳定排序。
+
+读取在同一事务锁定父作品版本并查询两组记录。写入先按 revision 更新父作品取得锁，再校验子记录归属、锁定关联人物并修改记录，提交成功才响应。旧版本返回 `409 STALE_ENTRY`；子记录不存在或属于另一作品返回 `404 SOURCE_NOT_FOUND` / `RECOVERY_EVENT_NOT_FOUND`；人物不存在返回 `400 UNKNOWN_PERSON`。失败时连同父作品 revision 一起回滚。
 
 ## 验证
 
-当前数据库还必须应用 `003_person_revision.sql`。在专用测试库运行 `python scripts/people_smoke.py --api http://127.0.0.1:8080 --allow-writes`，凭据使用 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`，覆盖人物昵称、署名、并发冲突和失败回滚；脚本留下带 people-check 前缀的测试资料。先执行此脚本，再执行会触发登录限流的 admin_smoke。
+数据库必须应用全部迁移至 `004_optional_recovery_date.sql`，不能只更新前端。该迁移只移除寻回日期的 NOT NULL，保留已有资料；启动和 `/ready` 同时检查迁移记录及实际列状态。
+
+在专用测试库运行 `python scripts/people_smoke.py --api http://127.0.0.1:8080 --allow-writes` 及 `python scripts/recovery_smoke.py --api http://127.0.0.1:8080 --allow-writes`。凭据使用 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`。脚本覆盖人物昵称、署名、来源寻回 CRUD、日期精度、空日期与人物、归属校验、并发版本与回滚，留下 people-check / recovery-check 前缀的测试资料。两者及浏览器验收应先于会触发登录限流的 admin_smoke 执行。
 
 可选浏览器验收：在独立 Python 环境安装 `playwright` 并运行 `python -m playwright install chromium`，再使用相同测试凭据执行 `python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes`。也可传 `--channel msedge` 使用已安装的 Edge；`--screenshots <目录>` 保存验收截图。浏览器地址必须与测试前端的 ADMIN_ORIGIN 一致。脚本会创建人物和作品，只能指向专用测试环境。
 
-运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。数据库需应用 `002_admin_sessions_and_revision.sql`。运行中的 API 可用 `python scripts/admin_smoke.py --allow-writes` 检查，通过 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供测试凭据；脚本保留新增档案，只在专用测试数据库运行。浏览器验收见 [RUN.md](../RUN.md)，实际执行结果及限制见 [验证记录](implementation-report.md)。
+运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。数据库需应用全部迁移至 004。运行中的 API 可用 `python scripts/admin_smoke.py --allow-writes` 检查，通过 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供测试凭据；脚本保留新增档案，只在专用测试数据库运行。浏览器验收见 [RUN.md](../RUN.md)，实际执行结果及限制见 [验证记录](implementation-report.md)。

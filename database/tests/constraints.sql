@@ -75,9 +75,21 @@ BEGIN
     END;
     DELETE FROM midi_credits WHERE midi_id = entry_id;
 
+    INSERT INTO historical_sources (midi_id, website_name, first_seen_at, last_seen_at)
+        VALUES (entry_id, 'Known historical site', '1999-01-01T00:00:00Z', '2000-01-01T00:00:00Z');
+    BEGIN
+        INSERT INTO historical_sources (midi_id, website_name, first_seen_at, last_seen_at)
+            VALUES (entry_id, 'Bad chronology', '2000-01-01T00:00:00.000001Z', '2000-01-01T00:00:00Z');
+        RAISE EXCEPTION 'Expected reversed source dates to fail';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    -- Unknown date is real domain information, not the insertion timestamp.
     INSERT INTO recovery_events (midi_id, recovered_at, recovered_by, story)
-        VALUES (entry_id, CURRENT_TIMESTAMP, contributor_id, 'Recovery test')
+        VALUES (entry_id, NULL, contributor_id, 'Recovery test')
         RETURNING id INTO recovery_id;
+    IF (SELECT recovered_at FROM recovery_events WHERE id = recovery_id) IS NOT NULL THEN
+        RAISE EXCEPTION 'Unknown recovery dates must remain null';
+    END IF;
     DELETE FROM people WHERE id = contributor_id;
     IF (SELECT recovered_by FROM recovery_events WHERE id = recovery_id) IS NOT NULL THEN
         RAISE EXCEPTION 'Recovery event must survive contributor removal without dangling attribution';
@@ -85,6 +97,7 @@ BEGIN
 
     DELETE FROM midi_entries WHERE id = entry_id;
     IF EXISTS (SELECT 1 FROM midi_files WHERE midi_id = entry_id)
+        OR EXISTS (SELECT 1 FROM historical_sources WHERE midi_id = entry_id)
         OR EXISTS (SELECT 1 FROM recovery_events WHERE id = recovery_id) THEN
         RAISE EXCEPTION 'Entry deletion must remove its dependent metadata';
     END IF;

@@ -5,6 +5,25 @@ on:
 permissions:
   contents: read
 jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Copy only the standalone frontend project
+        run: cp -R frontend "$RUNNER_TEMP/lostmidi-frontend"
+      - name: Install and verify without the backend or parent files
+        working-directory: ${{ runner.temp }}/lostmidi-frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          npm ci
+          npm run check
   stack:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -12,17 +31,6 @@ jobs:
       SEED_DEMO: "true"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Frontend static checks
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run lint
-          npm run typecheck
       - name: Validate Compose
         run: docker compose --env-file .env.example config --quiet
       - name: Configure disposable administrator credentials
@@ -46,6 +54,8 @@ jobs:
         run: python3 scripts/smoke.py
       - name: People and credit write checks
         run: python3 scripts/people_smoke.py --allow-writes
+      - name: Historical source and recovery write checks
+        run: python3 scripts/recovery_smoke.py --allow-writes
       - name: Administrator session and archive regression checks
         run: python3 scripts/admin_smoke.py --allow-writes
       - name: Diagnostic logs

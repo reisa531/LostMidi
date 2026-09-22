@@ -6,6 +6,8 @@
 
 部署与运维请从 [RUN.md](RUN.md) 开始：包含环境配置、启动验收、服务器访问、更新、备份恢复与故障排查。
 
+前后端保留在同一 Git 仓库，但 `frontend/` 是完整、可独立复制和部署的 Next.js 项目。前端部署到 Vercel 时，导入当前仓库并将 Root Directory 设为 `frontend`；后端、数据库和文件存储继续单独运行。详见 [前端 Vercel 部署指引与一键部署入口](docs/vercel-assessment.md)。
+
 ## Architecture
 
 ```mermaid
@@ -31,6 +33,9 @@ frontend/src/app/          首页、档案列表/详情、人物、关于、错�
 frontend/src/components/   档案展示组件
 frontend/src/lib/api/      服务端 HTTP 客户端和 TypeScript 合约
 frontend/src/lib/admin/    服务端登录态、来源检查与表单操作
+frontend/Dockerfile       以前端目录为上下文的独立镜像构建
+frontend/vercel.json      Vercel 的 Next.js 框架与构建配置
+frontend/.env*.example    仅前端的本机和生产环境示例
 backend/src/common/       配置、分页、Controller、JSON、日志
 backend/src/auth/         密码验证、管理员会话与接口授权
 backend/src/midi/         档案与文件登记 Service、Repository、模型
@@ -42,23 +47,26 @@ database/migrations/      版本化 schema SQL
 database/seeds/           单独启用的虚构数据
 database/tests/           PostgreSQL 约束检查
 database/migrate.sh       事务、版本与校验和管理
-docker/                   前后端多阶段 Dockerfile
+docker/                   后端多阶段 Dockerfile
 docs/adr/                 五项架构决策
 docs/database.md          关系、约束、迁移的详细说明
 scripts/smoke.py          对运行中的栈执行只读端到端检查
 scripts/admin_password.py  交互生成管理员密码哈希
 scripts/admin_smoke.py     在专用测试库验证认证与档案写入
+scripts/recovery_smoke.py  来源寻回 CRUD、日期精度、并发和回滚检查
 storage/                  本地对象目录，内容不进入 Git
 .github/workflows/ci.yml   Linux 构建和整栈检查
 ```
 
 ## Requirements
 
-最简单的入口是 Docker Engine / Docker Desktop 的 Linux containers 模式，以及 Docker Compose v2 或更新版本。首次构建需联网下载 npm、Conan 和基础镜像，C++ 依赖可能需要较长时间编译。
+只开发或部署前端时，只需要 Node.js 22.13+（22.x）和 npm：在 `frontend/` 中运行 `npm ci`、`npm run check`。它不依赖 C++ 工具链、数据库或仓库根目录配置；使用真实业务数据时另行提供后端 API。Vercel 使用原生 Next.js 构建，Dockerfile 才显式启用 standalone 输出。
+
+整栈运行最简单的入口是 Docker Engine / Docker Desktop 的 Linux containers 模式，以及 Docker Compose v2 或更新版本。首次构建需联网下载 npm、Conan 和基础镜像，C++ 依赖可能需要较长时间编译。
 
 | 原生工具 | 要求 |
 | --- | --- |
-| Node.js / npm | Node 22.13+；安装用 npm ci |
+| Node.js / npm | Node 22.13+（22.x）；安装用 npm ci |
 | C++ 编译器 | C++20；Linux 可用 GCC 13，Windows 建议 Visual Studio Build Tools 2022 + Windows SDK |
 | CMake | 3.24+ |
 | Conan | 2.x；Docker 固定 2.32.0 |
@@ -165,7 +173,7 @@ $env:STORAGE_PATH="$PWD\storage"
 
 迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
 
-原生模式启用后台时，在启动后端的环境中另外设置 `ADMIN_USERNAME` 和密码生成器输出的 `ADMIN_PASSWORD_HASH`；在 `frontend/.env.local` 设置 `ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`。更新已有数据库时必须先执行全部待应用迁移（包含 002 和 `003_person_revision.sql`），再启动新后端。
+原生模式启用后台时，在启动后端的环境中另外设置 `ADMIN_USERNAME` 和密码生成器输出的 `ADMIN_PASSWORD_HASH`；在 `frontend/.env.local` 设置 `ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`。更新已有数据库时必须先执行全部待应用迁移（包含 002、003 和 `004_optional_recovery_date.sql`），再启动新后端。
 
 ## Environment Variables
 
@@ -197,6 +205,8 @@ $env:STORAGE_PATH="$PWD\storage"
 ## Database
 
 详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events。
+
+迁移 `004_optional_recovery_date.sql` 允许寻回日期为 NULL，保留原有日期。所有来源与寻回编辑保留记录 ID、寻回创建时间，和基础资料及署名共用作品 revision。当前后端启动及 `/ready` 检查 004 已应用且列实际可空；先迁移再启动新后端。
 
 迁移 `002_admin_sessions_and_revision.sql` 另增 `admin_sessions` 会话表，以及 `midi_entries.revision` 和自动递增触发器。管理员账号来自部署配置，不属于人物表；数据库仅存会话令牌的 SHA-256 摘要及凭据标识，不存原始令牌。修改档案时必须提交读取时的 revision，以检测并发修改。
 
@@ -264,7 +274,7 @@ npm run lint
 npm run typecheck
 ```
 
-后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期和档案写入冲突；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。
+后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期、档案及来源寻回写入冲突、跨作品归属和失败回滚；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。
 
 在专用测试库运行数据库检查，所有测试行回滚；identity 序列可能递增：
 
@@ -283,11 +293,13 @@ python scripts/smoke.py --api-only
 
 脚本检查分页、400/404、人物关系和 HTML 是否包含后端数据。GitHub Actions 配置 Linux Docker 构建、CTest、约束和 smoke 检查；提供配置不等于已在 GitHub 成功执行。实际结果见 [Implementation Report](docs/implementation-report.md)。
 
+来源寻回检查使用 `python scripts/recovery_smoke.py --api http://127.0.0.1:8080 --allow-writes`，只能指向专用测试库；它会留下带 recovery-check 前缀的记录。与人物及浏览器验收一起先执行，再执行会耗尽登录限流额度的 admin_smoke。
+
 认证与写入检查使用 `python scripts/admin_smoke.py --api http://127.0.0.1:8080 --allow-writes`。先将该后端连接到**专用测试数据库**并配置测试管理员，通过环境变量 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供同一账号的明文测试凭据。脚本会创建并保留测试档案，验证未登录访问、错误登录、登录限流、注销、字段校验、slug 唯一性及 revision 冲突；不要对正式数据运行。后台浏览器操作验收见 [RUN.md](RUN.md)。
 
 ## Development Philosophy
 
-上线前执行只读检查 `psql -X -f database/check_production.sql`，排查已知示例及测试记录；切换 `SEED_DEMO=false` 不会删除旧数据。Vercel 整站一键部署本轮按需求放弃，原因和边界见 [评估记录](docs/vercel-assessment.md)。
+上线前执行只读检查 `psql -X -f database/check_production.sql`，排查已知示例及测试记录；切换 `SEED_DEMO=false` 不会删除旧数据。支持前端独立部署到 Vercel；后端、数据库和持久存储不随前端部署，当前操作说明及历史整站评估见 [Vercel 部署指引](docs/vercel-assessment.md)。
 
 - Modular Monolith：保持一个可理解的后端。
 - Simple first：朴素模型、明确所有权、直接 SQL。
@@ -312,7 +324,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过部署配置建立，浏览器使用 HttpOnly Cookie；Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名，保存后立即公开。来源、寻回和文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)，下一阶段见 [开发路线](docs/roadmap.md)。
+统一后台入口为 `/admin`，未登录时转到 `/admin/login`。包含工作台、档案列表、新增与编辑表单和模块目录。单管理员通过部署配置建立，浏览器使用 HttpOnly Cookie；Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。文件管理仍待实现。扩展方法和访问边界见 [后台平台说明](docs/admin.md)，下一阶段见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 

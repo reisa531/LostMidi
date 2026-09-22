@@ -15,7 +15,7 @@ function message(error: unknown) {
   const messages: Record<string, string> = {
     INVALID_CREDENTIALS: "用户名或密码不正确。", LOGIN_RATE_LIMITED: "登录尝试过多，请一分钟后重试。",
     ADMIN_DISABLED: "管理员账号尚未配置，请联系部署维护者。", INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
-    SLUG_CONFLICT: "此 slug 已被使用，请换一个。", STALE_ENTRY: "此档案已被其他页面修改。请保留当前内容，重新打开编辑页后再保存。",
+    SLUG_CONFLICT: "此 slug 已被使用，请换一个。", STALE_ENTRY: "作品资料已被其他页面修改。请保留当前内容，重新打开编辑页后合并修改。",
     INVALID_INPUT: "字段格式或长度不符合要求，请检查标题、slug、年份和文字长度。",
     MIDI_NOT_FOUND: "该档案已不存在。", UNAUTHORIZED: "会话已过期，请重新登录。",
   };

@@ -2,6 +2,7 @@
 #include "auth/Password.h"
 #include "midi/MidiWriteService.h"
 #include "person/PersonWriteService.h"
+#include "recovery/RecoveryWriteService.h"
 #include "common/Error.h"
 
 using namespace lostmidi;
@@ -73,5 +74,78 @@ TEST(PersonWrite, NormalizesTextAndAllowsMultipleRoles) {
     ASSERT_EQ(saved.aliases.size(), 1u); EXPECT_EQ(saved.aliases[0], "old");
     EXPECT_NO_THROW(service.saveCredits(1, {1, {{1, "", "composer"}, {1, "", "sequencer"}}}));
     EXPECT_NO_THROW(service.saveCredits(1, {1, {}}));
+}
+class RecoveryWriter : public recovery::IRecoveryWriter {
+public:
+    int writes = 0;
+    recovery::HistoryEditor getHistory(std::int64_t) override { return {}; }
+    recovery::SourceWriteResult saveSource(std::int64_t, std::int64_t, std::int64_t revision,
+        const recovery::HistoricalSource& source) override { ++writes; return {revision + 1, source}; }
+    recovery::EventWriteResult saveEvent(std::int64_t, std::int64_t, std::int64_t revision,
+        const recovery::RecoveryEvent& event) override { ++writes; return {revision + 1, event}; }
+    recovery::DeleteResult deleteSource(std::int64_t, std::int64_t id, std::int64_t revision) override {
+        ++writes; return {revision + 1, id};
+    }
+    recovery::DeleteResult deleteEvent(std::int64_t, std::int64_t id, std::int64_t revision) override {
+        ++writes; return {revision + 1, id};
+    }
+};
+TEST(RecoveryWrite, ValidatesUrlsAndTextBeforePersistence) {
+    RecoveryWriter writer; recovery::RecoveryWriteService service(writer);
+    recovery::HistoricalSource source; source.websiteName = "Archive";
+    for (const auto* url : {"javascript:alert(1)", "/relative", "https://", "https://user:pass@example.org/",
+                           "https://example.org/a b", "https://example.org\\path", "https://example.org/\npath",
+                           "https:///no-host", "http://[broken", "https://example.org:invalid/"}) {
+        source.originalUrl = url;
+        EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError) << url;
+    }
+    source.originalUrl.reset(); source.websiteName = "  \t";
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.websiteName = std::string(301, 'x');
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.websiteName = "Archive"; source.notes = std::string("a\0b", 3);
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.notes = std::string(20001, 'x');
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    recovery::RecoveryEvent event; event.story = " ";
+    EXPECT_THROW(service.saveEvent(1, 0, 1, event), ApiError);
+    event.story = "A story"; event.recoveredBy = 0;
+    EXPECT_THROW(service.saveEvent(1, 0, 1, event), ApiError);
+    EXPECT_THROW(service.deleteSource(1, 0, 1), ApiError);
+    EXPECT_THROW(service.deleteEvent(1, 1, 0), ApiError);
+    EXPECT_EQ(writer.writes, 0);
+}
+TEST(RecoveryWrite, StrictCalendarAndMicrosecondOrdering) {
+    RecoveryWriter writer; recovery::RecoveryWriteService service(writer);
+    recovery::HistoricalSource source; source.websiteName = "Archive";
+    for (const auto* date : {"2025-02-29T00:00:00Z", "1900-02-29T00:00:00Z", "2000-04-31T00:00:00Z",
+                            "0000-01-01T00:00:00Z", "2020-13-01T00:00:00Z", "2020-01-01T24:00:00Z",
+                            "2020-01-01T00:60:00Z", "2020-01-01T00:00:60Z", "2020-01-01",
+                            "2020-01-01T00:00:00+00:00", "2020-01-01T00:00:00.1234567Z"}) {
+        source.firstSeenAt = date;
+        EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError) << date;
+    }
+    EXPECT_EQ(writer.writes, 0);
+    source.firstSeenAt = "2000-02-29T00:00:00.1Z";
+    source.lastSeenAt = "2000-02-29T00:00:00.09Z";
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.lastSeenAt = "2000-02-29T00:00:00.100001Z";
+    const auto result = service.saveSource(1, 0, 1, source);
+    EXPECT_EQ(result.source.firstSeenAt, "2000-02-29T00:00:00.100000Z");
+    EXPECT_EQ(result.source.lastSeenAt, "2000-02-29T00:00:00.100001Z");
+    source.firstSeenAt = "0001-01-01T00:00:00Z"; source.lastSeenAt = "9999-12-31T23:59:59Z";
+    EXPECT_NO_THROW(service.saveSource(1, 0, 1, source));
+}
+TEST(RecoveryWrite, PreservesUnknownDatesAndNormalizesOptionalText) {
+    RecoveryWriter writer; recovery::RecoveryWriteService service(writer);
+    recovery::HistoricalSource source; source.websiteName = "  Archive \t"; source.notes = "";
+    source.originalUrl = "https://example.org/a?b=1#c";
+    const auto saved = service.saveSource(1, 0, 1, source);
+    EXPECT_EQ(saved.source.websiteName, "Archive"); EXPECT_FALSE(saved.source.notes);
+    EXPECT_FALSE(saved.source.firstSeenAt); EXPECT_FALSE(saved.source.lastSeenAt);
+    recovery::RecoveryEvent event; event.story = "  Unknown date  "; event.evidence = "";
+    const auto result = service.saveEvent(1, 0, 2, event);
+    EXPECT_EQ(result.event.story, "Unknown date"); EXPECT_FALSE(result.event.recoveredAt);
+    EXPECT_FALSE(result.event.recoveredBy); EXPECT_FALSE(result.event.evidence);
 }
 }
