@@ -118,15 +118,15 @@ TEST(S3Signing, FixedIndependentPythonHmacVectors) {
     const std::map<std::string,std::string> signatures{
         {"GET","8468c512895ff27c49094db6e844f327fe847059e646294e2821b311fc6f59c9"},
         {"HEAD","fde85016c42f3fa89cca92cba095b7d49eb34f26ace22e7c836f83d413404908"},
-        {"PUT","bf740de61af2123121a253f0d6a404e592b61012e800c02ec6df8f3fe913d1b4"},
+        {"PUT","c786691a36c5895f59bb6af8b09503684a79f437d1a010299269decb0c4e70b5"},
         {"DELETE","3ac5662991cf455e889f8dcc34a13e03e904b32d54e82541a08bcb20189e9df3"}};
     for (const auto& [verb, signature] : signatures) {
         auto payload = verb == "PUT" ? bytes({'h','e','l','l','o'}) : Bytes{};
         auto headers = storage::signS3(config,verb,"bucket.example.org","/archive/"+std::string(64,'a'),storage::sha256(payload),"20260922T120000Z");
         EXPECT_TRUE(headers.at("authorization").ends_with("Signature="+signature));
         EXPECT_TRUE(headers.at("authorization").starts_with("AWS4-HMAC-SHA256 Credential=test-access/20260922/us-east-1/s3/aws4_request"));
-        if (verb=="PUT") { EXPECT_EQ(headers.at("x-amz-acl"),"private"); EXPECT_EQ(headers.at("if-none-match"),"*"); }
-        else { EXPECT_FALSE(headers.contains("x-amz-acl")); EXPECT_FALSE(headers.contains("if-none-match")); }
+        if (verb=="PUT") { EXPECT_EQ(headers.at("x-amz-acl"),"private"); EXPECT_EQ(headers.at("if-none-match"),"*"); EXPECT_EQ(headers.at("content-type"),"application/octet-stream"); EXPECT_NE(headers.at("authorization").find("SignedHeaders=content-type;"),std::string::npos); }
+        else { EXPECT_FALSE(headers.contains("x-amz-acl")); EXPECT_FALSE(headers.contains("if-none-match")); EXPECT_FALSE(headers.contains("content-type")); }
         EXPECT_EQ(headers.at("authorization").find(config.secretKey),std::string::npos);
     }
 }
