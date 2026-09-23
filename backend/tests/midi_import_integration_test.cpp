@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 #include "midi/PostgresMidiRepository.h"
+#include "midi/MidiService.h"
+#include "person/PostgresPersonRepository.h"
+#include "recovery/PostgresRecoveryRepository.h"
 #include "storage/LocalObjectStorage.h"
 #include "auth/Password.h"
 #include "common/Transaction.h"
@@ -91,6 +94,34 @@ TEST_F(ImportPostgres, IdempotentSameEntryConflictsAndRightsRemainUnchanged) {
     const auto json=toJson(saved.file);
     EXPECT_FALSE(json.isMember("storage_key")); EXPECT_FALSE(json.isMember("url")); EXPECT_TRUE(json["id"].isString());
     apiError([&] { service->get(9223372036854775807LL); },404,"MIDI_NOT_FOUND");
+}
+TEST_F(ImportPostgres, PublicDownloadRequiresConsentAndMatchingEntry) {
+    person::PostgresPersonRepository people(db);
+    recovery::PostgresRecoveryRepository historyRepository(db);
+    recovery::RecoveryService history(historyRepository);
+    midi::MidiService downloads(*repo, people, history);
+    const auto saved = service->import(first, 1, "下载+乐曲.mid", data(), true);
+    EXPECT_TRUE(saved.file.publicDistributionConfirmed);
+    apiError([&] { downloads.fileForDownload("first", saved.file.id); }, 403, "DOWNLOAD_NOT_ALLOWED");
+    db->execSqlSync("UPDATE midi_entries SET distribution_permission='unknown' WHERE id=$1", first);
+    const auto file = downloads.fileForDownload("first", saved.file.id);
+    EXPECT_EQ(file.originalFilename, "下载+乐曲.mid");
+    const auto content = objects->read(file.storageKey, static_cast<std::size_t>(file.fileSize));
+    EXPECT_EQ(storage::sha256(std::as_bytes(std::span(content))), file.sha256);
+    apiError([&] { downloads.fileForDownload("second", saved.file.id); }, 404, "FILE_NOT_FOUND");
+    apiError([&] { downloads.fileForDownload("missing", saved.file.id); }, 404, "MIDI_NOT_FOUND");
+    apiError([&] { downloads.fileForDownload("first", 0); }, 400, "INVALID_FILE_ID");
+    apiError([&] { downloads.fileForDownload("../first", saved.file.id); }, 400, "INVALID_SLUG");
+    db->execSqlSync("UPDATE midi_files SET private_archive_confirmed=FALSE WHERE id=$1", saved.file.id);
+    apiError([&] { downloads.fileForDownload("first", saved.file.id); }, 403, "DOWNLOAD_NOT_ALLOWED");
+    db->execSqlSync("UPDATE midi_files SET private_archive_confirmed=TRUE, storage_key='legacy/path' WHERE id=$1", saved.file.id);
+    apiError([&] { downloads.fileForDownload("first", saved.file.id); }, 503, "STORAGE_UNAVAILABLE");
+    db->execSqlSync("UPDATE midi_files SET storage_key=sha256 WHERE id=$1", saved.file.id);
+    service = std::make_unique<midi::MidiImportService>(*repo, *objects, false);
+    EXPECT_FALSE(service->enabled());
+    EXPECT_NO_THROW(downloads.fileForDownload("first", saved.file.id));
+    objects->remove(file.storageKey);
+    apiError([&] { objects->read(file.storageKey, static_cast<std::size_t>(file.fileSize)); }, 503, "STORAGE_UNAVAILABLE");
 }
 TEST_F(ImportPostgres, ConcurrentIdenticalAndCompetingRevisionImports) {
     std::promise<void> start; auto ready=start.get_future().share();

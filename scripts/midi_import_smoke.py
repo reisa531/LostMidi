@@ -93,8 +93,29 @@ def main():
         assert current['entry'][field] == first[field]
     public = request('/api/v1/midis/' + draft['slug'])
     assert public['files'][0]['sha256'] == saved['file']['sha256']
-    request('/api/v1/files/' + saved['file']['id'], expected=(404,))
-    print('PASS: import auth, encoded filenames, SMF/size limits, private confirmation, dedupe, ownership, revision and metadata-only responses')
+    download_path = '/api/v1/midis/' + draft['slug'] + '/files/' + saved['file']['id'] + '/download'
+    assert public['files'][0]['download_available'] is False
+    assert request(download_path, expected=(403,))['error']['code'] == 'DOWNLOAD_NOT_ALLOWED'
+    allowed = {**draft, 'revision': current['entry']['revision'], 'distribution_permission': 'permission_granted'}
+    updated = request('/api/v1/admin/midis/' + first['id'], 'PUT', allowed, token)
+    assert request('/api/v1/midis/' + draft['slug'])['files'][0]['download_available'] is True
+    with opener.open(args.api.rstrip('/') + download_path, timeout=60) as response:
+        raw = response.read()
+        assert response.status == 200 and raw == midi()
+        assert response.headers['Content-Type'].split(';')[0] == 'audio/midi'
+        assert response.headers.get_all('Content-Length') == [str(len(raw))]
+        assert response.headers['X-Content-Type-Options'] == 'nosniff'
+        assert 'no-store' in response.headers['Cache-Control']
+        disposition = response.headers['Content-Disposition']
+        assert disposition.startswith('attachment;')
+        assert urllib.parse.unquote(disposition.split("filename*=UTF-8''")[1]) == '测试+乐曲.MID'
+    request('/api/v1/midis/' + other['slug'] + '/files/' + saved['file']['id'] + '/download', expected=(404,))
+    for invalid in ('0', '-1', 'abc', '9223372036854775808'):
+        request('/api/v1/midis/' + draft['slug'] + '/files/' + invalid + '/download', expected=(400,))
+    request(download_path.replace(draft['slug'], 'missing-entry'), expected=(404,))
+    request('/api/v1/admin/midis/' + first['id'], 'PUT', {**allowed, 'revision': updated['revision'], 'distribution_permission': 'metadata_only'}, token)
+    assert request(download_path, expected=(403,))['error']['code'] == 'DOWNLOAD_NOT_ALLOWED'
+    print('PASS: import validation, dedupe, ownership, revision, anonymous exact-byte download, filenames and distribution restrictions')
 
 
 if __name__ == '__main__':

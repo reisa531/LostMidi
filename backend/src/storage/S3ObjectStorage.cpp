@@ -110,15 +110,25 @@ bool S3ObjectStorage::exists(const std::string& key) const {
     if (response->statusCode() != 200) unavailable();
     return true;
 }
+std::string S3ObjectStorage::read(const std::string& key, std::size_t expectedSize) const {
+    checkKey(key);
+    if (expectedSize == 0 || expectedSize > 1024 * 1024)
+        throw std::invalid_argument("Object size must be between 1 byte and 1 MiB.");
+    try {
+        const auto metadata = request(drogon::Head, key);
+        if (metadata->statusCode() != 200 || metadata->getHeader("content-length") != std::to_string(expectedSize)) unavailable();
+        // Drogon lacks a response-size cap: S3 must honor Range, including the extra byte detecting growth.
+        const auto response = request(drogon::Get, key, {}, expectedSize + 1);
+        const auto body = response->body();
+        if ((response->statusCode() != 200 && response->statusCode() != 206) || body.size() != expectedSize ||
+            sha256(std::as_bytes(std::span(body.data(), body.size()))) != key) unavailable();
+        return std::string(body);
+    } catch (...) {
+        unavailable();
+    }
+}
 void S3ObjectStorage::verify(const std::string& key, std::size_t size) const {
-    const auto metadata = request(drogon::Head, key);
-    if (metadata->statusCode() != 200 || metadata->getHeader("content-length") != std::to_string(size)) unavailable();
-    // The configured S3 service must honor Range. Request one extra byte so an
-    // object changed after HEAD cannot be silently accepted as a matching prefix.
-    const auto response = request(drogon::Get, key, {}, size + 1);
-    const auto body = response->body();
-    if ((response->statusCode() != 200 && response->statusCode() != 206) || body.size() != size ||
-        sha256(std::as_bytes(std::span(body.data(), body.size()))) != key) unavailable();
+    (void)read(key, size);
 }
 bool S3ObjectStorage::store(const std::string& key, std::span<const std::byte> bytes) {
     checkKey(key);

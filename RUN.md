@@ -212,7 +212,11 @@ sudo install -d -o 10001 -g 10001 -m 0750 ./storage
 - `X-Entry-Revision: 当前档案 revision`
 - `X-Rights-Confirmed: true`（确认有权公开分发此文件）
 
-只接受单个 `.mid` / `.midi`、SMF 0/1/2，文件不超过 **1 MiB（1,048,576 字节）**；前端 Server Action 请求上限是 `2mb`，用于容纳表单开销，并不放宽文件限制。浏览器经 Next.js 服务端向 C++ 转发 Bearer；密钥不会传到前端。上传即同意公开分发：对象存入后允许匿名读取，但本后台页仅展示文件元数据，不在该页提供下载、试听或对象 URL，也不修改版权、分发许可或归档状态。
+只接受单个 `.mid` / `.midi`、SMF 0/1/2，文件不超过 **1 MiB（1,048,576 字节）**；前端 Server Action 请求上限是 `2mb`，用于容纳表单开销，并不放宽文件限制。浏览器经 Next.js 服务端向 C++ 转发 Bearer；密钥不会传到前端。上传即同意公开分发，不修改版权、分发许可或归档状态；后台页展示文件元数据，公开详情页提供下载按钮，不提供试听或对象 URL。
+
+访客下载通过站内 `GET /api/midis/{slug}/files/{id}/download` 转发到后端 `GET /api/v1/midis/{slug}/files/{id}/download`，不携带管理员会话。成功返回 `audio/midi` 附件及 UTF-8 原文件名，逐次核对数据库中的文件归属、分发确认、长度和 SHA-256；local 与 S3 均适用，最大 1 MiB。没有上传确认的旧记录不开放下载；条目的 `restricted` / `metadata_only` 优先禁止下载，其他状态仍需文件确认。`MIDI_IMPORT_ENABLED=false` 只暂停新增上传，不关闭已获准文件的下载。
+
+下载响应与错误均 `no-store`；错误区分 403（不允许分发）、404（文件或档案不存在）、503（存储不可用/服务繁忙），页面保留重试入口。S3 的路径、签名和凭据不传到浏览器。站内分发限制不能撤销桶本身的匿名访问策略；如需彻底撤回已公开对象，须另行在存储服务侧处理权限。
 
 相同档案相同 SHA-256 内容幂等；跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`。新增文件登记与父档案 revision 递增原子提交，共用基本信息、来源、寻回、署名的版本边界；旧表单需刷新并合并，不能直接覆盖。HTTP 使用 `MidiImportService`，旧内部 `MidiFileService` 不是此导入入口。
 

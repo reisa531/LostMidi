@@ -20,22 +20,29 @@ ApiController::ApiController(midi::MidiService& midis, person::PersonService& pe
                              drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth,
                              midi::MidiWriteService& writer, person::PersonWriteService& personWriter,
                              recovery::RecoveryWriteService& recoveryWriter, installation::InstallationService& installation,
-                             midi::MidiImportService& importer)
+                             midi::MidiImportService& importer, storage::IObjectStorage& objects)
     : midis_(midis), people_(people), db_(std::move(db)), auth_(auth), writer_(writer),
-      personWriter_(personWriter), recoveryWriter_(recoveryWriter), installation_(installation), importer_(importer),
+      personWriter_(personWriter), recoveryWriter_(recoveryWriter), installation_(installation), importer_(importer), objects_(objects),
       workers_(static_cast<std::size_t>(workerCount), "archive") {}
 
 void ApiController::dispatch(Callback callback, std::function<Json::Value()> work, int successStatus) {
+    dispatchResponse(std::move(callback), [work = std::move(work), successStatus] {
+        auto response = drogon::HttpResponse::newHttpJsonResponse(work());
+        response->setStatusCode(static_cast<drogon::HttpStatusCode>(successStatus));
+        return response;
+    });
+}
+
+void ApiController::dispatchResponse(Callback callback, std::function<drogon::HttpResponsePtr()> work) {
     if (pending_.fetch_add(1) >= 256) {
         --pending_;
         callback(errorResponse(503, "SERVER_BUSY", "Please retry shortly."));
         return;
     }
-    workers_.runTaskInQueue([this, callback = std::move(callback), work = std::move(work), successStatus] {
+    workers_.runTaskInQueue([this, callback = std::move(callback), work = std::move(work)] {
         drogon::HttpResponsePtr response;
         try {
-            response = drogon::HttpResponse::newHttpJsonResponse(work());
-            response->setStatusCode(static_cast<drogon::HttpStatusCode>(successStatus));
+            response = work();
         } catch (const ApiError& error) {
             response = errorResponse(error.status, error.code, error.what());
         } catch (const drogon::orm::DrogonDbException&) {
@@ -94,6 +101,31 @@ void ApiController::registerRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/midis/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string slug) {
         dispatch(std::move(callback), [this, slug = std::move(slug)] { return toJson(midis_.getBySlug(slug)); });
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/midis/{1}/files/{2}/download", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string slug, std::string value) {
+        if (downloadsPending_.fetch_add(1) >= 2) {
+            --downloadsPending_;
+            callback(errorResponse(503, "SERVER_BUSY", "Please retry shortly."));
+            return;
+        }
+        auto slot = std::shared_ptr<int>(new int(0), [this](int* p) { delete p; --downloadsPending_; });
+        dispatchResponse(std::move(callback), [this, slug = std::move(slug), value = std::move(value), slot] {
+            std::int64_t id = 0;
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), id);
+            if (error != std::errc{} || end != value.data() + value.size() || id < 1)
+                throw ApiError(400, "INVALID_FILE_ID", "File id must be a positive 64-bit integer.");
+            const auto file = midis_.fileForDownload(slug, id);
+            auto bytes = objects_.read(file.storageKey, static_cast<std::size_t>(file.fileSize));
+            std::string encoded;
+            constexpr char hex[] = "0123456789ABCDEF";
+            for (unsigned char c : file.originalFilename) { encoded += '%'; encoded += hex[c >> 4]; encoded += hex[c & 15]; }
+            auto response = drogon::HttpResponse::newHttpResponse();
+            response->setContentTypeString("audio/midi");
+            response->addHeader("Content-Disposition", "attachment; filename=\"midi-" + std::to_string(file.id) + ".mid\"; filename*=UTF-8''" + encoded);
+            response->addHeader("X-Content-Type-Options", "nosniff");
+            response->setBody(std::move(bytes));
+            return response;
+        });
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/people/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string value) {
         dispatch(std::move(callback), [this, value = std::move(value)] {

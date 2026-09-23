@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "midi/MidiImportService.h"
 #include "storage/S3ObjectStorage.h"
+#include "common/Json.h"
 #include <map>
 
 using namespace lostmidi;
@@ -91,6 +92,7 @@ public:
     bool store(const std::string& key, std::span<const std::byte> data) override { ++writes; storedKey = key; stored.assign(data.begin(),data.end()); return true; }
     bool exists(const std::string&) const override { return false; }
     void remove(const std::string&) override {}
+    std::string read(const std::string&, std::size_t) const override { return std::string(reinterpret_cast<const char*>(stored.data()), stored.size()); }
 };
 TEST(MidiImport, RejectsWithoutStorageOrRepositoryWrites) {
     FakeRepository repo; FakeStorage storage;
@@ -111,6 +113,31 @@ TEST(MidiImport, PreservesExactBytesFilenameAndContentIdentity) {
     EXPECT_EQ(repo.saved.midiId,42); EXPECT_EQ(repo.saved.originalFilename,"乐曲.MID");
     EXPECT_EQ(repo.saved.fileSize,data.size()); EXPECT_EQ(repo.saved.sha256,storage::sha256(data));
     EXPECT_EQ(storage.storedKey,repo.saved.sha256); EXPECT_EQ(storage.stored,data);
+}
+TEST(MidiDownload, ConsentAndRestrictionsControlPublicAvailability) {
+    midi::MidiDetail detail;
+    midi::MidiFile file; file.id = 3; file.midiId = 1; file.storageKey = "hidden-storage-key";
+    detail.files.push_back(file);
+    EXPECT_FALSE(midi::downloadAllowed(detail.entry, file));
+    detail.entry.distributionPermission = "permission_granted";
+    EXPECT_FALSE(midi::downloadAllowed(detail.entry, file));
+    file.publicDistributionConfirmed = true;
+    for (const auto& permission : {std::optional<std::string>{}, std::optional<std::string>{"unknown"}, std::optional<std::string>{"permission_granted"}}) {
+        detail.entry.distributionPermission = permission;
+        EXPECT_TRUE(midi::downloadAllowed(detail.entry, file));
+    }
+    for (const auto* permission : {"restricted", "metadata_only"}) {
+        detail.entry.distributionPermission = permission;
+        EXPECT_FALSE(midi::downloadAllowed(detail.entry, file));
+    }
+    detail.entry.distributionPermission = "unknown";
+    detail.files[0] = file;
+    const auto json = toJson(detail);
+    EXPECT_TRUE(json["files"][0]["download_available"].asBool());
+    EXPECT_FALSE(json["files"][0].isMember("storage_key"));
+    EXPECT_FALSE(json["files"][0].isMember("private_archive_confirmed"));
+    detail.entry.distributionPermission = "restricted";
+    EXPECT_FALSE(toJson(detail)["files"][0]["download_available"].asBool());
 }
 TEST(S3Signing, FixedIndependentPythonHmacVectors) {
     // Public synthetic fixture; expected signatures calculated independently with Python hashlib/hmac.

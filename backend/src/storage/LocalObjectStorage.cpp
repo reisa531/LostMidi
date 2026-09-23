@@ -1,4 +1,5 @@
 #include "storage/LocalObjectStorage.h"
+#include "common/Error.h"
 #include <algorithm>
 #include <array>
 #include <fstream>
@@ -7,6 +8,9 @@
 
 namespace lostmidi::storage {
 namespace fs = std::filesystem;
+namespace {
+[[noreturn]] void unavailable() { throw ApiError(503, "STORAGE_UNAVAILABLE", "Object storage is temporarily unavailable."); }
+}
 
 LocalObjectStorage::LocalObjectStorage(const fs::path& root) {
     if (root.empty()) throw std::invalid_argument("Storage root must not be empty.");
@@ -73,6 +77,29 @@ bool LocalObjectStorage::store(const std::string& key, std::span<const std::byte
 bool LocalObjectStorage::exists(const std::string& key) const {
     std::lock_guard lock(mutex_);
     return fs::exists(checkedPath(key));
+}
+
+std::string LocalObjectStorage::read(const std::string& key, std::size_t expectedSize) const {
+    if (expectedSize == 0 || expectedSize > 1024 * 1024)
+        throw std::invalid_argument("Object size must be between 1 byte and 1 MiB.");
+    try {
+        std::lock_guard lock(mutex_);
+        const auto path = checkedPath(key);
+        if (fs::file_size(path) != expectedSize) unavailable();
+        std::ifstream input(path, std::ios::binary);
+        if (!input) unavailable();
+        // One extra byte detects growth after file_size() without an unbounded read.
+        std::string body(expectedSize + 1, '\0');
+        input.read(body.data(), static_cast<std::streamsize>(body.size()));
+        if (input.bad() || input.gcount() != static_cast<std::streamsize>(expectedSize)) unavailable();
+        body.resize(expectedSize);
+        if (sha256(std::as_bytes(std::span(body.data(), body.size()))) != key) unavailable();
+        return body;
+    } catch (const std::invalid_argument&) {
+        throw;
+    } catch (...) {
+        unavailable();
+    }
 }
 
 void LocalObjectStorage::remove(const std::string& key) {

@@ -14,7 +14,7 @@ FileImportResult MidiImportService::import(std::int64_t id, std::int64_t revisio
     validateMidi(bytes);
     // Check ownership and parent before creating any storage or journal records.
     repository_.fileEditor(id);
-    MidiFile file; file.midiId = id; file.originalFilename = filename;
+    MidiFile file; file.midiId = id; file.originalFilename = filename; file.publicDistributionConfirmed = true;
     file.sha256 = storage::sha256(bytes); file.storageKey = file.sha256; file.fileSize = bytes.size();
     return repository_.importFile(file, revision, [&] { objects_.store(file.storageKey, bytes); });
 }

@@ -18,6 +18,7 @@ public:
     explicit S3ObjectStorage(S3Config config);
     bool store(const std::string& key, std::span<const std::byte> bytes) override;
     bool exists(const std::string& key) const override;
+    std::string read(const std::string& key, std::size_t expectedSize) const override;
     void remove(const std::string& key) override;
 private:
     drogon::HttpResponsePtr request(drogon::HttpMethod method, const std::string& key,

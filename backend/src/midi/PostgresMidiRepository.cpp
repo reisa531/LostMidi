@@ -15,7 +15,8 @@ MidiFile fileFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), row["midi_id"].as<std::int64_t>(),
         row["original_filename"].as<std::string>(), row["sha256"].as<std::string>(),
         row["file_size"].as<std::uint64_t>(), row["storage_key"].as<std::string>(),
-        nullable<std::string>(row["discovered_at"]), row["created_at"].as<std::string>()};
+        nullable<std::string>(row["discovered_at"]), row["created_at"].as<std::string>(),
+        row["private_archive_confirmed"].as<bool>()};
 }
 }
 std::vector<MidiEntry> PostgresMidiRepository::list(Page page) {
@@ -117,9 +118,7 @@ FileImportResult PostgresMidiRepository::importFile(const MidiFile& file, std::i
     if (tx.db->execSqlSync("SELECT 1 FROM midi_import_objects WHERE sha256=$1 FOR UPDATE", file.sha256).empty())
         throw ApiError(503, "SERVER_BUSY", "Import was superseded. Retry after refreshing.");
     persist();
-    // The legacy column private_archive_confirmed now records that the operator
-    // confirmed the right to publicly distribute the file; the name is retained to
-    // avoid a production migration. It is write-only and never exposed via the API.
+    // Keep the legacy column name for public-distribution consent without rewriting deployed migrations.
     const auto inserted = tx.db->execSqlSync(
         "INSERT INTO midi_files(midi_id,original_filename,sha256,file_size,storage_key,private_archive_confirmed) "
         "VALUES($1,$2,$3,$4,$5,TRUE) ON CONFLICT(sha256) DO NOTHING RETURNING *",

@@ -116,7 +116,7 @@ docker compose down
 
 普通 down 保留 PostgreSQL named volume 和宿主 storage/；不要为了升级 schema 删除 volume。修改数据库初始账号变量不会自动改变已有数据库，需要同步修改数据库账号和 DATABASE_URL。
 
-后端容器以 UID 10001 运行。Linux 下测试文件写入时应让 storage/ 对该 UID 可写，由后端独占管理；启用私有导入后会写入所选 local / S3 存储，不提供公开对象访问。数据库和对象目录分别备份、恢复。
+后端容器以 UID 10001 运行。Linux 下测试文件写入时应让 storage/ 对该 UID 可写，由后端独占管理；管理员上传写入所选 local / S3 存储，获准文件可经站内下载接口读取，不能直接把本地目录设为静态资源。数据库和对象目录分别备份、恢复。
 
 ### Native workflow: Linux / macOS
 
@@ -275,7 +275,8 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 | GET /api/v1/installation | 公开、no-store；返回 installed、installation_enabled、site: {name, description}，无秘密 |
 | POST /api/v1/installation | X-Installation-Token 授权；仅 site_name、site_description、username、password，成功 201、同 GET 响应；并发仅一成功 |
 | GET /api/v1/midis?page=1&pageSize=20 | 有序分页，每项包含 credits |
-| GET /api/v1/midis/:slug | entry、credits、people、historical_sources、recovery_events、files |
+| GET /api/v1/midis/:slug | entry、credits、people、historical_sources、recovery_events、files（含 download_available） |
+| GET /api/v1/midis/:slug/files/:id/download | 无需登录的 MIDI 附件下载，校验条目归属、分发确认、大小和 SHA-256 |
 | GET /api/v1/people/:id | person、aliases、midis |
 | POST /api/v1/admin/login | 验证用户名和密码，返回有效期 8 小时的令牌 |
 | GET /api/v1/admin/session | 验证 Bearer 会话，返回管理员用户名 |
@@ -283,10 +284,10 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 | POST /api/v1/admin/midis | 验证管理员后新增基本信息，成功 201 |
 | GET /api/v1/admin/midis/:id | 验证管理员后读取编辑数据和 revision |
 | PUT /api/v1/admin/midis/:id | 验证管理员后更新基本信息；slug 冲突或旧 revision 返回 409 |
-| GET /api/v1/admin/midis/{id}/files | Bearer 管理员读取私有文件管理数据 |
-| POST /api/v1/admin/midis/{id}/files | Bearer 管理员私有单文件导入，默认关闭；新文件原子递增父 revision |
+| GET /api/v1/admin/midis/{id}/files | Bearer 管理员读取文件管理数据 |
+| POST /api/v1/admin/midis/{id}/files | Bearer 管理员单文件上传并确认公开分发，默认关闭；新文件原子递增父 revision |
 
-导入 POST 使用 `application/octet-stream` 原始字节，带 `X-File-Name=encodeURIComponent(文件名)`、`X-Entry-Revision`、`X-Rights-Confirmed=true`。只接受单个 `.mid` / `.midi`、SMF 0/1/2、最大 1 MiB；前端 Server Action 上限 `2mb` 不放宽文件限制。同档案同内容幂等、跨档案 `409 FILE_OWNERSHIP_CONFLICT`；不改变版权、分发许可或归档状态，不提供公开下载、试听或对象 URL。
+导入 POST 使用 `application/octet-stream` 原始字节，带 `X-File-Name=encodeURIComponent(文件名)`、`X-Entry-Revision`、`X-Rights-Confirmed=true`。只接受单个 `.mid` / `.midi`、SMF 0/1/2、最大 1 MiB；前端 Server Action 上限 `2mb` 不放宽文件限制。同档案同内容幂等、跨档案 `409 FILE_OWNERSHIP_CONFLICT`；上传需确认有权公开分发，不改变版权、分发许可或归档状态。公开详情页提供无需登录的下载入口，经站内接口返回原文件名及 `audio/midi` 附件，不暴露对象路径或 S3 凭据；不提供试听。只有已记录分发确认且条目未标为 `restricted` / `metadata_only` 的文件可下载，每次校验大小与 SHA-256，存储异常返回 503。
 
 page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回 400；超出末页返回空 data 和原 total。slug 最多 160 个小写字母、数字和词间连字符；人物 ID 为正数 BIGINT 范围。
 
@@ -300,7 +301,7 @@ page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回
 {"error": {"code": "MIDI_NOT_FOUND", "message": "The requested MIDI entry does not exist."}}
 ```
 
-异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志不记录连接串或异常原文。公开查询无需登录；后台接口在 C++ 验证会话，基本资料写入立即反映到公开站点，但文件导入完全私有。已有管理员导入接口，无公开上传、下载或试听接口；导入及清理契约见 [RUN.md](RUN.md)，其他后台合约见 [后台平台说明](docs/admin.md)。
+异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志不记录连接串或异常原文。公开查询和获准文件下载无需登录；后台接口在 C++ 验证会话，基本资料写入立即反映到公开站点，文件上传仍仅限管理员。无公开上传或试听接口；导入、下载及清理契约见 [RUN.md](RUN.md)，其他后台合约见 [后台平台说明](docs/admin.md)。
 
 ## Testing
 

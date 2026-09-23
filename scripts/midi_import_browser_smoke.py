@@ -30,10 +30,19 @@ def main():
         expect(page).to_have_url(base + '/admin')
         page.goto(base + '/admin/midis/new')
         page.locator('[name=title]').fill('文件导入浏览器测试')
-        page.locator('[name=slug]').fill('file-browser-' + uuid.uuid4().hex)
+        slug = 'file-browser-' + uuid.uuid4().hex
+        page.locator('[name=slug]').fill(slug)
         page.get_by_role('button', name='创建档案', exact=True).click()
         expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
+        edit_url = page.url
+        visitor_context = browser.new_context(viewport={'width': 1280, 'height': 900}, accept_downloads=True)
+        visitor = visitor_context.new_page()
+        visitor.on('pageerror', lambda error: errors.append(str(error)))
+        visitor.goto(base + '/midis/' + slug)
+        expect(visitor.get_by_text('尚无已登记的 MIDI 文件。此档案目前仅保存文字资料。')).to_be_visible()
+        visitor.wait_for_load_state('networkidle')
         page.get_by_role('link', name='管理 MIDI 文件 →', exact=True).click()
+        page.wait_for_load_state('networkidle')
         expect(page.locator('[name=revision]')).to_have_value('1')
         upload = page.locator('[name=file]')
         rights = page.locator('[name=rights_confirmed]')
@@ -82,9 +91,42 @@ def main():
         assert stale.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Mobile overflow'
         if args.screenshots:
             stale.screenshot(path=str(args.screenshots / 'files-mobile.png'), full_page=True)
+        visitor.reload()
+        downloads = visitor.get_by_role('button', name=re.compile(r'^下载 MIDI：'))
+        expect(downloads).to_have_count(3)
+        with visitor.expect_download() as saved_download:
+            downloads.first.click()
+        downloaded = saved_download.value
+        assert downloaded.suggested_filename == '归档测试.MID'
+        assert Path(downloaded.path()).read_bytes() == midi(70)
+        assert visitor.url == base + '/midis/' + slug
+        if args.screenshots:
+            visitor.screenshot(path=str(args.screenshots / 'download-desktop.png'), full_page=True)
+        visitor.set_viewport_size({'width': 390, 'height': 844})
+        assert visitor.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Public page mobile overflow'
+        if args.screenshots:
+            visitor.screenshot(path=str(args.screenshots / 'download-mobile.png'), full_page=True)
+        visitor.route('**/api/midis/*/files/*/download', lambda route: route.abort())
+        downloads.first.click()
+        expect(visitor.get_by_role('main').get_by_role('alert')).to_be_visible()
+        assert visitor.url == base + '/midis/' + slug
+        visitor.unroute('**/api/midis/*/files/*/download')
+        with visitor.expect_download() as retry_download:
+            downloads.first.click()
+        assert Path(retry_download.value.path()).read_bytes() == midi(70)
+        expect(visitor.get_by_role('main').get_by_role('alert')).to_have_count(0)
+        page.goto(edit_url)
+        page.locator('[name=distribution_permission]').select_option('restricted')
+        page.get_by_role('button', name='保存修改', exact=True).click()
+        expect(page.get_by_role('status')).to_contain_text('档案已保存')
+        downloads.first.click()
+        expect(visitor.get_by_role('main').get_by_role('alert')).to_contain_text('暂时无法下载')
+        visitor.reload()
+        expect(visitor.get_by_role('button', name=re.compile(r'^下载 MIDI：'))).to_have_count(0)
         assert not errors, errors
+        visitor_context.close()
         browser.close()
-    print('PASS: upload UI, validation, retained failure input, duplicate success, file-list refresh, stale revision recovery and mobile layout')
+    print('PASS: upload regression, anonymous exact-byte download, original filename, error recovery, rights revocation and mobile layout')
 
 
 if __name__ == '__main__':

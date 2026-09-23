@@ -27,7 +27,9 @@ struct MidiFile {
     std::string storageKey;
     std::optional<std::string> discoveredAt;
     std::string createdAt;
+    bool publicDistributionConfirmed = false;
 };
+bool downloadAllowed(const MidiEntry& entry, const MidiFile& file);
 struct MidiSummary {
     MidiEntry entry;
     std::vector<person::Credit> credits;

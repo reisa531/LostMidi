@@ -115,7 +115,12 @@ inline Json::Value toJson(const midi::MidiDetail& d) {
     j["people"] = jsonArray(d.people);
     j["historical_sources"] = jsonArray(d.history.sources);
     j["recovery_events"] = jsonArray(d.history.events);
-    j["files"] = jsonArray(d.files);
+    j["files"] = Json::Value(Json::arrayValue);
+    for (const auto& file : d.files) {
+        auto item = toJson(file);
+        item["download_available"] = midi::downloadAllowed(d.entry, file);
+        j["files"].append(item);
+    }
     return j;
 }
 inline Json::Value toJson(const person::PersonDetail& d) {

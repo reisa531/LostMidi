@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
+#include "common/Error.h"
 #include "midi/MidiService.h"
 #include "midi/MidiFileService.h"
 #include "storage/LocalObjectStorage.h"
 #include <fstream>
+#include <limits>
 #include <map>
 #include <chrono>
 
@@ -99,6 +101,14 @@ protected:
     std::filesystem::path directory = std::filesystem::temp_directory_path() /
         ("lostmidi-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     void TearDown() override { std::filesystem::remove_all(directory); }
+    void expectReadUnavailable(const storage::IObjectStorage& objects, const std::string& key, std::size_t size) {
+        try { (void)objects.read(key, size); FAIL() << "Expected ApiError"; }
+        catch (const ApiError& error) {
+            EXPECT_EQ(error.status, 503);
+            EXPECT_EQ(error.code, "STORAGE_UNAVAILABLE");
+            EXPECT_STREQ(error.what(), "Object storage is temporarily unavailable.");
+        }
+    }
 };
 TEST_F(StorageTest, DuplicateContentHasOneFileEvenWithDifferentNames) {
     MemoryArchive repository;
@@ -139,5 +149,129 @@ TEST_F(StorageTest, DetectsCorruptionInsteadOfSilentlyAcceptingDuplicate) {
     objects.store(key, bytesOf("abc"));
     { std::ofstream output(directory / key, std::ios::binary); output << "bad"; }
     EXPECT_THROW(objects.store(key, bytesOf("abc")), std::runtime_error);
+}
+TEST_F(StorageTest, ReadReturnsExactBinaryBytesWithoutChangingObject) {
+    storage::LocalObjectStorage objects(directory);
+    std::string bytes;
+    for (unsigned i = 0; i < 256; ++i) bytes.push_back(static_cast<char>(i));
+    const auto key = storage::sha256(bytesOf(bytes));
+    ASSERT_TRUE(objects.store(key, bytesOf(bytes)));
+    const storage::IObjectStorage& reader = objects;
+    const auto actual = reader.read(key, bytes.size());
+    ASSERT_EQ(actual.size(), bytes.size());
+    EXPECT_EQ(actual, bytes);
+    EXPECT_TRUE(objects.exists(key));
+    EXPECT_FALSE(objects.store(key, bytesOf(bytes)));
+    EXPECT_EQ(reader.read(key, bytes.size()), bytes);
+}
+TEST_F(StorageTest, ReadMissingObjectIsUnavailable) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("abc"));
+    expectReadUnavailable(objects, key, 3);
+    EXPECT_FALSE(objects.exists(key));
+}
+TEST_F(StorageTest, ReadRejectsTruncatedAndEmptyObjects) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("abc"));
+    ASSERT_TRUE(objects.store(key, bytesOf("abc")));
+    std::filesystem::resize_file(directory / key, 2);
+    expectReadUnavailable(objects, key, 3);
+    std::filesystem::resize_file(directory / key, 0);
+    expectReadUnavailable(objects, key, 3);
+}
+TEST_F(StorageTest, ReadRejectsSameSizeCorruption) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("abc"));
+    ASSERT_TRUE(objects.store(key, bytesOf("abc")));
+    {
+        std::ofstream output(directory / key, std::ios::binary | std::ios::trunc);
+        output << "abd";
+        output.close();
+        ASSERT_TRUE(output);
+    }
+    ASSERT_EQ(std::filesystem::file_size(directory / key), 3u);
+    expectReadUnavailable(objects, key, 3);
+}
+TEST_F(StorageTest, ReadRejectsExtraBytesEvenWithMatchingPrefix) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("abc"));
+    ASSERT_TRUE(objects.store(key, bytesOf("abc")));
+    {
+        std::ofstream output(directory / key, std::ios::binary | std::ios::app);
+        output.put('\0');
+        output.close();
+        ASSERT_TRUE(output);
+    }
+    expectReadUnavailable(objects, key, 3);
+}
+TEST_F(StorageTest, ReadRejectsIncorrectExpectedSize) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("abc"));
+    ASSERT_TRUE(objects.store(key, bytesOf("abc")));
+    expectReadUnavailable(objects, key, 2);
+    expectReadUnavailable(objects, key, 4);
+}
+TEST_F(StorageTest, ReadAcceptsOneByteAndOneMiB) {
+    storage::LocalObjectStorage objects(directory);
+    for (const std::size_t size : {std::size_t{1}, std::size_t{1024 * 1024}}) {
+        SCOPED_TRACE(size);
+        std::string bytes(size, '\0');
+        for (std::size_t i = 0; i < size; ++i) bytes[i] = static_cast<char>(i % 256);
+        const auto key = storage::sha256(bytesOf(bytes));
+        ASSERT_TRUE(objects.store(key, bytesOf(bytes)));
+        EXPECT_EQ(objects.read(key, size), bytes);
+        // Even one byte beyond the permitted maximum must not be returned.
+        std::filesystem::resize_file(directory / key, size + 1);
+        expectReadUnavailable(objects, key, size);
+    }
+}
+TEST_F(StorageTest, ReadRejectsInvalidSizesBeforeReading) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("a"));
+    ASSERT_TRUE(objects.store(key, bytesOf("a")));
+    EXPECT_THROW(objects.read(key, 0), std::invalid_argument);
+    EXPECT_THROW(objects.read(key, 1024 * 1024 + 1), std::invalid_argument);
+    EXPECT_THROW(objects.read(key, std::numeric_limits<std::size_t>::max()), std::invalid_argument);
+}
+TEST_F(StorageTest, ReadRejectsInvalidKeys) {
+    storage::LocalObjectStorage objects(directory);
+    for (const auto& key : {std::string{}, std::string("../outside"), std::string("C:/outside"),
+            std::string(63, 'a'), std::string(65, 'a'), std::string(64, 'A'), std::string(64, 'g'),
+            std::string(32, 'a') + '\0' + std::string(31, 'a')}) {
+        SCOPED_TRACE(key);
+        EXPECT_THROW(objects.read(key, 1), std::invalid_argument);
+    }
+}
+TEST_F(StorageTest, ReadRejectsObjectSymlink) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("abc"));
+    ASSERT_TRUE(objects.store(key, bytesOf("abc")));
+    const auto target = directory / "target";
+    std::filesystem::rename(directory / key, target);
+    std::error_code error;
+    std::filesystem::create_symlink(target, directory / key, error);
+    if (error) GTEST_SKIP() << "Symlink creation is unavailable: " << error.message();
+    expectReadUnavailable(objects, key, 3);
+    // A dangling symlink must be rejected too.
+    std::filesystem::remove(target);
+    expectReadUnavailable(objects, key, 3);
+}
+TEST_F(StorageTest, ReadRejectsReplacedRootSymlink) {
+    const auto root = directory / "objects";
+    storage::LocalObjectStorage objects(root);
+    const auto key = storage::sha256(bytesOf("abc"));
+    ASSERT_TRUE(objects.store(key, bytesOf("abc")));
+    const auto target = directory / "target";
+    std::filesystem::rename(root, target);
+    std::error_code error;
+    std::filesystem::create_directory_symlink(target, root, error);
+    if (error) GTEST_SKIP() << "Symlink creation is unavailable: " << error.message();
+    expectReadUnavailable(objects, key, 3);
+}
+TEST_F(StorageTest, ReadRejectsNonRegularObjectPath) {
+    storage::LocalObjectStorage objects(directory);
+    const auto key = storage::sha256(bytesOf("abc"));
+    ASSERT_TRUE(std::filesystem::create_directory(directory / key));
+    expectReadUnavailable(objects, key, 3);
 }
 }  // namespace

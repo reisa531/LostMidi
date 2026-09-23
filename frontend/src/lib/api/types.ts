@@ -19,7 +19,7 @@ export interface MidiDetail {
   recovery_events: { id: string; recovered_at: string | null; recovered_by: string | null;
     recovered_by_name: string | null; story: string; evidence: string | null; created_at: string }[];
   files: { id: string; original_filename: string; sha256: string; file_size: number;
-    discovered_at: string | null; created_at: string }[];
+    discovered_at: string | null; created_at: string; download_available: boolean }[];
 }
 export interface PersonDetail {
   person: Person; aliases: string[]; midis: { id: string; slug: string; title: string; role: string }[];

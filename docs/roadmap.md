@@ -10,7 +10,9 @@
 - 前端在同一 Git 仓库内独立安装、构建和部署，可用 Vercel；后端及数据库单独运行。
 - 一次性 `/install`：后端安装令牌授权、站点名称与简介、数据库单管理员及持久安装锁，兼容已有环境管理员；前端仅生成三项连接/来源/Cookie 变量文本，Vercel 用户自行保存项目变量并重部署，不自动写 env 或调用 Vercel API。已通过本地安装、旧环境升级兼容及故障处理回归；部署验证范围见下文。
 
-## 管理员 MIDI 导入：已实现并对真实桶联调验证
+## 管理员 MIDI 导入与访客下载
+
+- 公开详情页提供 MIDI 下载按钮、加载与失败提示，保留原始文件名；匿名下载经站内接口读取 local / S3，校验大小、SHA-256、文件归属与分发确认。`restricted` / `metadata_only` 条目不开放站内下载；无文件及旧未确认记录保持元数据展示。此下载增量需前后端同步发布，不代表生产已部署。
 
 - 已有管理员单文件导入实现：SMF 0/1/2、单个 `.mid` / `.midi`、最大 1 MiB，须确认有权公开分发；默认 `MIDI_IMPORT_ENABLED=false`。对象存入 S3 并允许匿名读取，不提供后台对象 URL 或下载试听，不自动修改版权、分发许可或归档状态。
 - `GET/POST /api/v1/admin/midis/{id}/files` 使用管理员 Bearer；相同档案相同 SHA-256 幂等，跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`，新文件登记与父 revision 递增原子提交。HTTP 使用 `MidiImportService`，不是旧内部 `MidiFileService`。

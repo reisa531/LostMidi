@@ -18,11 +18,12 @@ public:
                   drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth,
                   midi::MidiWriteService& writer, person::PersonWriteService& personWriter,
                   recovery::RecoveryWriteService& recoveryWriter, installation::InstallationService& installation,
-                  midi::MidiImportService& importer);
+                  midi::MidiImportService& importer, storage::IObjectStorage& objects);
     void registerRoutes();
 private:
     using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
     void dispatch(Callback callback, std::function<Json::Value()> work, int successStatus = 200);
+    void dispatchResponse(Callback callback, std::function<drogon::HttpResponsePtr()> work);
     void registerAdminRoutes();
     void registerAdminRecoveryRoutes();
     void registerInstallationRoutes();
@@ -36,8 +37,10 @@ private:
     recovery::RecoveryWriteService& recoveryWriter_;
     installation::InstallationService& installation_;
     midi::MidiImportService& importer_;
+    storage::IObjectStorage& objects_;
     std::atomic<int> pending_{0};
     std::atomic<int> importsPending_{0};
+    std::atomic<int> downloadsPending_{0};
     // Declared last: joins its worker threads before the dependencies die.
     trantor::ConcurrentTaskQueue workers_;
 };

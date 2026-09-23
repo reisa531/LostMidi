@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
         midi::MidiWriteService writer(midiRepository);
         person::PersonWriteService personWriter(personRepository);
         recovery::RecoveryWriteService recoveryWriter(recoveryRepository);
-        ApiController controller(midis, people, db, config.workerThreads, auth, writer, personWriter, recoveryWriter, installation, importer);
+        ApiController controller(midis, people, db, config.workerThreads, auth, writer, personWriter, recoveryWriter, installation, importer, *objects);
         drogon::app().setClientMaxBodySize(2 * 1024 * 1024);
         drogon::app().setClientMaxMemoryBodySize(2 * 1024 * 1024);
         controller.registerRoutes();
