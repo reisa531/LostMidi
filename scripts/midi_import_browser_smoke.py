@@ -10,12 +10,47 @@ from playwright.sync_api import sync_playwright, expect
 from midi_import_smoke import midi
 
 
+def check_catalog(page, base, screenshots):
+    routes = [("/", "首页总览"), ("/midis", "MIDI"), ("/people", "作者"),
+              ("/recovery", "寻回进度"), ("/map", "Map")]
+    for width in (1280, 390):
+        page.set_viewport_size({"width": width, "height": 900})
+        for path, label in routes:
+            page.goto(base + path)
+            expect(page.get_by_role("navigation", name="主导航").get_by_role("link", name=label, exact=True)).to_have_attribute("aria-current", "page")
+            expect(page.get_by_role("main").get_by_role("heading", level=1)).to_be_visible()
+            expect(page.get_by_role("main").get_by_role("alert")).to_have_count(0)
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), path
+            if screenshots:
+                screenshots.mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=str(screenshots / f"catalog-{path.strip('/') or 'home'}-{width}.png"), full_page=True)
+    page.goto(base + "/midis?pageSize=1")
+    expect(page.get_by_role("table").locator("tbody tr")).to_have_count(1)
+    page.get_by_role("link", name="下一页", exact=True).click()
+    assert "page=2" in page.url
+    page.goto(base + "/recovery")
+    page.locator("select[name=status]").select_option("lost")
+    page.get_by_role("button", name="应用筛选").click()
+    expect(page.locator("select[name=status]")).to_have_value("lost")
+    for by in ("author", "source"):
+        page.goto(base + "/map?by=" + by)
+        page.get_by_role("table").first.locator("tbody a").first.click()
+        expect(page.locator("#group-entries").get_by_role("form", name="筛选档案")).to_be_visible()
+    for path in ("/midis?page=0", "/people?page=0", "/map?by=invalid", "/recovery?status=invalid", "/midis?page=1&page=2"):
+        page.goto(base + path)
+        expect(page.get_by_role("main").get_by_role("alert")).to_contain_text("筛选参数无效")
+    page.goto(base + "/midis?page=1000000")
+    expect(page.get_by_text("暂无档案", exact=True)).to_be_visible()
+    print("PASS: five catalog modules, active navigation, pagination, filters, groups, invalid/empty states and desktop/mobile layouts")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--frontend', default='http://localhost:3000')
     parser.add_argument('--allow-writes', required=True, action='store_true')
     parser.add_argument('--channel', default='msedge')
     parser.add_argument('--screenshots', type=Path)
+    parser.add_argument('--expect-disabled', action='store_true')
     args = parser.parse_args()
     base = args.frontend.rstrip('/')
     with sync_playwright() as pw:
@@ -31,6 +66,16 @@ def main():
         page.get_by_role('button', name='登录', exact=True).click()
         expect(page).to_have_url(base + '/admin')
         page.goto(base + '/admin/midis/new')
+        if args.expect_disabled:
+            expect(page.get_by_role('status')).to_contain_text('文件导入尚未启用')
+            expect(page.locator('[name=file]')).to_have_count(0)
+            page.locator('[name=title]').fill('禁用导入仍可建档')
+            page.locator('[name=slug]').fill('disabled-browser-' + uuid.uuid4().hex)
+            page.get_by_role('button', name='创建档案', exact=True).click()
+            expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
+            browser.close()
+            print('PASS: disabled import hides file input and preserves metadata creation')
+            return
         page.locator('[name=title]').fill('文件导入浏览器测试')
         slug = 'file-browser-' + uuid.uuid4().hex
         page.locator('[name=slug]').fill(slug)
@@ -202,6 +247,7 @@ def main():
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Create form mobile overflow'
         if args.screenshots:
             page.screenshot(path=str(args.screenshots / 'create-mobile.png'), full_page=True)
+        check_catalog(visitor, base, args.screenshots)
         assert not errors, errors
         visitor_context.close()
         browser.close()

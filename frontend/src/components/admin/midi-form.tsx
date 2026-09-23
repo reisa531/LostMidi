@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { MidiEntry } from "@/lib/api/types";
 import { saveMidiAction, type MidiSaveState } from "@/lib/admin/actions";
 
-export function MidiForm({ entry }: { entry?: MidiEntry }) {
+export function MidiForm({ entry, importEnabled = false }: { entry?: MidiEntry; importEnabled?: boolean }) {
   const router = useRouter();
   const requestId = useRef("");
   const submitted = useRef<FormData | null>(null);
@@ -18,6 +18,9 @@ export function MidiForm({ entry }: { entry?: MidiEntry }) {
     try {
       if (previous.retryOnly && submitted.current) form = submitted.current;
       if (!entry) {
+        // An unselected browser file control is not an upload. Omit its empty
+        // FormData placeholder before React serializes the server action.
+        if (!previous.retryOnly && !fileInput.current?.files?.length) form.delete("file");
         requestId.current ||= crypto.randomUUID();
         form.set("request_id", requestId.current);
       }
@@ -73,7 +76,8 @@ export function MidiForm({ entry }: { entry?: MidiEntry }) {
       {select("copyright_status", "版权状态", [["unknown","未知"],["public_domain","公有领域"],["licensed","已许可"],["copyrighted","受版权保护"]])}
       {select("distribution_permission", "分发许可", [["unknown","未知"],["permission_granted","已获授权"],["metadata_only","仅元数据"],["restricted","受限"]])}
       {input("license", "许可证（最多 500 UTF-8 字节）")}{input("rights_holder", "权利人（最多 500 UTF-8 字节）")}</div>
-      {!entry && <section className="min-w-0 space-y-4 rounded-lg border border-line bg-background p-4 sm:p-5">
+      {!entry && !importEnabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，仍可创建档案资料。</p>}
+      {!entry && importEnabled && <section className="min-w-0 space-y-4 rounded-lg border border-line bg-background p-4 sm:p-5">
         <div><h2 className="font-semibold">MIDI 文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">仅支持单个 .mid / .midi，最大 1 MiB。文件和资料一起保存，失败不会留下半成品档案。</p></div>
         <label className="block text-sm">选择 MIDI 文件<input ref={fileInput} name="file" type="file" accept=".mid,.midi" aria-describedby="create-file-help" className={`${inputClass} min-w-0`} onChange={event => {
           const file = event.target.files?.[0];

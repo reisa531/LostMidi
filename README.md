@@ -8,6 +8,12 @@
 
 前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。本次界面改版与建档上传尚未发布；当前版本需要数据库迁移至 `007_midi_creation_requests.sql`，部署前先备份并执行全部待应用迁移。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
+## 当前界面与建档流程
+
+前台由首页总览、MIDI、作者、寻回进度、Map 五个入口组成，关于项目位于页脚。Map 按作者或历史来源浏览作品，并分别统计有文件和符合下载权限的作品。后台工作台集中展示待完善记录、最近修改和快捷新增。
+
+新增 MIDI 档案时可直接选择文件并确认公开分发，一次保存资料与文件；也可仅建资料。校验失败保留输入，网络中断可安全重试同一请求。关闭导入时隐藏文件输入，资料建档仍可用。实施范围与本地验收见 [路线图](docs/roadmap.md)。
+
 ## Architecture
 
 ```mermaid
@@ -29,7 +35,7 @@ flowchart TD
 ## Repository Structure
 
 ```text
-frontend/src/app/          首页、档案列表/详情、人物、关于、错误页面
+frontend/src/app/          首页总览、MIDI、作者、寻回进度、Map、详情与关于页面
 frontend/src/components/   档案展示组件
 frontend/src/lib/api/      服务端 HTTP 客户端和 TypeScript 合约
 frontend/src/lib/admin/    服务端登录态、来源检查与表单操作
@@ -37,6 +43,7 @@ frontend/Dockerfile       以前端目录为上下文的独立镜像构建
 frontend/vercel.json      Vercel 的 Next.js 框架与构建配置
 frontend/.env*.example    仅前端的本机和生产环境示例
 backend/src/common/       配置、分页、Controller、JSON、日志
+backend/src/catalog/      目录统计、筛选、分组与批量查询
 backend/src/auth/         密码验证、管理员会话与接口授权
 backend/src/midi/         档案与文件登记 Service、Repository、模型
 backend/src/person/       人物、昵称、署名的查询与模型

@@ -63,7 +63,7 @@ TEST(CatalogContract, DefaultsAndUnassignedFilterContract) {
     const auto both = catalog::parseEntryQuery({{"person", "none"}, {"missing", "source"}});
     EXPECT_TRUE(both.missingAuthor); EXPECT_TRUE(both.missingSource);
     const auto maximum = catalog::parseEntryQuery({{"person", "9223372036854775807"}, {"page", "1000000"}, {"pageSize", "100"}});
-    EXPECT_EQ(maximum.personId, std::numeric_limits<std::int64_t>::max());
+    EXPECT_EQ(maximum.personId, (std::numeric_limits<std::int64_t>::max)());
     EXPECT_EQ(maximum.page.offset(), 99999900);
 }
 TEST(CatalogContract, InvalidHttpParametersAreBadRequests) {
@@ -350,7 +350,7 @@ TEST_F(CatalogPostgres, DownloadCountsMatchDownloadAllowedIncludingLegacyNullRig
         for (const bool confirmed : {false, true}) {
             const auto fileId = id * 2 + (confirmed ? 1 : 0);
             db->execSqlSync("INSERT INTO midi_files(id,midi_id,original_filename,sha256,storage_key,file_size,private_archive_confirmed) "
-                "VALUES($1,$2,'fixture.mid',lpad($1::text,64,'0'),$1::text,1,$3)", fileId, id, confirmed);
+                "VALUES($1,$2,'fixture.mid',lpad(($1::bigint)::text,64,'0'),($1::bigint)::text,1,$3)", fileId, id, confirmed);
         }
         midi::MidiEntry entry; entry.distributionPermission = rights[i];
         midi::MidiFile file; file.publicDistributionConfirmed = true;

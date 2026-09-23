@@ -48,6 +48,8 @@ def main():
 
     token = request('/api/v1/admin/login', 'POST', {
         'username': os.environ['ADMIN_TEST_USERNAME'], 'password': os.environ['ADMIN_TEST_PASSWORD']})['token']
+    session = request('/api/v1/admin/session', token=token)
+    assert session['midi_import_enabled'] is (not args.expect_disabled)
     draft = {'title': 'Import smoke', 'slug': 'import-check-' + uuid.uuid4().hex, 'description': None,
              'estimated_year': None, 'archive_status': 'uncertain', 'copyright_status': 'unknown',
              'distribution_permission': 'restricted', 'license': None, 'rights_holder': None}

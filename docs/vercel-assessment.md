@@ -63,7 +63,7 @@ Vercel 中的 `localhost`、`127.0.0.1` 或 `http://backend:8080` 不会指向�
 
 ### `/install` 配置与一次性初始化
 
-1. 部署者在后端准备数据库连接，使用现有幂等迁移脚本应用全部迁移至 `006_midi_import_journal.sql`，确认 `/ready` 可用。安装页不创建数据库、不自动迁移或 seed；005 安装锁保留，006 新增导入 journal 与分发确认字段（列名保留 `private_archive_confirmed`，记录“有权公开分发”的确认，下载时核对，原字段不经 API 暴露），不改旧迁移。
+1. 部署者在后端准备数据库连接，使用现有幂等迁移脚本应用全部迁移至 `007_midi_creation_requests.sql`，确认 `/ready` 可用。安装页不创建数据库、不自动迁移或 seed；005 安装锁保留，006 新增导入 journal 与分发确认字段（列名保留 `private_archive_confirmed`，记录“有权公开分发”的确认，下载时核对，原字段不经 API 暴露），不改旧迁移。007 新增原子建档的请求回执，即使关闭导入也须应用。
 2. 新站保持后端 `ADMIN_PASSWORD_HASH` 为空，使用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成安装令牌，仅将其设为后端 `INSTALLATION_TOKEN`。空值禁用安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`。它不是 Vercel API token，不得放进 `NEXT_PUBLIC_`、URL、部署按钮参数或任何前端环境变量。
 3. 前端缺少后端配置时可打开 `/install` 的配置表单，它**只能生成** `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE` 三项变量文本。用户自行复制到 Vercel Project Settings → Environment Variables，选择正确环境、保存并 **Redeploy**；仅在表单填值或仅保存项目变量不会更新已部署进程。页面不写 `.env`、不持久化平台配置、不调用 Vercel API。
 4. URL 文本生成不会探测用户输入的地址；连接诊断只访问已部署环境中的 `BACKEND_API_URL`，不是任意地址的 SSRF 探针。若诊断仍指向旧地址，先检查变量作用环境与重新部署结果。

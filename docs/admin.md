@@ -172,3 +172,12 @@ CTest 新增 installation 测试使用隔离 schema，测试数据库用户需�
 可选浏览器验收：在独立 Python 环境安装 `playwright` 并运行 `python -m playwright install chromium`，再使用相同测试凭据执行 `python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes`。也可传 `--channel msedge` 使用已安装的 Edge；`--screenshots <目录>` 保存验收截图。浏览器地址必须与测试前端的 ADMIN_ORIGIN 一致。脚本会创建人物和作品，只能指向专用测试环境。
 
 运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。数据库需应用全部迁移至 005。运行中的 API 可用 `python scripts/admin_smoke.py --allow-writes` 检查，通过 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供测试凭据；脚本保留新增档案，只在专用测试数据库运行。浏览器验收见 [RUN.md](../RUN.md)，实际执行结果及限制见 [验证记录](implementation-report.md)。
+
+
+## 新建档案同页上传（2026-09-24）
+
+`/admin/midis/new` 支持可选 MIDI 文件与资料一次保存。仅允许一个非空 `.mid` / `.midi`，最大 1 MiB，须确认公开分发权利。未选文件时可正常建档。`GET /api/v1/admin/session` 返回 `midi_import_enabled`；关闭导入时新建页隐藏文件输入，但后端仍独立验证开关。
+
+`POST /api/v1/admin/midis` 在原资料字段外接受小写 UUID v4 的 `request_id`，及可选 `file: {filename, content_base64, rights_confirmed}`。附文件必须提供请求键，base64 必须为规范编码。成功或同内容重试均返回作品和 HTTP 201；更换内容复用已提交请求键返回 409。旧的无请求键纯资料请求仍兼容。
+
+校验失败保留输入，可以修改后重提；服务端结果不明或响应丢失时锁定原提交并提供“重试本次提交”，避免重建档案。事务失败不保留半成品作品，潜在孤立对象由 journal 清理。上传不自动更改归档状态或分发许可。编辑页和独立文件管理页继续可用。

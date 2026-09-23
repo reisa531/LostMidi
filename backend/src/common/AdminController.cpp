@@ -137,6 +137,7 @@ void ApiController::registerAdminRoutes() {
         dispatch(std::move(callback), [this, request] {
             Json::Value result;
             result["username"] = auth_.require(request->getHeader("authorization"));
+            result["midi_import_enabled"] = importer_.enabled();
             return result;
         });
     }, {drogon::Get});
