@@ -1,8 +1,10 @@
 """Optional Playwright acceptance. Only use a disposable migrated database and test storage."""
 import argparse
+import json
 import os
 from pathlib import Path
 import re
+import urllib.request
 import uuid
 from playwright.sync_api import sync_playwright, expect
 from midi_import_smoke import midi
@@ -123,6 +125,83 @@ def main():
         expect(visitor.get_by_role('main').get_by_role('alert')).to_contain_text('暂时无法下载')
         visitor.reload()
         expect(visitor.get_by_role('button', name=re.compile(r'^下载 MIDI：'))).to_have_count(0)
+        page.goto(base + '/admin/midis/new')
+        page.wait_for_load_state('networkidle')
+        create_slug = 'create-browser-' + uuid.uuid4().hex
+        page.locator('[name=title]').fill('同页创建与上传')
+        page.locator('[name=slug]').fill(create_slug)
+        new_file = page.locator('[name=file]')
+        new_rights = page.locator('[name=rights_confirmed]')
+        create = page.get_by_role('button', name='创建档案', exact=True)
+        new_file.set_input_files({'name': 'large.mid', 'mimeType': 'audio/midi', 'buffer': b'x' * 1048577})
+        expect(page.locator('form').get_by_role('alert')).to_contain_text('文件过大')
+        new_file.set_input_files({'name': 'invalid.mid', 'mimeType': 'audio/midi', 'buffer': b'not midi'})
+        create.click()
+        assert new_rights.evaluate('(el) => !el.checkValidity()')
+        expect(page).to_have_url(base + '/admin/midis/new')
+        new_rights.check(); create.click()
+        expect(page.locator('form').get_by_role('alert')).to_contain_text('文件不是有效的')
+        expect(page.locator('[name=title]')).to_have_value('同页创建与上传')
+        assert new_file.evaluate('(el) => el.files[0].name') == 'invalid.mid'
+        expect(new_rights).to_be_checked()
+        new_file.set_input_files({'name': '同时创建.mid', 'mimeType': 'audio/midi', 'buffer': midi(81)})
+        create.click()
+        expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
+        visitor.goto(base + '/midis/' + create_slug)
+        expect(visitor.get_by_role('button', name='下载 MIDI：同时创建.mid', exact=True)).to_be_visible()
+        with visitor.expect_download() as combined_download:
+            visitor.get_by_role('button', name='下载 MIDI：同时创建.mid', exact=True).click()
+        assert Path(combined_download.value.path()).read_bytes() == midi(81)
+        page.goto(base + '/admin/midis/new')
+        page.wait_for_load_state('networkidle')
+        page.locator('[name=title]').fill('重复文件不得建档')
+        duplicate_slug = create_slug + '-duplicate'
+        page.locator('[name=slug]').fill(duplicate_slug)
+        page.locator('[name=file]').set_input_files({'name': 'duplicate.mid', 'mimeType': 'audio/midi', 'buffer': midi(81)})
+        page.locator('[name=rights_confirmed]').check()
+        page.get_by_role('button', name='创建档案', exact=True).click()
+        expect(page.locator('form').get_by_role('alert')).to_contain_text('相同文件已归属于其他档案')
+        page.get_by_role('button', name='移除文件，仅保存资料', exact=True).click()
+        expect(page.locator('[name=file]')).to_have_value('')
+        expect(page.locator('[name=rights_confirmed]')).not_to_be_checked()
+        page.get_by_role('button', name='创建档案', exact=True).click()
+        expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
+        page.goto(base + '/admin/midis/new')
+        page.wait_for_load_state('networkidle')
+        retry_slug = 'retry-browser-' + uuid.uuid4().hex
+        page.locator('[name=title]').fill('响应丢失安全重试')
+        page.locator('[name=slug]').fill(retry_slug)
+        page.locator('[name=file]').set_input_files({'name': '重试.mid', 'mimeType': 'audio/midi', 'buffer': midi(82)})
+        page.locator('[name=rights_confirmed]').check()
+        def lose_saved_response(route):
+            if route.request.method == 'POST':
+                route.fetch(timeout=60000)
+                route.abort()
+            else:
+                route.continue_()
+        page.route('**/admin/midis/new', lose_saved_response)
+        page.get_by_role('button', name='创建档案', exact=True).click()
+        expect(page.locator('form').get_by_role('alert')).to_contain_text('连接中断')
+        assert page.locator('[name=file]').evaluate('(el) => el.files[0].name') == '重试.mid'
+        expect(page.locator('[name=title]')).to_have_value('响应丢失安全重试')
+        expect(page.locator('[name=title]')).to_be_disabled()
+        page.unroute('**/admin/midis/new', lose_saved_response)
+        visitor.goto(base + '/midis/' + retry_slug)
+        expect(visitor.get_by_role('button', name='下载 MIDI：重试.mid', exact=True)).to_have_count(1)
+        page.get_by_role('button', name='重试本次提交', exact=True).click()
+        expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
+        visitor.reload()
+        expect(visitor.get_by_role('button', name='下载 MIDI：重试.mid', exact=True)).to_have_count(1)
+        if os.environ.get('BACKEND_API_URL'):
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(os.environ['BACKEND_API_URL'] + '/api/v1/catalog/entries?pageSize=100') as response:
+                entries = json.load(response)['data']
+            assert sum(entry['slug'] == retry_slug for entry in entries) == 1
+        page.goto(base + '/admin/midis/new')
+        page.set_viewport_size({'width': 390, 'height': 844})
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Create form mobile overflow'
+        if args.screenshots:
+            page.screenshot(path=str(args.screenshots / 'create-mobile.png'), full_page=True)
         assert not errors, errors
         visitor_context.close()
         browser.close()

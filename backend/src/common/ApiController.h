@@ -10,6 +10,7 @@
 #include "recovery/RecoveryWriteService.h"
 #include "installation/InstallationService.h"
 #include "midi/MidiImportService.h"
+#include "catalog/CatalogService.h"
 
 namespace lostmidi {
 class ApiController {
@@ -18,7 +19,7 @@ public:
                   drogon::orm::DbClientPtr db, int workerCount, auth::AuthService& auth,
                   midi::MidiWriteService& writer, person::PersonWriteService& personWriter,
                   recovery::RecoveryWriteService& recoveryWriter, installation::InstallationService& installation,
-                  midi::MidiImportService& importer, storage::IObjectStorage& objects);
+                  midi::MidiImportService& importer, storage::IObjectStorage& objects, catalog::CatalogService& catalog);
     void registerRoutes();
 private:
     using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
@@ -28,6 +29,7 @@ private:
     void registerAdminRecoveryRoutes();
     void registerInstallationRoutes();
     void registerAdminFileRoutes();
+    void registerCatalogRoutes();
     midi::MidiService& midis_;
     person::PersonService& people_;
     drogon::orm::DbClientPtr db_;
@@ -38,6 +40,7 @@ private:
     installation::InstallationService& installation_;
     midi::MidiImportService& importer_;
     storage::IObjectStorage& objects_;
+    catalog::CatalogService& catalog_;
     std::atomic<int> pending_{0};
     std::atomic<int> importsPending_{0};
     std::atomic<int> downloadsPending_{0};

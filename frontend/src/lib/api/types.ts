@@ -24,3 +24,25 @@ export interface MidiDetail {
 export interface PersonDetail {
   person: Person; aliases: string[]; midis: { id: string; slug: string; title: string; role: string }[];
 }
+
+export interface CatalogPagination { page: number; pageSize: number; total: number }
+export interface CatalogEntry {
+  id: string; slug: string; title: string; estimated_year: number | null;
+  archive_status: ArchiveStatus; updated_at: string; credits: Credit[];
+  sources: string[]; file_count: number; downloadable_file_count: number;
+}
+export interface CatalogOverview {
+  stats: {
+    entries: number; people: number; files: number; with_files: number;
+    downloadable: number; sources: number; statuses: Record<ArchiveStatus, number>;
+  };
+  recent: CatalogEntry[];
+  needs_attention: CatalogEntry[];
+}
+export interface CatalogEntries { data: CatalogEntry[]; pagination: CatalogPagination }
+export interface CatalogPeople {
+  data: { id: string; display_name: string; biography: string | null; aliases: string[]; midi_count: number }[];
+  pagination: CatalogPagination;
+}
+export interface CatalogGroup { key: string; label: string; entries: number; with_files: number; downloadable: number }
+export interface CatalogGroups { data: CatalogGroup[]; pagination: CatalogPagination }

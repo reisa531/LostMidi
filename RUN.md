@@ -6,7 +6,7 @@
 
 ## 1. 部署方式与边界
 
-当前生产后端已运行于 **Vercel 容器 + Neon Free**，前端是独立 Vercel 项目。生产数据库上次迁移至 005，新增 `006_midi_import_journal.sql` 尚未执行，当前代码尚未发布；本文不代表本次云构建、真实桶联调或部署成功。更新应用前须按第 7.2 节安全迁移已有库，不能以空库安装流程替代。
+当前生产后端运行于 **Vercel 容器 + Neon Free**，前端是独立 Vercel 项目。本次界面改版与建档上传尚未发布，生产迁移未在本轮执行；当前版本要求迁移至 `007_midi_creation_requests.sql`。更新应用前须按第 7.2 节备份并安全迁移已有库，不能以空库安装流程替代。
 
 前后端是同仓库中的独立项目；旧 VPS / Compose 整栈部署和“Vercel 前端 + VPS 后端”仍可用。完整单机部署使用仓库自带的 Docker Compose，一次部署四个服务：
 
@@ -130,7 +130,7 @@ ADMIN_COOKIE_SECURE=true
 
 **新站一次性安装：**
 
-1. 部署者准备数据库、连接凭据与存储；启动前应用全部迁移至 `006_midi_import_journal.sql`（Compose 由 migrate 服务执行）。安装页不创建数据库、不自动迁移或 seed。
+1. 部署者准备数据库、连接凭据与存储；启动前应用全部迁移至 `007_midi_creation_requests.sql`（Compose 由 migrate 服务执行）。安装页不创建数据库、不自动迁移或 seed。
 2. 保持后端 `ADMIN_PASSWORD_HASH` 为空，用下列命令生成令牌，安全保存后填入后端 `INSTALLATION_TOKEN`：
 
    ```sh
@@ -254,7 +254,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-当前应用需要执行全部迁移至 `006_midi_import_journal.sql`：002 新增管理员会话及档案 revision，003 新增人物 revision，004 允许未知寻回日期为 NULL，005 保存站点配置与持久安装锁，006 新增导入 journal 与分发确认字段（列名保留 `private_archive_confirmed`，现记录公开分发确认），均保留已有资料。已有部署按第 7.2 节先迁移再启动新后端，旧环境管理员首次升级安装功能时保留完整凭据，不要修改已应用迁移。启动和 `/ready` 检查 006 记录、`midi_import_objects` 及 `midi_files.private_archive_confirmed`，继续检查 005 安装表与 004 日期可空性；关闭导入也不能跳过。缺少迁移会启动失败，运行中结构缺失或不可查询时返回 503，不解释为未安装。
+当前应用需要全部迁移至 `007_midi_creation_requests.sql`。007 新增建档请求记录表，保留已有资料，不改变条目 ID 类型；002–006 的会话、revision、可空日期、安装锁、导入 journal 和分发确认继续保留。已有部署按第 7.2 节先备份迁移再启动，不修改已应用迁移。启动和 `/ready` 检查 007 账本及 `midi_creation_requests`，并保留此前的结构检查；关闭文件上传也不能跳过。缺少迁移会启动失败，运行中结构缺失返回 503，不解释为未安装。
 
 ## 5. 部署验收
 

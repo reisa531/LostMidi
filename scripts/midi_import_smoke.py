@@ -1,5 +1,6 @@
 """Admin MIDI import HTTP checks. Use ONLY a migrated disposable database and private test storage."""
 import argparse
+import base64
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
@@ -50,6 +51,51 @@ def main():
     draft = {'title': 'Import smoke', 'slug': 'import-check-' + uuid.uuid4().hex, 'description': None,
              'estimated_year': None, 'archive_status': 'uncertain', 'copyright_status': 'unknown',
              'distribution_permission': 'restricted', 'license': None, 'rights_holder': None}
+    creation = {**draft, 'slug': 'create-check-' + uuid.uuid4().hex, 'request_id': str(uuid.uuid4())}
+    metadata = request('/api/v1/admin/midis', 'POST', creation, token, expected=(201,))
+    assert request('/api/v1/admin/midis', 'POST', creation, token, expected=(201,))['id'] == metadata['id']
+    assert request('/api/v1/admin/midis', 'POST', {**creation, 'title': 'Changed'}, token, expected=(409,))['error']['code'] == 'IDEMPOTENCY_CONFLICT'
+    combined = {**draft, 'slug': 'create-file-' + uuid.uuid4().hex, 'request_id': str(uuid.uuid4()),
+                'distribution_permission': 'permission_granted', 'file': {
+                    'filename': '一起保存.mid', 'content_base64': base64.b64encode(midi(80)).decode(), 'rights_confirmed': True}}
+    request('/api/v1/admin/midis', 'POST', combined, expected=(401,))
+    if args.expect_disabled:
+        assert request('/api/v1/admin/midis', 'POST', combined, token, expected=(503,))['error']['code'] == 'IMPORT_DISABLED'
+        request('/api/v1/midis/' + combined['slug'], expected=(404,))
+    else:
+        for file_change, status in [({'rights_confirmed': False}, 400), ({'content_base64': '!!!!'}, 400),
+                                    ({'content_base64': base64.b64encode(b'invalid').decode()}, 400),
+                                    ({'filename': '../file.mid'}, 400),
+                                    ({'content_base64': base64.b64encode(b'x' * 1048577).decode()}, 413)]:
+            request('/api/v1/admin/midis', 'POST', {**combined, 'file': {**combined['file'], **file_change}}, token, expected=(status,))
+            request('/api/v1/midis/' + combined['slug'], expected=(404,))
+        request('/api/v1/admin/midis', 'POST', {key: value for key, value in combined.items() if key != 'request_id'}, token, expected=(400,))
+        created = request('/api/v1/admin/midis', 'POST', combined, token, expected=(201,))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            retries = list(pool.map(lambda _: request('/api/v1/admin/midis', 'POST', combined, token, expected=(201,)), range(2)))
+        assert all(item['id'] == created['id'] for item in retries)
+        detail = request('/api/v1/midis/' + combined['slug'])
+        assert len(detail['files']) == 1 and detail['files'][0]['download_available']
+        assert detail['files'][0]['original_filename'] == '一起保存.mid'
+        duplicate = {**combined, 'slug': combined['slug'] + '-duplicate', 'request_id': str(uuid.uuid4())}
+        assert request('/api/v1/admin/midis', 'POST', duplicate, token, expected=(409,))['error']['code'] == 'FILE_OWNERSHIP_CONFLICT'
+        request('/api/v1/midis/' + duplicate['slug'], expected=(404,))
+        overview = request('/api/v1/catalog/overview')
+        assert sum(overview['stats']['statuses'].values()) == overview['stats']['entries']
+        assert overview['stats']['files'] >= 1
+        assert overview['stats']['with_files'] >= overview['stats']['downloadable'] >= 1
+        entries = request('/api/v1/catalog/entries?page=1&pageSize=1')
+        assert len(entries['data']) == 1 and entries['pagination']['total'] == overview['stats']['entries']
+        assert 'file_count' in entries['data'][0] and 'downloadable_file_count' in entries['data'][0]
+        request('/api/v1/people?page=1&pageSize=1')
+        for by in ('author', 'source'):
+            groups = request('/api/v1/catalog/groups?by=' + by)
+            assert groups['data']
+            unassigned = request('/api/v1/catalog/entries?missing=' + by)
+            assert unassigned['pagination']['total'] >= 1
+        for query in ('page=0', 'pageSize=101', 'status=invalid', 'person=9223372036854775808', 'sort=random', 'missing=other'):
+            request('/api/v1/catalog/entries?' + query, expected=(400,))
+        print('PASS: atomic create, validation rollback, safe replay, hash conflicts and public catalog endpoints')
     first = request('/api/v1/admin/midis', 'POST', draft, token, expected=(201,))
     other = request('/api/v1/admin/midis', 'POST', {**draft, 'slug': draft['slug']+'-other'}, token, expected=(201,))
     path = '/api/v1/admin/midis/' + first['id'] + '/files'

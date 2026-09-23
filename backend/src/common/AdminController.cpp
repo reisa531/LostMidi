@@ -148,9 +148,40 @@ void ApiController::registerAdminRoutes() {
         });
     }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/midis", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
-        dispatch(std::move(callback), [this, request] {
+        // Reserve before queueing because JSON creation can carry a full MIDI file.
+        if (importsPending_.fetch_add(1) >= 2) {
+            --importsPending_;
+            Json::Value json; json["error"]["code"] = "SERVER_BUSY"; json["error"]["message"] = "Please retry shortly.";
+            auto response = drogon::HttpResponse::newHttpJsonResponse(json);
+            response->setStatusCode(drogon::k503ServiceUnavailable);
+            response->addHeader("Cache-Control", "no-store"); callback(response); return;
+        }
+        auto slot = std::shared_ptr<int>(new int(0), [this](int* p) { delete p; --importsPending_; });
+        dispatch(std::move(callback), [this, request, slot] {
             auth_.require(request->getHeader("authorization"));
-            const auto entry = writer_.create(entryOf(bodyOf(request), false));
+            auto body = bodyOf(request);
+            const bool hasFile = body.isMember("file");
+            if (hasFile && !body.isMember("request_id"))
+                throw ApiError(400, "INVALID_INPUT", "A file requires request_id for safe retries.");
+            if (!body.isMember("request_id")) {
+                const auto entry = writer_.create(entryOf(body, false));
+                logEvent("midi_created"); return toJson(entry);
+            }
+            const auto requestId = stringOf(body, "request_id", 36);
+            body.removeMember("request_id");
+            std::optional<midi::MidiCreationFile> upload;
+            if (hasFile) {
+                const auto& file = body["file"];
+                fieldsOf(file, {"filename", "content_base64", "rights_confirmed"});
+                if (!file["filename"].isString() || !file["content_base64"].isString() || !file["rights_confirmed"].isBool())
+                    throw ApiError(400, "INVALID_INPUT", "A file requires filename, content_base64 and boolean rights_confirmed.");
+                upload.emplace();
+                upload->filename = file["filename"].asString();
+                upload->rightsConfirmed = file["rights_confirmed"].asBool();
+                upload->bytes = midi::decodeMidiContentBase64(file["content_base64"].asString());
+                body.removeMember("file");
+            }
+            const auto entry = importer_.create(entryOf(body, false), requestId, upload);
             logEvent("midi_created"); return toJson(entry);
         }, 201);
     }, {drogon::Post});

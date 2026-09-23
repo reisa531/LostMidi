@@ -15,6 +15,9 @@ public:
     std::optional<MidiFile> findBySha256(const std::string& digest) override;
     bool insertIfAbsent(const MidiFile& file) override;
     MidiEntry create(const MidiEntry& entry) override;
+    MidiEntry createWithRequest(const MidiEntry& entry, const std::string& requestId,
+        const std::string& payloadSha256, const std::optional<MidiFile>& file,
+        const std::function<void()>& persist) override;
     MidiEntry update(std::int64_t id, const MidiEntry& entry) override;
     std::optional<MidiEntry> findById(std::int64_t id) override;
     FileEditor fileEditor(std::int64_t id) override;

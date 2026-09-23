@@ -80,6 +80,14 @@ class FakeRepository : public midi::IMidiImportRepository {
 public:
     int reads = 0, writes = 0;
     midi::MidiFile saved;
+    midi::MidiEntry created;
+    std::string requestId, fingerprint;
+    midi::MidiEntry createWithRequest(const midi::MidiEntry& entry, const std::string& key,
+        const std::string& digest, const std::optional<midi::MidiFile>& file, const std::function<void()>& persist) override {
+        ++writes; created = entry; created.id = 42; requestId = key; fingerprint = digest;
+        if (file) { saved = *file; saved.midiId = created.id; persist(); }
+        return created;
+    }
     midi::FileEditor fileEditor(std::int64_t id) override { ++reads; midi::FileEditor result; result.entry.id = id; return result; }
     midi::FileImportResult importFile(const midi::MidiFile& file, std::int64_t revision, const std::function<void()>& persist) override {
         ++writes; saved = file; persist(); return {file,false,revision+1};
@@ -94,6 +102,84 @@ public:
     void remove(const std::string&) override {}
     std::string read(const std::string&, std::size_t) const override { return std::string(reinterpret_cast<const char*>(stored.data()), stored.size()); }
 };
+constexpr auto creationId = "01234567-89ab-4cde-8fab-0123456789ab";
+midi::MidiEntry creationEntry() {
+    midi::MidiEntry entry; entry.slug = "new-entry"; entry.title = "New entry";
+    entry.archiveStatus = "lost"; entry.copyrightStatus = "unknown"; entry.distributionPermission = "restricted";
+    return entry;
+}
+TEST(MidiCreationBase64, AcceptsOnlyCanonicalAlphabetPaddingAndPadBits) {
+    EXPECT_EQ(midi::decodeMidiContentBase64("AAECA/7/"), bytes({0,1,2,3,254,255}));
+    EXPECT_EQ(midi::decodeMidiContentBase64("Zg=="), bytes({'f'}));
+    EXPECT_EQ(midi::decodeMidiContentBase64("Zm8="), bytes({'f','o'}));
+    EXPECT_EQ(midi::decodeMidiContentBase64("Zm9v"), bytes({'f','o','o'}));
+    for (const auto* input : {"", "Zg", "Zg=", "Zg===", "Zg==\n", " Zg==", "Z g=", "Zg==Zg==", "====", "=AAA", "AA=A", "AA==AAAA", "-AAA", "_AAA", "Zh==", "Zm9=", "data:audio/midi;base64,Zg=="})
+        apiError([&] { midi::decodeMidiContentBase64(input); },400,"INVALID_FILE");
+    apiError([&] { midi::decodeMidiContentBase64(std::string("AA\0A",4)); },400,"INVALID_FILE");
+}
+TEST(MidiCreationBase64, EnforcesDecodedSizeIncludingEqualEncodedLengthBoundary) {
+    const auto prefix = std::string((midi::maxImportBytes / 3) * 4, 'A');
+    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AA==").size(), midi::maxImportBytes);
+    for (const auto* suffix : {"AAA=", "AAAA", "AAAAAA=="})
+        apiError([&] { midi::decodeMidiContentBase64(prefix + suffix); },413,"FILE_TOO_LARGE");
+}
+TEST(MidiCreation, RejectsInvalidRequestsBeforeAnyRepositoryOrStorageAccess) {
+    FakeRepository repo; FakeStorage storage;
+    midi::MidiImportService service(repo,storage,true), disabled(repo,storage,false);
+    const auto entry = creationEntry(); const midi::MidiCreationFile file{"a.mid",smf(),true};
+    for (const auto* id : {"", "01234567-89AB-4cde-8fab-0123456789ab", "01234567-89ab-1cde-8fab-0123456789ab",
+        "01234567-89ab-4cde-7fab-0123456789ab", "01234567-89ab-4cde-8fab-0123456789abx", "0123456789ab4cde8fab0123456789ab"})
+        apiError([&] { service.create(entry,id,file); },400,"INVALID_INPUT");
+    auto invalid = entry; invalid.title = " ";
+    apiError([&] { service.create(invalid,creationId,file); },400,"INVALID_INPUT");
+    apiError([&] { disabled.create(entry,creationId,file); },503,"IMPORT_DISABLED");
+    auto upload = file; upload.rightsConfirmed = false;
+    apiError([&] { service.create(entry,creationId,upload); },400,"RIGHTS_CONFIRMATION_REQUIRED");
+    upload = file; upload.filename = "../a.mid";
+    apiError([&] { service.create(entry,creationId,upload); },400,"INVALID_FILE");
+    upload = file; upload.bytes.clear();
+    apiError([&] { service.create(entry,creationId,upload); },400,"INVALID_MIDI");
+    upload.bytes.resize(midi::maxImportBytes + 1);
+    apiError([&] { service.create(entry,creationId,upload); },413,"FILE_TOO_LARGE");
+    EXPECT_EQ(repo.reads,0); EXPECT_EQ(repo.writes,0); EXPECT_EQ(storage.writes,0);
+}
+TEST(MidiCreation, NormalizesMetadataAndSupportsDisabledMetadataOnlyPath) {
+    FakeRepository repo; FakeStorage storage; midi::MidiImportService service(repo,storage,false);
+    auto entry = creationEntry(); entry.title = " \tNew entry\r\n"; entry.description = ""; entry.license = "";
+    const auto created = service.create(entry,creationId);
+    EXPECT_EQ(created.id,42); EXPECT_EQ(created.title,"New entry"); EXPECT_FALSE(created.description); EXPECT_FALSE(created.license);
+    EXPECT_EQ(created.archiveStatus,"lost"); EXPECT_EQ(created.distributionPermission,"restricted");
+    EXPECT_EQ(repo.writes,1); EXPECT_EQ(repo.reads,0); EXPECT_EQ(storage.writes,0); EXPECT_EQ(repo.requestId,creationId);
+    const auto digest = repo.fingerprint;
+    service.create(creationEntry(),"01234567-89ab-4cde-afab-0123456789ab");
+    EXPECT_EQ(repo.fingerprint,digest); EXPECT_EQ(digest.size(),64u);
+    EXPECT_EQ(digest.find_first_not_of("0123456789abcdef"),std::string::npos);
+}
+TEST(MidiCreation, FingerprintCoversEveryEditableFieldAndOptionalFile) {
+    FakeRepository repo; FakeStorage storage; midi::MidiImportService service(repo,storage,true);
+    const auto original = creationEntry(); service.create(original,creationId); const auto digest = repo.fingerprint;
+    const std::vector<std::function<void(midi::MidiEntry&)>> changes{
+        [](auto& e) { e.slug = "other-entry"; }, [](auto& e) { e.title = "Other title"; },
+        [](auto& e) { e.description = "Description"; }, [](auto& e) { e.estimatedYear = 1999; },
+        [](auto& e) { e.archiveStatus = "archived"; }, [](auto& e) { e.copyrightStatus = "licensed"; },
+        [](auto& e) { e.license = "License"; }, [](auto& e) { e.rightsHolder = "Holder"; },
+        [](auto& e) { e.distributionPermission = "unknown"; }};
+    for (const auto& change : changes) {
+        auto entry = original; change(entry); service.create(entry,creationId); EXPECT_NE(repo.fingerprint,digest);
+    }
+    midi::MidiCreationFile file{"乐曲.MID",smf(),true}; service.create(original,creationId,file);
+    const auto withFile = repo.fingerprint; EXPECT_NE(withFile,digest);
+    EXPECT_EQ(repo.saved.originalFilename,file.filename); EXPECT_EQ(repo.saved.sha256,storage::sha256(file.bytes));
+    EXPECT_EQ(repo.saved.storageKey,repo.saved.sha256); EXPECT_TRUE(repo.saved.publicDistributionConfirmed);
+    EXPECT_EQ(storage.stored,file.bytes); EXPECT_EQ(repo.created.distributionPermission,"restricted"); EXPECT_EQ(repo.created.archiveStatus,"lost");
+    file.filename = "renamed.mid"; service.create(original,creationId,file); EXPECT_NE(repo.fingerprint,withFile);
+    file.filename = "乐曲.MID"; file.bytes = smf(bytes({0,0x90,60,100,0,255,47,0}));
+    service.create(original,creationId,file); EXPECT_NE(repo.fingerprint,withFile);
+    // Delimiter-looking text must not move a boundary between adjacent fields.
+    auto a = original, b = original; a.license = "a:1:b"; a.rightsHolder = "c"; b.license = "a"; b.rightsHolder = "b:1:c";
+    service.create(a,creationId); const auto boundary = repo.fingerprint;
+    service.create(b,creationId); EXPECT_NE(repo.fingerprint,boundary);
+}
 TEST(MidiImport, RejectsWithoutStorageOrRepositoryWrites) {
     FakeRepository repo; FakeStorage storage;
     midi::MidiImportService disabled(repo,storage,false), service(repo,storage,true);

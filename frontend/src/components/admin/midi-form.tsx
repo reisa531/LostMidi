@@ -1,11 +1,37 @@
 "use client";
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { MidiEntry } from "@/lib/api/types";
-import { saveMidiAction } from "@/lib/admin/actions";
+import { saveMidiAction, type MidiSaveState } from "@/lib/admin/actions";
 
 export function MidiForm({ entry }: { entry?: MidiEntry }) {
-  const [state, action, pending] = useActionState(saveMidiAction, { error: "" });
+  const router = useRouter();
+  const requestId = useRef("");
+  const submitted = useRef<FormData | null>(null);
+  const submitting = useRef(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const rightsInput = useRef<HTMLInputElement>(null);
+  const [hasFile, setHasFile] = useState(false);
+  const [clientError, setClientError] = useState("");
+  const [state, action, pending] = useActionState<MidiSaveState, FormData>(async (previous, form) => {
+    try {
+      if (previous.retryOnly && submitted.current) form = submitted.current;
+      if (!entry) {
+        requestId.current ||= crypto.randomUUID();
+        form.set("request_id", requestId.current);
+      }
+      submitted.current = form;
+      const next = await saveMidiAction(previous, form);
+      if (next.savedId) {
+        router.push(`/admin/midis/${next.savedId}/edit?saved=1`);
+        router.refresh();
+      }
+      return { ...next, retryOnly: !next.savedId && (previous.retryOnly || next.retryOnly) };
+    } catch {
+      return { error: "连接中断，输入和文件已保留。请重试本次提交或在新页面核对档案记录。", retryOnly: !entry };
+    } finally { submitting.current = false; }
+  }, { error: "" });
   const [values, setValues] = useState({
     title: entry?.title ?? "", slug: entry?.slug ?? "", description: entry?.description ?? "",
     estimated_year: entry?.estimated_year?.toString() ?? "", archive_status: entry?.archive_status ?? "uncertain",
@@ -21,10 +47,23 @@ export function MidiForm({ entry }: { entry?: MidiEntry }) {
   const select = (name: keyof typeof values, title: string, options: [string, string][]) => <label className="block text-sm">{title}
     <select className={inputClass} name={name} value={values[name]} onChange={event => change(name, event.target.value)}>{options.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
   </label>;
-  return <form action={action} className="space-y-6 rounded-xl border border-line bg-white p-6 sm:p-8">
-    <p className="text-sm leading-6 text-muted">保存后，基础资料立即显示在公开档案中。</p>
+  function fileError(file: File | undefined) {
+    if (!file) return "";
+    if (!/\.midi?$/i.test(file.name) || file.size === 0) return "请选择一个非空的 .mid 或 .midi 文件。";
+    return file.size > 1048576 ? "文件过大；单个文件最大 1 MiB（1,048,576 字节）。" : "";
+  }
+  return <form action={action} onReset={event => event.preventDefault()} onSubmit={event => {
+    if (pending || submitting.current) { event.preventDefault(); return; }
+    if (!state.retryOnly) {
+      const error = fileError(fileInput.current?.files?.[0]);
+      setClientError(error);
+      if (error) { event.preventDefault(); return; }
+    }
+    submitting.current = true;
+  }} aria-busy={pending} className="min-w-0 space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8">
+    <p className="text-sm leading-6 text-muted">{entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传 MIDI；没有文件时仍可建立寻回档案。"}</p>
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
-    <fieldset disabled={pending} className="space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
+    <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>
       <p className="text-xs leading-6 text-muted">Slug 使用小写字母、数字和词间连字符。更改后旧地址将失效。标题最多 300 UTF-8 字节，中文字符通常占 3 字节。</p>
       <label className="block text-sm">描述<textarea name="description" rows={7} maxLength={20000} className={inputClass} value={values.description} onChange={event => change("description", event.target.value)} /><span className="mt-2 block text-xs text-muted">最多 20,000 UTF-8 字节。</span></label>
@@ -34,8 +73,23 @@ export function MidiForm({ entry }: { entry?: MidiEntry }) {
       {select("copyright_status", "版权状态", [["unknown","未知"],["public_domain","公有领域"],["licensed","已许可"],["copyrighted","受版权保护"]])}
       {select("distribution_permission", "分发许可", [["unknown","未知"],["permission_granted","已获授权"],["metadata_only","仅元数据"],["restricted","受限"]])}
       {input("license", "许可证（最多 500 UTF-8 字节）")}{input("rights_holder", "权利人（最多 500 UTF-8 字节）")}</div>
+      {!entry && <section className="min-w-0 space-y-4 rounded-lg border border-line bg-background p-4 sm:p-5">
+        <div><h2 className="font-semibold">MIDI 文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">仅支持单个 .mid / .midi，最大 1 MiB。文件和资料一起保存，失败不会留下半成品档案。</p></div>
+        <label className="block text-sm">选择 MIDI 文件<input ref={fileInput} name="file" type="file" accept=".mid,.midi" aria-describedby="create-file-help" className={`${inputClass} min-w-0`} onChange={event => {
+          const file = event.target.files?.[0];
+          setHasFile(Boolean(file)); setClientError(fileError(file));
+        }} /></label>
+        {hasFile && <button type="button" className="text-xs text-muted underline" onClick={() => {
+          if (fileInput.current) fileInput.current.value = "";
+          if (rightsInput.current) rightsInput.current.checked = false;
+          setHasFile(false); setClientError("");
+        }}>移除文件，仅保存资料</button>}
+        <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" required={hasFile} className="mt-2 shrink-0" />我确认有权公开分发此文件；上传后该文件可被任何人公开读取与下载。</label>
+        {hasFile && <p className="text-xs leading-6 text-muted">上传不会自动改变归档状态或分发许可，请按实际情况填写。</p>}
+      </section>}
     </fieldset>
-    {state.error && <div role="alert" className="rounded-lg bg-red-50 p-4 text-sm leading-7 text-red-900"><p>{state.error}</p><Link className="underline" href="/admin/login" target="_blank">在新页面登录</Link>{entry && <Link className="ml-4 underline" href={`/admin/midis/${entry.id}/edit`} target="_blank">重新打开编辑页</Link>}</div>}
-    <div className="flex items-center gap-5 border-t border-line pt-6"><button disabled={pending} className="rounded-lg bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在保存…" : entry ? "保存修改" : "创建档案"}</button><Link className="text-sm text-muted underline" href="/admin/midis">返回列表</Link></div>
+    {clientError && <p role="alert" className="text-sm text-red-900">{clientError}</p>}
+    {state.error && <div role="alert" className="rounded-lg bg-red-50 p-4 text-sm leading-7 text-red-900"><p>{state.error}</p><Link className="underline" href="/admin/login" target="_blank" rel="noopener noreferrer">在新页面登录</Link><Link className="ml-4 underline" href={entry ? `/admin/midis/${entry.id}/edit` : "/admin/midis"} target="_blank" rel="noopener noreferrer">{entry ? "重新打开编辑页" : "核对档案列表"}</Link></div>}
+    <div className="flex flex-wrap items-center gap-5 border-t border-line pt-6"><button disabled={pending} className="rounded-lg bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在保存…" : state.retryOnly ? "重试本次提交" : entry ? "保存修改" : "创建档案"}</button><Link className="text-sm text-muted underline" href="/admin/midis">返回列表</Link></div>
   </form>;
 }

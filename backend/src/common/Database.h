@@ -17,8 +17,11 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
     db->execSqlSync("SELECT id, site_name, site_description, auth_source, username, password_hash, installed_at FROM site_installation LIMIT 1");
     db->execSqlSync("SELECT sha256, storage_key, touched_at FROM midi_import_objects LIMIT 1");
     db->execSqlSync("SELECT private_archive_confirmed FROM midi_files LIMIT 1");
+    db->execSqlSync("SELECT request_id, payload_sha256, midi_id FROM midi_creation_requests LIMIT 1");
     const auto imported = db->execSqlSync("SELECT 1 FROM schema_migrations WHERE version='006_midi_import_journal.sql'");
     if (imported.empty()) throw ApiError(503, "DATABASE_NOT_READY", "Required import migration is not applied.");
+    const auto creation = db->execSqlSync("SELECT 1 FROM schema_migrations WHERE version='007_midi_creation_requests.sql'");
+    if (creation.empty()) throw ApiError(503, "DATABASE_NOT_READY", "Required creation migration is not applied.");
     const auto rows = db->execSqlSync(
         "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='004_optional_recovery_date.sql') AS applied, "
         "EXISTS(SELECT 1 FROM schema_migrations WHERE version='005_site_installation.sql') AS installation_applied, "

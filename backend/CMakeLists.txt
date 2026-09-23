@@ -16,6 +16,7 @@ else()
 endif()
 
 add_library(lostmidi_core
+    src/catalog/CatalogService.cpp
     src/person/PersonWriteService.cpp
     src/recovery/RecoveryWriteService.cpp
     src/auth/Password.cpp
@@ -30,6 +31,7 @@ target_include_directories(lostmidi_core PUBLIC src)
 target_link_libraries(lostmidi_core PUBLIC lostmidi_options PRIVATE OpenSSL::Crypto)
 
 add_library(lostmidi_postgres
+    src/catalog/PostgresCatalogRepository.cpp
     src/auth/AuthService.cpp
     src/installation/InstallationService.cpp
     src/midi/PostgresMidiRepository.cpp
@@ -40,7 +42,7 @@ target_link_libraries(lostmidi_postgres PUBLIC lostmidi_core Drogon::Drogon PRIV
 
 add_executable(lostmidi_api src/main.cpp src/common/ApiController.cpp
     src/common/AdminController.cpp src/common/AdminRecoveryController.cpp src/common/InstallationController.cpp
-    src/common/AdminFileController.cpp)
+    src/common/AdminFileController.cpp src/common/CatalogController.cpp)
 target_link_libraries(lostmidi_api PRIVATE lostmidi_postgres)
 
 include(CTest)
@@ -48,7 +50,7 @@ if(BUILD_TESTING)
     find_package(GTest CONFIG REQUIRED)
     add_executable(lostmidi_tests tests/services_test.cpp tests/repository_integration_test.cpp tests/admin_test.cpp
         tests/installation_test.cpp tests/installation_integration_test.cpp
-        tests/midi_import_test.cpp tests/midi_import_integration_test.cpp)
+        tests/midi_import_test.cpp tests/midi_import_integration_test.cpp tests/catalog_integration_test.cpp)
     target_link_libraries(lostmidi_tests PRIVATE lostmidi_postgres GTest::gtest_main)
     include(GoogleTest)
     gtest_discover_tests(lostmidi_tests)

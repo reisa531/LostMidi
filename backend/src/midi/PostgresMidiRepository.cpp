@@ -64,6 +64,55 @@ MidiEntry PostgresMidiRepository::create(const MidiEntry& e) {
     if (rows.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
     return entryFrom(rows[0]);
 }
+MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const std::string& requestId,
+    const std::string& payloadSha256, const std::optional<MidiFile>& file, const std::function<void()>& persist) {
+    // Commit the journal separately so a failed creation cannot hide an orphaned object.
+    if (file) db_->execSqlSync("INSERT INTO midi_import_objects(sha256,storage_key) VALUES($1,$2) "
+        "ON CONFLICT(sha256) DO UPDATE SET touched_at=CURRENT_TIMESTAMP", file->sha256, file->storageKey);
+    TransactionScope tx(db_);
+    tx.db->execSqlSync("SET LOCAL lock_timeout = '5s'");
+    // Request locks use a separate namespace; all paths take request then SHA.
+    tx.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741034))", requestId);
+    if (file) tx.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741033))", file->sha256);
+    const auto receipts = tx.db->execSqlSync(
+        "SELECT e.*,r.payload_sha256 FROM midi_creation_requests r JOIN midi_entries e ON e.id=r.midi_id "
+        "WHERE r.request_id=$1::uuid FOR SHARE OF e", requestId);
+    if (!receipts.empty()) {
+        if (receipts[0]["payload_sha256"].as<std::string>() != payloadSha256)
+            throw ApiError(409, "IDEMPOTENCY_CONFLICT", "This request_id was already used with a different payload.");
+        const auto saved = entryFrom(receipts[0]);
+        // A replay never writes storage or repairs/re-adds files. Only discard a
+        // journal while its exact object is referenced, under the shared SHA lock.
+        if (file) tx.db->execSqlSync("DELETE FROM midi_import_objects WHERE sha256=$1 AND storage_key=$2 "
+            "AND EXISTS(SELECT 1 FROM midi_files WHERE sha256=$1 AND storage_key=$2)", file->sha256, file->storageKey);
+        tx.commit(); return saved;
+    }
+    if (file && !tx.db->execSqlSync("SELECT 1 FROM midi_files WHERE sha256=$1", file->sha256).empty())
+        throw ApiError(409, "FILE_OWNERSHIP_CONFLICT", "Identical bytes already belong to another MIDI entry.");
+    const auto entries = tx.db->execSqlSync(
+        "INSERT INTO midi_entries (slug,title,description,estimated_year,archive_status,copyright_status,license,rights_holder,distribution_permission) "
+        "VALUES ($1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,$5,$6,NULLIF($7,''),NULLIF($8,''),$9) ON CONFLICT(slug) DO NOTHING RETURNING *",
+        e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.archiveStatus,
+        *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
+    if (entries.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
+    const auto saved = entryFrom(entries[0]);
+    if (file) {
+        if (tx.db->execSqlSync("SELECT 1 FROM midi_import_objects WHERE sha256=$1 AND storage_key=$2 FOR UPDATE", file->sha256, file->storageKey).empty())
+            throw ApiError(503, "SERVER_BUSY", "Import was superseded. Retry the same request.");
+        persist();
+        // Retain the deployed legacy column name for public-distribution consent.
+        const auto inserted = tx.db->execSqlSync(
+            "INSERT INTO midi_files(midi_id,original_filename,sha256,file_size,storage_key,private_archive_confirmed) "
+            "VALUES($1,$2,$3,$4,$5,TRUE) ON CONFLICT(sha256) DO NOTHING RETURNING id",
+            saved.id, file->originalFilename, file->sha256, static_cast<std::int64_t>(file->fileSize), file->storageKey);
+        if (inserted.empty()) throw ApiError(409, "FILE_OWNERSHIP_CONFLICT", "Identical bytes were registered concurrently. Retry after refreshing.");
+    }
+    tx.db->execSqlSync("INSERT INTO midi_creation_requests(request_id,payload_sha256,midi_id) VALUES($1::uuid,$2,$3)", requestId, payloadSha256, saved.id);
+    if (file) tx.db->execSqlSync("DELETE FROM midi_import_objects WHERE sha256=$1", file->sha256);
+    // One creation, including the optional file, starts at revision 1. Neither
+    // archive status nor rights metadata is inferred from the supplied file.
+    tx.commit(); return saved;
+}
 MidiEntry PostgresMidiRepository::update(std::int64_t id, const MidiEntry& e) {
     try {
         const auto rows = db_->execSqlSync(

@@ -1,39 +1,31 @@
 import Link from "next/link";
-import { getMidis } from "@/lib/api/midi";
-import { Credits, Status, Unavailable } from "@/components/archive";
 import { ApiError } from "@/lib/api/client";
+import { CatalogQueryError, getCatalogEntries, readCatalogQuery, type SearchParams } from "@/lib/api/catalog";
+import { Unavailable } from "@/components/archive";
+import { CatalogFilters, CatalogPagination, CatalogTable, DataNote, InvalidQuery, PageHeader } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "MIDI 档案" };
 
-export default async function MidiListPage({ searchParams }: { searchParams: Promise<{ page?: string | string[] }> }) {
-  const { page: raw = "1" } = await searchParams;
-  if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || Number(raw) > 1000000) {
-    return <p>页码无效。<Link className="archive-link" href="/midis">返回档案第一页</Link></p>;
+export default async function MidiListPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  let query;
+  try { query = readCatalogQuery(await searchParams); } catch (error) {
+    if (error instanceof CatalogQueryError) return <InvalidQuery path="/midis" />;
+    throw error;
   }
-  const page = Number(raw);
   let result;
-  try { result = await getMidis(page); } catch (error) {
+  try { result = await getCatalogEntries(query); } catch (error) {
     if (error instanceof ApiError) return <Unavailable />;
     throw error;
   }
-  const { data, pagination } = result;
-  const pages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
+  const grouped = query.person || query.source || query.missing;
   return <>
-    <p className="eyebrow">The collection</p><h1 className="mb-5 mt-4 font-serif text-4xl">MIDI 档案</h1>
-    <p className="mb-10 max-w-2xl leading-7 text-muted">每一条记录都保留作品的来处、人物与寻回线索。未知的信息，也是一段有待继续的历史。</p>
-    <p className="mb-3 text-xs text-muted">共 {pagination.total} 条档案</p>
-    <div className="border-t border-line">{data.length ? data.map(entry => <article key={entry.id} className="grid gap-4 border-b border-line py-7 sm:grid-cols-[1fr_12rem]">
-      <div><p className="mb-2 text-xs text-muted">{entry.estimated_year ? `约 ${entry.estimated_year} 年` : "年代不详"}</p>
-        <h2 className="mb-3 font-serif text-2xl"><Link className="hover:text-accent hover:underline" href={`/midis/${entry.slug}`}>{entry.title}</Link></h2>
-        <div className="text-sm"><Credits credits={entry.credits} /></div></div>
-      <div className="sm:text-right"><Status status={entry.archive_status} /></div>
-    </article>) : <p className="py-10 text-muted">本页暂无档案。{page > 1 && <Link className="archive-link" href="/midis">返回第一页</Link>}</p>}</div>
-    <nav aria-label="档案分页" className="mt-8 flex flex-wrap items-center justify-between gap-4 text-sm">
-      <span className="text-muted">第 {page} 页 · 共 {pages} 页</span><div className="flex gap-6">
-        {page > 1 && <Link className="archive-link" href={`/midis?page=${page - 1}`}>上一页</Link>}
-        {page < pages && <Link className="archive-link" href={`/midis?page=${page + 1}`}>下一页</Link>}
-      </div>
-    </nav>
+    <PageHeader eyebrow="Archive / MIDI" title="MIDI 档案" description="作品、署名与历史来源放在同一张目录中。按归档状态筛选，或从作者与来源分组继续查找。" />
+    {grouped && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-[#edf0e5] p-4 text-sm"><p className="min-w-0 [overflow-wrap:anywhere]">当前范围：{[query.person && `人物 ID ${query.person}`, query.source && `来源「${query.source}」`, query.missing === "author" && "未署名", query.missing === "source" && "来源待补"].filter(Boolean).join(" · ")}</p><Link className="archive-link text-xs" href="/midis">清除所有筛选</Link></div>}
+    <CatalogFilters path="/midis" query={query} />
+    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2"><h2 className="text-sm font-medium">{grouped || query.status ? "筛选结果" : "全部作品"}</h2><p className="text-xs text-muted">{result.pagination.total.toLocaleString("zh-CN")} 条档案 · 按{query.sort === "title" ? "作品名称" : "最近更新"}排序</p></div>
+    <CatalogTable entries={result.data} />
+    <CatalogPagination pagination={result.pagination} path="/midis" query={query} />
+    <div className="mt-5"><DataNote /></div>
   </>;
 }

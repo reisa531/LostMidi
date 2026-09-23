@@ -74,7 +74,8 @@ protected:
         db_->execSqlSync("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY)");
         db_->execSqlSync("CREATE TABLE midi_import_objects (sha256 TEXT, storage_key TEXT, touched_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE midi_files (private_archive_confirmed BOOLEAN)");
-        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql')");
+        db_->execSqlSync("CREATE TABLE midi_creation_requests (request_id UUID, payload_sha256 TEXT, midi_id BIGINT)");
+        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql')");
     }
     void TearDown() override {
         db_.reset();
@@ -268,6 +269,13 @@ TEST_F(InstallationPostgres, ReadinessRequiresLedgerAndQueryableTableAndStatusPr
     db_->execSqlSync("DELETE FROM schema_migrations WHERE version='006_midi_import_journal.sql'");
     expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
     db_->execSqlSync("INSERT INTO schema_migrations VALUES('006_midi_import_journal.sql')");
+    EXPECT_NO_THROW(requireDatabaseReady(db_));
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='007_midi_creation_requests.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('007_midi_creation_requests.sql')");
+    db_->execSqlSync("ALTER TABLE midi_creation_requests RENAME TO unavailable_creation_requests");
+    EXPECT_THROW(requireDatabaseReady(db_), drogon::orm::DrogonDbException);
+    db_->execSqlSync("ALTER TABLE unavailable_creation_requests RENAME TO midi_creation_requests");
     EXPECT_NO_THROW(requireDatabaseReady(db_));
     installation::InstallationRepository repository(db_);
     installation::InstallationService service(repository, installationToken, false, limiter_);
