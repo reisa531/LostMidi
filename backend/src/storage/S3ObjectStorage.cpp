@@ -1,5 +1,6 @@
 #include "storage/S3ObjectStorage.h"
 #include "common/Error.h"
+#include "common/Log.h"
 #include <openssl/hmac.h>
 #include <array>
 #include <cstdlib>
@@ -101,7 +102,10 @@ drogon::HttpResponsePtr S3ObjectStorage::request(drogon::HttpMethod method, cons
     auto client = drogon::HttpClient::newHttpClient(origin_, loop_.getLoop(), false, true);
     // No redirects and no credential-bearing URLs; diagnostics never expose provider responses.
     const auto [result, response] = client->sendRequest(req, 15.0);
-    if (result != drogon::ReqResult::Ok || !response) unavailable();
+    if (result != drogon::ReqResult::Ok || !response) {
+        logEvent("storage_transport_failed", static_cast<int>(result));
+        unavailable();
+    }
     return response;
 }
 bool S3ObjectStorage::exists(const std::string& key) const {
@@ -116,12 +120,25 @@ std::string S3ObjectStorage::read(const std::string& key, std::size_t expectedSi
         throw std::invalid_argument("Object size must be between 1 byte and 1 MiB.");
     try {
         const auto metadata = request(drogon::Head, key);
-        if (metadata->statusCode() != 200 || metadata->getHeader("content-length") != std::to_string(expectedSize)) unavailable();
+        if (metadata->statusCode() != 200) {
+            logEvent("storage_head_failed", metadata->statusCode());
+            unavailable();
+        }
+        if (metadata->getHeader("content-length") != std::to_string(expectedSize)) {
+            logEvent("storage_size_mismatch");
+            unavailable();
+        }
         // Drogon lacks a response-size cap: S3 must honor Range, including the extra byte detecting growth.
         const auto response = request(drogon::Get, key, {}, expectedSize + 1);
         const auto body = response->body();
-        if ((response->statusCode() != 200 && response->statusCode() != 206) || body.size() != expectedSize ||
-            sha256(std::as_bytes(std::span(body.data(), body.size()))) != key) unavailable();
+        if (response->statusCode() != 200 && response->statusCode() != 206) {
+            logEvent("storage_get_failed", response->statusCode());
+            unavailable();
+        }
+        if (body.size() != expectedSize || sha256(std::as_bytes(std::span(body.data(), body.size()))) != key) {
+            logEvent("storage_integrity_failed");
+            unavailable();
+        }
         return std::string(body);
     } catch (...) {
         unavailable();
