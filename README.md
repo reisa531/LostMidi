@@ -6,7 +6,7 @@
 
 部署与运维请从 [RUN.md](RUN.md) 开始：包含环境配置、启动验收、服务器访问、更新、备份恢复与故障排查。
 
-前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。本次界面改版与建档上传尚未发布；当前版本需要数据库迁移至 `007_midi_creation_requests.sql`，部署前先备份并执行全部待应用迁移。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
+前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。当前版本包含后台档案与人物删除，需要数据库迁移至 `008_deleted_creation_receipts.sql`，部署前先备份并执行全部待应用迁移。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
 ## 当前界面与建档流程
 
@@ -136,7 +136,7 @@ export PGPASSWORD=lostmidi_dev_only
 SEED_DEMO=false sh database/migrate.sh
 ```
 
-仅专用演示/测试库可将 `SEED_DEMO` 显式改为 true。不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库；应用全部迁移至 007 后再启动后端。从根目录构建后端：
+仅专用演示/测试库可将 `SEED_DEMO` 显式改为 true。不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库；应用全部迁移至 008 后再启动后端。从根目录构建后端：
 
 ```sh
 python3 -m venv .venv
@@ -241,7 +241,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events；另有 admin_sessions、site_installation 与 midi_import_objects（导入 journal）。
 
-迁移 004 允许未知寻回日期，005 保存安装锁，006 添加导入 journal 与公开分发确认（保留列名 `private_archive_confirmed`）。007 新增 `midi_creation_requests`，以请求 UUID 和提交内容摘要关联已创建条目，防止响应丢失后重复建档。启动及 `/ready` 检查迁移账本和实际结构，即使关闭文件上传也必须先迁移至 007。本轮未执行生产迁移；升级前备份，使用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 执行所有待应用迁移，不修改旧迁移、不使用要求空库的 `.tools` 临时脚本。
+迁移 004 允许未知寻回日期，005 保存安装锁，006 添加导入 journal 与公开分发确认（保留列名 `private_archive_confirmed`）。007 新增 `midi_creation_requests`，以请求 UUID 和提交内容摘要关联已创建条目，防止响应丢失后重复建档。008 将回执关联改为删除后置空而不是删除回执，已删除条目的旧创建请求返回 410 `CREATION_DELETED`。启动及 `/ready` 检查迁移账本和实际结构，即使关闭文件上传也必须先迁移至 008。升级前备份，使用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 执行所有待应用迁移，不修改旧迁移、不使用要求空库的 `.tools` 临时脚本。
 
 `site_installation` 至多一行 `id=1`，保存 `site_name`、`site_description` 和 `auth_source`（database 或 environment）。database 时保存用户名及随机盐 PBKDF2-HMAC-SHA256、600,000 次哈希；environment 时 username/password_hash 均为 NULL。事务和主键保证安装并发只有一个成功，提交确认后返回；移除令牌或重启不清除锁，无重装/reset 接口。
 
@@ -278,7 +278,7 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 | 请求 | 行为 |
 | --- | --- |
 | GET /health | 进程存活，`{"status":"ok"}`；不代表数据库正常 |
-| GET /ready | 查询已迁移数据库，含 006 导入结构、005 安装表与 004 日期可空检查；失败 503，不验证桶权限 |
+| GET /ready | 查询已迁移数据库，含 008 删除回执外键、007 建档回执和此前结构检查；失败 503，不验证桶权限 |
 | GET /api/v1/installation | 公开、no-store；返回 installed、installation_enabled、site: {name, description}，无秘密 |
 | POST /api/v1/installation | X-Installation-Token 授权；仅 site_name、site_description、username、password，成功 201、同 GET 响应；并发仅一成功 |
 | GET /api/v1/midis?page=1&pageSize=20 | 有序分页，每项包含 credits |
@@ -291,6 +291,8 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 | POST /api/v1/admin/midis | 验证管理员后新增基本信息，成功 201 |
 | GET /api/v1/admin/midis/:id | 验证管理员后读取编辑数据和 revision |
 | PUT /api/v1/admin/midis/:id | 验证管理员后更新基本信息；slug 冲突或旧 revision 返回 409 |
+| DELETE /api/v1/admin/midis/:id | Bearer 管理员、JSON `{revision}`；删除档案及所属元数据，成功返回 `{deleted_id}` |
+| DELETE /api/v1/admin/people/:id | Bearer 管理员、JSON `{revision}`；仍有署名或寻回引用返回 409 `PERSON_IN_USE` |
 | GET /api/v1/admin/midis/{id}/files | Bearer 管理员读取文件管理数据 |
 | POST /api/v1/admin/midis/{id}/files | Bearer 管理员单文件上传并确认公开分发，默认关闭；新文件原子递增父 revision |
 

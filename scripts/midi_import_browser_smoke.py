@@ -44,6 +44,73 @@ def check_catalog(page, base, screenshots):
     print("PASS: five catalog modules, active navigation, pagination, filters, groups, invalid/empty states and desktop/mobile layouts")
 
 
+def check_deletion(page, context, base, screenshots):
+    api = os.environ['BACKEND_API_URL']
+    login = context.request.post(api + '/api/v1/admin/login', data={
+        'username': os.environ['ADMIN_TEST_USERNAME'], 'password': os.environ['ADMIN_TEST_PASSWORD']})
+    assert login.ok
+    authorization = {'Authorization': 'Bearer ' + login.json()['token']}
+    def request(path, method='GET', data=None):
+        response = context.request.fetch(api + path, method=method, data=data, headers=authorization)
+        assert response.ok, (path, response.status)
+        return response.json()
+    draft = {'title': '删除验收', 'slug': 'delete-browser-' + uuid.uuid4().hex, 'description': None,
+             'estimated_year': None, 'archive_status': 'uncertain', 'copyright_status': 'unknown',
+             'distribution_permission': 'unknown', 'license': None, 'rights_holder': None}
+    entry = request('/api/v1/admin/midis', 'POST', draft)
+    person = request('/api/v1/admin/people', 'POST', {'display_name': '删除人物验收', 'biography': None, 'aliases': ['Old']})['person']
+    midi_path = '/api/v1/admin/midis/' + entry['id']
+    person_path = '/api/v1/admin/people/' + person['id']
+    request(midi_path + '/credits', 'PUT', {'revision': 1, 'credits': [{'person_id': person['id'], 'role': 'composer'}]})
+    for resource, item in [('people', person), ('midis', entry)]:
+        edit_url = base + '/admin/' + resource + '/' + item['id'] + '/edit'
+        page.goto(edit_url); page.wait_for_load_state('networkidle')
+        section = page.get_by_role('region', name=re.compile('危险操作'))
+        section.get_by_role('button', name=re.compile('^删除')).click()
+        expect(section.get_by_role('button', name='确认删除', exact=True)).to_be_disabled()
+        section.get_by_role('checkbox').check()
+        section.get_by_role('button', name='取消', exact=True).click()
+        expect(section.get_by_role('checkbox')).to_have_count(0)
+        section.get_by_role('button', name=re.compile('^删除')).click()
+        section.get_by_role('checkbox').check()
+        if resource == 'people':
+            section.get_by_role('button', name='确认删除', exact=True).click()
+            expect(section.get_by_role('alert')).to_contain_text('人物仍被')
+            expect(section.get_by_role('checkbox')).to_be_checked()
+            request(midi_path + '/credits', 'PUT', {'revision': 2, 'credits': []})
+            request(person_path, 'PUT', {'display_name': '已修改人物', 'biography': None, 'aliases': [], 'revision': 1})
+        else:
+            current = request(midi_path)
+            request(midi_path, 'PUT', {**draft, 'title': '已修改档案', 'revision': current['revision']})
+        section.get_by_role('button', name='确认删除', exact=True).click()
+        expect(section.get_by_role('alert')).to_contain_text('版本已变化')
+        page.reload(); page.wait_for_load_state('networkidle')
+        page.set_viewport_size({'width': 390, 'height': 844})
+        section.get_by_role('button', name=re.compile('^删除')).click()
+        section.get_by_role('checkbox').check()
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        if screenshots:
+            screenshots.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(screenshots / ('delete-' + resource + '.png')), full_page=True)
+        def lose_response(route):
+            if route.request.method == 'POST':
+                route.fetch(timeout=60000); route.abort()
+            else:
+                route.continue_()
+        if resource == 'midis':
+            page.route('**/admin/midis/' + item['id'] + '/edit', lose_response)
+            section.get_by_role('button', name='确认删除', exact=True).click()
+            expect(section.get_by_role('alert')).to_contain_text('连接中断')
+            expect(section.get_by_role('checkbox')).to_be_checked()
+            page.unroute('**/admin/midis/' + item['id'] + '/edit', lose_response)
+        section.get_by_role('button', name='确认删除', exact=True).click()
+        expect(page).to_have_url(base + '/admin/' + resource + '?deleted=1')
+        expect(page.get_by_role('status')).to_contain_text('删除成功')
+        assert context.request.get(api + '/api/v1/' + resource + '/' + (draft['slug'] if resource == 'midis' else item['id'])).status == 404
+    page.set_viewport_size({'width': 1280, 'height': 900})
+    print('PASS: delete confirmation/cancel, referenced person rejection, stale versions, mobile layout, lost-response retry and list navigation')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--frontend', default='http://localhost:3000')
@@ -89,6 +156,7 @@ def main():
         expect(visitor.get_by_text('尚无已登记的 MIDI 文件。此档案目前仅保存文字资料。')).to_be_visible()
         visitor.wait_for_load_state('networkidle')
         page.get_by_role('link', name='管理 MIDI 文件 →', exact=True).click()
+        expect(page).to_have_url(re.compile(r'/admin/midis/\d+/files'))
         page.wait_for_load_state('networkidle')
         expect(page.locator('[name=revision]')).to_have_value('1')
         upload = page.locator('[name=file]')
@@ -247,6 +315,7 @@ def main():
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Create form mobile overflow'
         if args.screenshots:
             page.screenshot(path=str(args.screenshots / 'create-mobile.png'), full_page=True)
+        check_deletion(page, context, base, args.screenshots)
         check_catalog(visitor, base, args.screenshots)
         assert not errors, errors
         visitor_context.close()

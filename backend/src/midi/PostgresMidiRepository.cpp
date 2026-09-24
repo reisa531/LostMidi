@@ -75,12 +75,15 @@ MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const st
     tx.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741034))", requestId);
     if (file) tx.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741033))", file->sha256);
     const auto receipts = tx.db->execSqlSync(
-        "SELECT e.*,r.payload_sha256 FROM midi_creation_requests r JOIN midi_entries e ON e.id=r.midi_id "
-        "WHERE r.request_id=$1::uuid FOR SHARE OF e", requestId);
+        "SELECT payload_sha256,midi_id FROM midi_creation_requests WHERE request_id=$1::uuid", requestId);
     if (!receipts.empty()) {
         if (receipts[0]["payload_sha256"].as<std::string>() != payloadSha256)
             throw ApiError(409, "IDEMPOTENCY_CONFLICT", "This request_id was already used with a different payload.");
-        const auto saved = entryFrom(receipts[0]);
+        if (receipts[0]["midi_id"].isNull())
+            throw ApiError(410, "CREATION_DELETED", "The entry created by this request has been deleted.");
+        const auto entries = tx.db->execSqlSync("SELECT * FROM midi_entries WHERE id=$1 FOR SHARE", receipts[0]["midi_id"].as<std::int64_t>());
+        if (entries.empty()) throw ApiError(410, "CREATION_DELETED", "The entry created by this request has been deleted.");
+        const auto saved = entryFrom(entries[0]);
         // A replay never writes storage or repairs/re-adds files. Only discard a
         // journal while its exact object is referenced, under the shared SHA lock.
         if (file) tx.db->execSqlSync("DELETE FROM midi_import_objects WHERE sha256=$1 AND storage_key=$2 "
@@ -132,6 +135,24 @@ MidiEntry PostgresMidiRepository::update(std::int64_t id, const MidiEntry& e) {
     }
     if (!findById(id)) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
     throw ApiError(409, "STALE_ENTRY", "This entry was changed elsewhere. Reload before saving.");
+}
+void PostgresMidiRepository::remove(std::int64_t id, std::int64_t revision) {
+    TransactionScope tx(db_);
+    tx.db->execSqlSync("SET LOCAL lock_timeout = '5s'");
+    const auto rows = tx.db->execSqlSync("SELECT revision FROM midi_entries WHERE id=$1 FOR UPDATE", id);
+    if (rows.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
+    if (rows[0]["revision"].as<std::int64_t>() != revision)
+        throw ApiError(409, "STALE_ENTRY", "This entry was changed elsewhere. Reload before deleting.");
+    const auto files = tx.db->execSqlSync("SELECT sha256,storage_key FROM midi_files WHERE midi_id=$1 ORDER BY sha256", id);
+    for (const auto& file : files) {
+        // Never wait for SHA while holding the parent: imports take those locks in reverse order.
+        const auto lock = tx.db->execSqlSync("SELECT pg_try_advisory_xact_lock(hashtextextended($1,741033)) AS locked", file["sha256"].as<std::string>());
+        if (!lock[0]["locked"].as<bool>()) throw ApiError(503, "SERVER_BUSY", "A file operation is in progress. Retry shortly.");
+        tx.db->execSqlSync("INSERT INTO midi_import_objects(sha256,storage_key) VALUES($1,$2) "
+            "ON CONFLICT(sha256) DO UPDATE SET touched_at=CURRENT_TIMESTAMP", file["sha256"].as<std::string>(), file["storage_key"].as<std::string>());
+    }
+    tx.db->execSqlSync("DELETE FROM midi_entries WHERE id=$1", id);
+    tx.commit();
 }
 FileEditor PostgresMidiRepository::fileEditor(std::int64_t id) {
     TransactionScope tx(db_);

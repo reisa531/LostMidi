@@ -99,6 +99,7 @@ export async function saveMidiAction(_previous: MidiSaveState, form: FormData): 
       RIGHTS_CONFIRMATION_REQUIRED: "请先确认你有权公开分发此文件。",
       FILE_OWNERSHIP_CONFLICT: "相同文件已归属于其他档案，未创建新档案。请先在档案列表核对归属。",
       IDEMPOTENCY_CONFLICT: "本次请求已保存过不同内容。请在新页面核对档案列表，不要重复建档。",
+      CREATION_DELETED: "本次创建请求对应的档案已删除，不能通过重试恢复。请重新打开新增页创建。",
       IMPORT_DISABLED: "文件上传尚未启用或已暂停；可以移除文件，仅保存文字资料。",
     };
     return { error: error instanceof ApiError ? messages[error.code] ?? message(error) : message(error) };

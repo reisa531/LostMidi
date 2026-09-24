@@ -110,6 +110,10 @@ Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin 
 | `PUT /api/v1/admin/midis/:id/recovery-events/:eventId` | 原位编辑寻回记录，成功 200 |
 | `DELETE /api/v1/admin/midis/:id/recovery-events/:eventId` | 删除本作品的一条寻回记录，成功 200 JSON |
 
+档案与人物编辑页提供独立删除确认区。`DELETE /api/v1/admin/midis/:id` 和 `DELETE /api/v1/admin/people/:id` 只接受 JSON `{revision}`，成功返回 200 `{deleted_id}`；缺失返回 404，旧版本返回 409 `STALE_ENTRY` / `STALE_PERSON`。人物仍被作品署名或寻回记录引用时返回 409 `PERSON_IN_USE`，必须先解除引用，不会静默抹去历史关联。
+
+删除 MIDI 原子移除其署名、来源、寻回和文件登记，但不删除关联人物。外部文件同事务写入清理 journal，站内详情与下载不再可用；对象不即时物理删除，只有原有显式维护命令在超过 24 小时且无引用时清理。匿名桶对象仍可能直接访问，彻底撤回需单独处理存储权限。008 迁移保留创建请求回执，已删除条目的旧创建请求返回 410 `CREATION_DELETED`，不会重新建档。网络结果不确定时先核对列表。
+
 除登录外均需要 Bearer 令牌。正常处理的管理响应带 `Cache-Control: no-store`。写入字段如下：
 
 | 字段 | 规则 |

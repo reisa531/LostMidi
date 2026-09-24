@@ -61,7 +61,7 @@ protected:
         else connection += " options='-csearch_path="+schema+"'";
         db = drogon::orm::DbClient::newPgClient(connection,4); db->setTimeout(10.0);
         db->execSqlSync("ALTER TABLE midi_files ADD FOREIGN KEY(midi_id) REFERENCES midi_entries(id) ON DELETE CASCADE");
-        db->execSqlSync("ALTER TABLE midi_creation_requests ADD FOREIGN KEY(midi_id) REFERENCES midi_entries(id) ON DELETE CASCADE");
+        db->execSqlSync("ALTER TABLE midi_creation_requests ADD FOREIGN KEY(midi_id) REFERENCES midi_entries(id) ON DELETE SET NULL");
         db->execSqlSync("CREATE TRIGGER midi_entries_updated_at BEFORE UPDATE ON midi_entries FOR EACH ROW EXECUTE FUNCTION public.set_midi_entry_updated_at()");
         first = db->execSqlSync("INSERT INTO midi_entries(slug,title,distribution_permission) VALUES('first','First','restricted') RETURNING id")[0][0].as<std::int64_t>();
         second = db->execSqlSync("INSERT INTO midi_entries(slug,title) VALUES('second','Second') RETURNING id")[0][0].as<std::int64_t>();
@@ -311,12 +311,45 @@ TEST_F(ImportPostgres, CreationInvalidDisabledAndUnconfirmedFilesPerformNoWrites
     apiError([&] { create.create(input,"not-a-uuid",uploaded); },400,"INVALID_INPUT");
     counts(2,0,0,0); EXPECT_EQ(observed.writes.load(),0); EXPECT_EQ(observed.removals.load(),0);
 }
-TEST_F(ImportPostgres, CreationReceiptConstraintsUseIsolatedForeignKeyAndCascade) {
+TEST_F(ImportPostgres, CreationReceiptConstraintsRetainDeletedIdentity) {
     EXPECT_THROW(db->execSqlSync("INSERT INTO midi_creation_requests VALUES($1::uuid,$2,$3)",requestA,std::string(64,'A'),first),drogon::orm::DrogonDbException);
     EXPECT_THROW(db->execSqlSync("INSERT INTO midi_creation_requests VALUES($1::uuid,$2,9223372036854775807)",requestA,std::string(64,'a')),drogon::orm::DrogonDbException);
     const auto saved=service->create(entry(),requestA);
     EXPECT_THROW(db->execSqlSync("INSERT INTO midi_creation_requests VALUES($1::uuid,$2,$3)",requestB,std::string(64,'a'),saved.id),drogon::orm::DrogonDbException);
-    db->execSqlSync("DELETE FROM midi_entries WHERE id=$1",saved.id); counts(2,0,0,0);
+    repo->remove(saved.id, 1); counts(2,0,1,0);
+    EXPECT_TRUE(db->execSqlSync("SELECT midi_id FROM midi_creation_requests")[0][0].isNull());
+    apiError([&] { service->create(entry(),requestA); },410,"CREATION_DELETED");
+    counts(2,0,1,0);
+}
+TEST_F(ImportPostgres, DeletionJournalsFilesAndPreventsReplayAndUnsafeCleanup) {
+    const auto saved = service->create(entry(), requestA, upload());
+    const auto key = storage::sha256(upload().bytes);
+    apiError([&] { repo->remove(saved.id, 2); },409,"STALE_ENTRY");
+    EXPECT_FALSE(journal(key)); EXPECT_TRUE(objects->exists(key));
+    {
+        TransactionScope other(db);
+        other.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741033))", key);
+        apiError([&] { repo->remove(saved.id, 1); },503,"SERVER_BUSY");
+        EXPECT_TRUE(repo->findById(saved.id)); EXPECT_FALSE(journal(key));
+        other.commit();
+    }
+    db->execSqlSync("CREATE FUNCTION reject_delete_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test failure'; END $$");
+    db->execSqlSync("CREATE CONSTRAINT TRIGGER reject_delete_commit AFTER DELETE ON midi_entries DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_delete_commit()");
+    EXPECT_ANY_THROW(repo->remove(saved.id, 1));
+    EXPECT_TRUE(repo->findById(saved.id)); EXPECT_FALSE(journal(key)); EXPECT_TRUE(objects->exists(key));
+    EXPECT_EQ(service->create(entry(), requestA, upload()).id, saved.id);
+    db->execSqlSync("DROP TRIGGER reject_delete_commit ON midi_entries");
+    repo->remove(saved.id, 1);
+    EXPECT_FALSE(repo->findById(saved.id)); EXPECT_TRUE(repo->filesFor(saved.id).empty());
+    EXPECT_TRUE(journal(key)); EXPECT_TRUE(objects->exists(key));
+    apiError([&] { service->create(entry(), requestA, upload()); },410,"CREATION_DELETED");
+    EXPECT_EQ(service->cleanup(), 0u);
+    service->import(second, 1, "reused.mid", upload().bytes, true);
+    age(key);
+    EXPECT_EQ(service->cleanup(), 0u); EXPECT_TRUE(objects->exists(key));
+    repo->remove(second, 2); age(key);
+    EXPECT_EQ(service->cleanup(), 1u); EXPECT_FALSE(objects->exists(key));
+    EXPECT_FALSE(journal(key));
 }
 TEST_F(ImportPostgres, IdempotentSameEntryConflictsAndRightsRemainUnchanged) {
     const auto content=data(); const auto before=service->get(first).entry;

@@ -110,10 +110,17 @@ void ApiController::registerAdminRoutes() {
         dispatch(std::move(callback), [this, request, id = std::move(id)] {
             auth_.require(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return toJson(personWriter_.get(idOf(id)));
+            if (request->method() == drogon::Delete) {
+                const auto body = bodyOf(request); fieldsOf(body, {"revision"});
+                const auto personId = idOf(id);
+                personWriter_.remove(personId, revisionOf(body));
+                logEvent("person_deleted");
+                Json::Value result; result["deleted_id"] = std::to_string(personId); return result;
+            }
             const auto result = personWriter_.save(idOf(id), personOf(bodyOf(request), true));
             logEvent("person_updated"); return toJson(result);
         });
-    }, {drogon::Get, drogon::Put});
+    }, {drogon::Get, drogon::Put, drogon::Delete});
     drogon::app().registerHandler("/api/v1/admin/midis/{1}/credits", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
         dispatch(std::move(callback), [this, request, id = std::move(id)] {
             auth_.require(request->getHeader("authorization"));
@@ -190,9 +197,16 @@ void ApiController::registerAdminRoutes() {
         dispatch(std::move(callback), [this, request, id = std::move(id)] {
             auth_.require(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return toJson(writer_.get(idOf(id)));
+            if (request->method() == drogon::Delete) {
+                const auto body = bodyOf(request); fieldsOf(body, {"revision"});
+                const auto midiId = idOf(id);
+                writer_.remove(midiId, revisionOf(body));
+                logEvent("midi_deleted");
+                Json::Value result; result["deleted_id"] = std::to_string(midiId); return result;
+            }
             const auto entry = writer_.update(idOf(id), entryOf(bodyOf(request), true));
             logEvent("midi_updated"); return toJson(entry);
         });
-    }, {drogon::Get, drogon::Put});
+    }, {drogon::Get, drogon::Put, drogon::Delete});
 }
 }

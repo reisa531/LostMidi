@@ -5,6 +5,7 @@ import type { PersonEdit } from "@/lib/admin/people";
 import { ApiError } from "@/lib/api/client";
 import { PersonForm } from "@/components/admin/person-form";
 import { AdminPageHeader, AdminUnavailable } from "@/components/admin/ui";
+import { DeleteConfirmation } from "@/components/admin/delete-confirmation";
 export const metadata = { title: "编辑人物" };
 export default async function EditPerson({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string }> }) {
   const { id } = await params;
@@ -19,5 +20,6 @@ export default async function EditPerson({ params, searchParams }: { params: Pro
   const { saved } = await searchParams;
   return <><AdminPageHeader eyebrow={`People / ${id}`} title="编辑人物" description="核对人物身份，维护公开资料和历史昵称。" />
     {saved === "1" && <p role="status" className="mb-6 rounded bg-green-50 p-4 text-sm text-green-900">人物资料已保存。<Link href={`/people/${id}`} className="ml-4 underline">查看公开资料</Link></p>}
-    <PersonForm key={`${id}-${entry.person.revision}`} entry={entry} /></>;
+    <PersonForm key={`${id}-${entry.person.revision}`} entry={entry} />
+    <DeleteConfirmation key={`delete-${id}-${entry.person.revision}`} resource="people" id={entry.person.id} revision={entry.person.revision} name={entry.person.display_name} /></>;
 }

@@ -83,6 +83,20 @@ PersonEdit PostgresPersonRepository::save(std::int64_t id, const PersonEdit& edi
     tx.commit();
     return result;
 }
+void PostgresPersonRepository::remove(std::int64_t id, std::int64_t revision) {
+    TransactionScope tx(db_);
+    tx.db->execSqlSync("SET LOCAL lock_timeout = '5s'");
+    const auto rows = tx.db->execSqlSync("SELECT revision FROM people WHERE id=$1 FOR UPDATE", id);
+    if (rows.empty()) throw ApiError(404, "PERSON_NOT_FOUND", "Person does not exist.");
+    if (rows[0]["revision"].as<std::int64_t>() != revision)
+        throw ApiError(409, "STALE_PERSON", "Person changed elsewhere. Reload before deleting.");
+    const auto references = tx.db->execSqlSync(
+        "SELECT 1 FROM midi_credits WHERE person_id=$1 UNION ALL SELECT 1 FROM recovery_events WHERE recovered_by=$1 LIMIT 1", id);
+    if (!references.empty())
+        throw ApiError(409, "PERSON_IN_USE", "Remove this person's credits and recovery references before deleting.");
+    tx.db->execSqlSync("DELETE FROM people WHERE id=$1", id);
+    tx.commit();
+}
 CreditEdit PostgresPersonRepository::getCredits(std::int64_t midiId) {
     TransactionScope tx(db_);
     const auto rows = tx.db->execSqlSync("SELECT revision FROM midi_entries WHERE id=$1 FOR SHARE", midiId);

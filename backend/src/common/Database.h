@@ -22,6 +22,14 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
     if (imported.empty()) throw ApiError(503, "DATABASE_NOT_READY", "Required import migration is not applied.");
     const auto creation = db->execSqlSync("SELECT 1 FROM schema_migrations WHERE version='007_midi_creation_requests.sql'");
     if (creation.empty()) throw ApiError(503, "DATABASE_NOT_READY", "Required creation migration is not applied.");
+    const auto deletion = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='008_deleted_creation_receipts.sql') AS applied, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='midi_creation_requests'::regclass "
+        "AND attname='midi_id' AND attnum>0 AND NOT attisdropped AND NOT attnotnull) AS nullable_id, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_constraint WHERE conrelid='midi_creation_requests'::regclass "
+        "AND conname='midi_creation_requests_midi_id_fkey' AND confrelid='midi_entries'::regclass AND confdeltype='n') AS retained");
+    if (!deletion[0]["applied"].as<bool>() || !deletion[0]["nullable_id"].as<bool>() || !deletion[0]["retained"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required deletion migration is not applied.");
     const auto rows = db->execSqlSync(
         "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='004_optional_recovery_date.sql') AS applied, "
         "EXISTS(SELECT 1 FROM schema_migrations WHERE version='005_site_installation.sql') AS installation_applied, "

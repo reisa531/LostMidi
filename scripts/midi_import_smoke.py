@@ -57,6 +57,23 @@ def main():
     metadata = request('/api/v1/admin/midis', 'POST', creation, token, expected=(201,))
     assert request('/api/v1/admin/midis', 'POST', creation, token, expected=(201,))['id'] == metadata['id']
     assert request('/api/v1/admin/midis', 'POST', {**creation, 'title': 'Changed'}, token, expected=(409,))['error']['code'] == 'IDEMPOTENCY_CONFLICT'
+    delete_path = '/api/v1/admin/midis/' + metadata['id']
+    request(delete_path, 'DELETE', {'revision': 1}, expected=(401,))
+    for invalid in ({}, {'revision': 0}, {'revision': '1'}, {'revision': 1, 'extra': True}):
+        request(delete_path, 'DELETE', invalid, token, expected=(400,))
+    assert request(delete_path, 'DELETE', {'revision': 2}, token, expected=(409,))['error']['code'] == 'STALE_ENTRY'
+    assert request(delete_path, 'DELETE', {'revision': 1}, token)['deleted_id'] == metadata['id']
+    request('/api/v1/midis/' + creation['slug'], expected=(404,))
+    request(delete_path, 'DELETE', {'revision': 1}, token, expected=(404,))
+    assert request('/api/v1/admin/midis', 'POST', creation, token, expected=(410,))['error']['code'] == 'CREATION_DELETED'
+    person = request('/api/v1/admin/people', 'POST', {'display_name': 'Delete smoke', 'biography': None, 'aliases': ['Old']}, token, expected=(201,))['person']
+    person_path = '/api/v1/admin/people/' + person['id']
+    request(person_path, 'DELETE', {'revision': 1}, expected=(401,))
+    request(person_path, 'DELETE', {'revision': 0}, token, expected=(400,))
+    assert request(person_path, 'DELETE', {'revision': 2}, token, expected=(409,))['error']['code'] == 'STALE_PERSON'
+    request(person_path, 'DELETE', {'revision': 1}, token)
+    request('/api/v1/people/' + person['id'], expected=(404,))
+    print('PASS: authenticated revision-checked MIDI/person deletion and deleted creation replay rejection')
     combined = {**draft, 'slug': 'create-file-' + uuid.uuid4().hex, 'request_id': str(uuid.uuid4()),
                 'distribution_permission': 'permission_granted', 'file': {
                     'filename': '一起保存.mid', 'content_base64': base64.b64encode(midi(80)).decode(), 'rights_confirmed': True}}
@@ -97,7 +114,17 @@ def main():
             assert unassigned['pagination']['total'] >= 1
         for query in ('page=0', 'pageSize=101', 'status=invalid', 'person=9223372036854775808', 'sort=random', 'missing=other'):
             request('/api/v1/catalog/entries?' + query, expected=(400,))
-        print('PASS: atomic create, validation rollback, safe replay, hash conflicts and public catalog endpoints')
+        referenced = request('/api/v1/admin/people', 'POST', {'display_name': 'Referenced person', 'biography': None, 'aliases': []}, token, expected=(201,))['person']
+        entry_path = '/api/v1/admin/midis/' + created['id']
+        person_path = '/api/v1/admin/people/' + referenced['id']
+        request(entry_path + '/credits', 'PUT', {'revision': 1, 'credits': [{'person_id': referenced['id'], 'role': 'composer'}]}, token)
+        assert request(person_path, 'DELETE', {'revision': 1}, token, expected=(409,))['error']['code'] == 'PERSON_IN_USE'
+        assert request(entry_path, 'DELETE', {'revision': 1}, token, expected=(409,))['error']['code'] == 'STALE_ENTRY'
+        request(entry_path, 'DELETE', {'revision': 2}, token)
+        request('/api/v1/midis/' + combined['slug'] + '/files/' + detail['files'][0]['id'] + '/download', expected=(404,))
+        assert request('/api/v1/admin/midis', 'POST', combined, token, expected=(410,))['error']['code'] == 'CREATION_DELETED'
+        request(person_path, 'DELETE', {'revision': 1}, token)
+        print('PASS: atomic create, validation rollback, safe replay, hash conflicts, catalog and deletion of file-bearing entries')
     first = request('/api/v1/admin/midis', 'POST', draft, token, expected=(201,))
     other = request('/api/v1/admin/midis', 'POST', {**draft, 'slug': draft['slug']+'-other'}, token, expected=(201,))
     path = '/api/v1/admin/midis/' + first['id'] + '/files'

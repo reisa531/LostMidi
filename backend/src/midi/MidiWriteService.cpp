@@ -36,6 +36,11 @@ MidiEntry MidiWriteService::update(std::int64_t id, MidiEntry entry) {
     if (id < 1 || entry.revision < 1) throw ApiError(400, "INVALID_INPUT", "A valid id and revision are required.");
     return repository_.update(id, entry);
 }
+void MidiWriteService::remove(std::int64_t id, std::int64_t revision) {
+    if (id < 1 || revision < 1)
+        throw ApiError(400, "INVALID_INPUT", "A valid id and revision are required.");
+    repository_.remove(id, revision);
+}
 MidiEntry MidiWriteService::get(std::int64_t id) {
     const auto entry = repository_.findById(id);
     if (!entry) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");

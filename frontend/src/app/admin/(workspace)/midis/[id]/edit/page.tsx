@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api/client";
 import type { MidiEntry } from "@/lib/api/types";
 import { AdminPageHeader, AdminUnavailable } from "@/components/admin/ui";
 import { MidiForm } from "@/components/admin/midi-form";
+import { DeleteConfirmation } from "@/components/admin/delete-confirmation";
 export const metadata = { title: "编辑 MIDI 档案" };
 export default async function EditMidi({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string }> }) {
   const { id } = await params;
@@ -21,5 +22,6 @@ export default async function EditMidi({ params, searchParams }: { params: Promi
   return <><AdminPageHeader eyebrow={`Collection / ${entry.id}`} title="编辑 MIDI 档案" description="维护作品基础资料。作品署名、历史来源与寻回记录通过独立页面管理，并与基础资料共用保存版本；前往其他页面前请先保存当前修改。" />
     {saved === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已保存。<Link className="ml-3 underline" href={`/midis/${entry.slug}`}>查看公开详情 ↗</Link></p>}
     <nav aria-label="作品资料管理" className="mb-6 flex flex-wrap gap-5 text-sm"><Link className="underline" href={`/admin/midis/${entry.id}/credits`}>管理作品署名 →</Link><Link className="underline" href={`/admin/midis/${entry.id}/history`}>管理来源与寻回 →</Link><Link className="underline" href={`/admin/midis/${entry.id}/files`}>管理 MIDI 文件 →</Link></nav>
-    <MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} /></>;
+    <MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} />
+    <DeleteConfirmation key={`delete-${entry.id}-${entry.revision}`} resource="midis" id={entry.id} revision={entry.revision} name={entry.title} /></>;
 }
