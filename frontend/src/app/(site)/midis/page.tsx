@@ -5,7 +5,7 @@ import { Unavailable } from "@/components/archive";
 import { CatalogFilters, CatalogPagination, CatalogTable, DataNote, InvalidQuery, PageHeader } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "MIDI 档案" };
+export const metadata = { title: "MIDI 档案", alternates: { canonical: "/midis" } };
 
 export default async function MidiListPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let query;

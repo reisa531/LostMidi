@@ -5,7 +5,7 @@ import { Unavailable } from "@/components/archive";
 import { DataNote, EntryActivity, OverviewMetrics, PageHeader, StatusSummary, secondaryLink } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "首页总览" };
+export const metadata = { title: "首页总览", alternates: { canonical: "/" } };
 
 export default async function Home() {
   let overview;

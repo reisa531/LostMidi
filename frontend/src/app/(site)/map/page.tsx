@@ -5,7 +5,7 @@ import { Unavailable } from "@/components/archive";
 import { CatalogFilters, CatalogPagination, CatalogTable, DataNote, EmptyState, InvalidQuery, PageHeader } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Map · 档案分组" };
+export const metadata = { title: "Map · 档案分组", alternates: { canonical: "/map" } };
 
 export default async function MapPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let query;

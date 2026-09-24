@@ -4,9 +4,18 @@ import { getMidiBySlug } from "@/lib/api/midi";
 import { ApiError } from "@/lib/api/client";
 import { Credits, Status, Section, Unavailable, ExternalSource, dateLabel, copyrightLabel, distributionLabel } from "@/components/archive";
 import { MidiDownload } from "@/components/midi-download";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "档案详情" };
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  try {
+    const detail = await getMidiBySlug(slug);
+    const title = detail.entry.title;
+    const description = detail.entry.description?.slice(0, 155) || `查看 ${title} 的 MIDI 作品、署名、历史来源与寻回记录。`;
+    return { title, description, alternates: { canonical: `/midis/${encodeURIComponent(slug)}` }, openGraph: { type: "article", title, description } };
+  } catch { return { title: "档案详情", robots: { index: false, follow: false } }; }
+}
 export default async function MidiDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) || slug.length > 160) notFound();
@@ -17,7 +26,14 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     throw error;
   }
   const { entry, credits, historical_sources, recovery_events, files } = detail;
+  const structuredData = {
+    "@context": "https://schema.org", "@type": "MusicComposition", name: entry.title,
+    description: entry.description || undefined, dateCreated: entry.estimated_year ? String(entry.estimated_year) : undefined,
+    url: `${process.env.ADMIN_ORIGIN ?? ""}/midis/${encodeURIComponent(slug)}`,
+    author: credits.map(credit => ({ "@type": "Person", name: credit.display_name })),
+  };
   return <article className="mx-auto max-w-3xl">
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
     <Link href="/midis" className="archive-link text-sm">← 全部 MIDI 档案</Link>
     <p className="eyebrow mt-10">Archive record / {entry.id}</p>
     <h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1>

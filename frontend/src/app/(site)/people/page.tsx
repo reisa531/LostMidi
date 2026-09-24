@@ -5,7 +5,7 @@ import { Unavailable } from "@/components/archive";
 import { CatalogPagination, EmptyState, InvalidQuery, PageHeader } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "作者" };
+export const metadata = { title: "作者", alternates: { canonical: "/people" } };
 
 export default async function PeoplePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let query;

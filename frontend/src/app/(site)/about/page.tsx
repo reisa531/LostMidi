@@ -1,5 +1,5 @@
 import { Section } from "@/components/archive";
-export const metadata = { title: "关于项目" };
+export const metadata = { title: "关于项目", alternates: { canonical: "/about" } };
 export default function AboutPage() {
   return <article className="mx-auto max-w-3xl"><p className="eyebrow">About the archive</p><h1 className="my-6 font-serif text-4xl">为声音留下来处</h1>
     <p className="mb-10 leading-8 text-muted">Lost MIDI Archive 是一个持续建设的数字档案项目，记录早期网络 MIDI 的作品、人物与历史。一个文件曾经在哪里出现、由谁制作、又如何被找到，与文件本身同样值得保存。</p>

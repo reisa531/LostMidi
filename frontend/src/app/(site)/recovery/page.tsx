@@ -5,7 +5,7 @@ import { Unavailable } from "@/components/archive";
 import { CatalogFilters, CatalogPagination, CatalogTable, DataNote, InvalidQuery, PageHeader, StatusSummary } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "寻回进度" };
+export const metadata = { title: "寻回进度", alternates: { canonical: "/recovery" } };
 
 export default async function RecoveryPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let query;
