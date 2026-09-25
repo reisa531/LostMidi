@@ -190,7 +190,7 @@ CTest 新增 installation 测试使用隔离 schema，测试数据库用户需�
 
 可选浏览器验收：在独立 Python 环境安装 `playwright` 并运行 `python -m playwright install chromium`，再使用相同测试凭据执行 `python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes`。也可传 `--channel msedge` 使用已安装的 Edge；`--screenshots <目录>` 保存验收截图。浏览器地址必须与测试前端的 ADMIN_ORIGIN 一致。脚本会创建人物和作品，只能指向专用测试环境。
 
-当前工作区阶段 4–6 尚未发布。阶段 4 需要迁移至 012；后续账号与公开 ID 迁移版本以实际实现为准。届时运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。写入 smoke 和回收站恢复操作只允许在隔离测试数据库执行，不能在生产试删。浏览器验收见 [RUN.md](../RUN.md)，历史结果及本次未执行事项见 [验证记录](implementation-report.md)。
+阶段 4–6 的本地代码已实现，尚未确认生产发布。升级须先备份并应用全部迁移至 015，再更新后端和前端。2026-09-25 的隔离验证通过：后端 CTest 106 项、前端 lint/typecheck/build，以及 `scripts/roles_reviews_smoke.py` 的邀请登录、只读访问、审核发布、证据与文件导入、删除恢复流程；Windows 符号链接权限相关的 2 项测试跳过。写入 smoke 和回收站恢复操作只允许在隔离测试数据库执行，不能在生产试删。浏览器验收见 [RUN.md](../RUN.md)，历史部署记录见 [验证记录](implementation-report.md)。
 
 
 ## 新建档案同页上传（2026-09-24）
