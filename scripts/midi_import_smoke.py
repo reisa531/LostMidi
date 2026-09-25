@@ -184,7 +184,7 @@ def main():
         ({}, b'not midi', 400, 'INVALID_MIDI'), ({}, b'', 400, 'INVALID_MIDI'),
         ({}, b'x' * 1048577, 413, 'FILE_TOO_LARGE')]:
         result = request(path, 'POST', body, token, {**headers, **extra}, (status,))
-        assert result['error']['code'] == code
+        assert result['error']['code'] == code, (extra, len(body), result['error']['code'], code)
         assert request(path, token=token)['files'] == []
     saved = request(path, 'POST', midi(), token, headers)
     assert not saved['duplicate'] and saved['revision'] == 2

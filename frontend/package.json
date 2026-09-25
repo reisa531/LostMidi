@@ -1,10 +1,12 @@
 {
   "name": "lost-midi-archive-frontend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": { "node": ">=22.13.0 <23" },
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
+    "changelog:check": "node scripts/check-changelog.mjs",
+    "prebuild": "npm run changelog:check",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "lint": "eslint . --max-warnings 0",

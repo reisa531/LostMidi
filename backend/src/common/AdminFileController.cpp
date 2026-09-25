@@ -60,7 +60,8 @@ void ApiController::registerAdminFileRoutes() {
             }
             if (request->getHeader("content-type") != "application/octet-stream") throw ApiError(415, "INVALID_FILE", "An application/octet-stream body is required.");
             const auto body = request->body();
-            if (body.empty() || body.size() > midi::maxImportBytes) throw ApiError(body.empty() ? 400 : 413, "FILE_TOO_LARGE", "MIDI files must contain 1 byte to 1 MiB.");
+            if (body.empty()) throw ApiError(400, "INVALID_MIDI", "MIDI files must not be empty.");
+            if (body.size() > midi::maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "MIDI files must not exceed 1 MiB.");
             const auto filename = filenameOf(request->getHeader("x-file-name"));
             const auto rightsConfirmed = request->getHeader("x-rights-confirmed") == "true";
             const auto revision = positiveId(request->getHeader("x-entry-revision"));

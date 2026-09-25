@@ -5,6 +5,20 @@ on:
 permissions:
   contents: read
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+      - name: Test release rules
+        run: node --test scripts/release-check.test.mjs
+      - name: Require a new changelog entry for this push
+        run: node scripts/check-release.mjs --ci
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireInstallation } from "@/lib/install/state";
 import { InstallationUnavailable } from "@/components/install/unavailable";
 import { SiteNavigation } from "@/components/site-navigation";
+import releases from "@/lib/changelog.json";
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const site = await requireInstallation();
@@ -17,7 +18,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
     <main id="main" className="min-w-0 flex-1 py-8 sm:py-10">{children}</main>
     <footer className="mt-4 flex flex-col justify-between gap-3 border-t border-line py-6 text-xs leading-6 text-muted sm:flex-row [overflow-wrap:anywhere]">
       <p className="min-w-0">{site.name}<span aria-hidden="true" className="px-2">/</span>为声音留下来处。</p>
-      <div className="flex flex-wrap gap-x-6 gap-y-2"><span>记录作品、历史来源与寻回故事</span><Link href="/about" className="hover:text-accent hover:underline">关于项目</Link></div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2"><span>记录作品、历史来源与寻回故事</span><Link href="/about" className="hover:text-accent hover:underline">关于项目</Link><Link href="/changelog" className="hover:text-accent hover:underline">更新日志 · v{releases[0].version}</Link></div>
     </footer>
   </div>;
 }

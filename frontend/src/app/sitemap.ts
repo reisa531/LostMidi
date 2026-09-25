@@ -29,7 +29,7 @@ async function getAllCatalogPeople() {
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.ADMIN_ORIGIN?.replace(/\/$/, "") || "";
   const now = new Date();
-  const urls: MetadataRoute.Sitemap = ["/", "/midis", "/people", "/recovery", "/map", "/about"].map(path => ({ url: `${base}${path}`, lastModified: now, changeFrequency: path === "/" ? "daily" : "weekly", priority: path === "/" ? 1 : 0.7 }));
+  const urls: MetadataRoute.Sitemap = ["/", "/midis", "/people", "/recovery", "/map", "/about", "/changelog"].map(path => ({ url: `${base}${path}`, lastModified: now, changeFrequency: path === "/" ? "daily" : "weekly", priority: path === "/" ? 1 : 0.7 }));
   try {
     const [entries, people] = await Promise.all([getAllCatalogEntries(), getAllCatalogPeople()]);
     urls.push(...entries.map(entry => ({ url: `${base}/midis/${encodeURIComponent(entry.public_id)}`, lastModified: new Date(entry.updated_at), changeFrequency: "monthly" as const, priority: 0.8 })));

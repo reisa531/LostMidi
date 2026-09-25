@@ -12,7 +12,7 @@ from midi_import_smoke import midi
 
 def check_catalog(page, base, screenshots, search_slug):
     routes = [("/", "首页总览"), ("/midis", "MIDI"), ("/people", "作者"),
-              ("/recovery", "寻回进度"), ("/map", "Map"), ("/search", "搜索")]
+              ("/recovery", "寻回进度"), ("/map", "关系图谱"), ("/search", "搜索")]
     for width in (1280, 390):
         page.set_viewport_size({"width": width, "height": 900})
         for path, label in routes:
@@ -46,7 +46,8 @@ def check_catalog(page, base, screenshots, search_slug):
     expect(page.locator('meta[name=robots]')).to_have_attribute('content', re.compile('noindex'))
     page.get_by_role('textbox', name='搜索关键词').fill(search_slug)
     page.get_by_role('button', name='搜索', exact=True).click()
-    expect(page.get_by_role('main').locator('a[href="/midis/' + search_slug + '"]')).to_have_count(1)
+    entry = page.request.get(os.environ['BACKEND_API_URL'] + '/api/v1/midis/' + search_slug).json()['entry']
+    expect(page.get_by_role('main').locator('a[href="/midis/' + entry['public_id'] + '"]')).to_have_count(1)
     page.get_by_role('textbox', name='搜索关键词').fill('missing-' + uuid.uuid4().hex)
     page.get_by_role('button', name='搜索', exact=True).click()
     expect(page.get_by_text('没有匹配的作品', exact=True)).to_be_visible()
@@ -178,6 +179,8 @@ def main():
         visitor = visitor_context.new_page()
         visitor.on('pageerror', lambda error: errors.append(str(error)))
         visitor.goto(base + '/midis/' + slug)
+        public_url = visitor.url
+        assert re.fullmatch(re.escape(base) + r'/midis/[0-9a-f-]{36}', public_url)
         expect(visitor.get_by_text('尚无已登记的 MIDI 文件。此档案目前仅保存文字资料。')).to_be_visible()
         visitor.wait_for_load_state('networkidle')
         page.get_by_role('link', name='管理 MIDI 文件 →', exact=True).click()
@@ -246,7 +249,7 @@ def main():
         downloaded = saved_download.value
         assert downloaded.suggested_filename == '归档测试.MID'
         assert Path(downloaded.path()).read_bytes() == midi(70)
-        assert visitor.url == base + '/midis/' + slug
+        assert visitor.url == public_url
         if args.screenshots:
             visitor.screenshot(path=str(args.screenshots / 'download-desktop.png'), full_page=True)
         visitor.set_viewport_size({'width': 390, 'height': 844})
@@ -256,7 +259,7 @@ def main():
         visitor.route('**/api/midis/*/files/*/download', lambda route: route.abort())
         downloads.first.click()
         expect(visitor.get_by_role('main').get_by_role('alert')).to_be_visible()
-        assert visitor.url == base + '/midis/' + slug
+        assert visitor.url == public_url
         visitor.unroute('**/api/midis/*/files/*/download')
         with visitor.expect_download() as retry_download:
             downloads.first.click()
@@ -265,8 +268,11 @@ def main():
         page.bring_to_front()
         page.goto(edit_url)
         page.wait_for_load_state('networkidle')
+        revision_input = page.locator('form').filter(has=page.locator('[name=distribution_permission]')).locator('[name=revision]')
+        revision_before = int(revision_input.input_value())
         page.locator('[name=distribution_permission]').select_option('restricted')
         page.get_by_role('button', name='保存修改', exact=True).click()
+        expect(revision_input).to_have_value(str(revision_before + 1))
         expect(page.get_by_role('status')).to_contain_text('档案已保存')
         expect(page.locator('[name=distribution_permission]')).to_have_value('restricted')
         visitor.bring_to_front()

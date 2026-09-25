@@ -399,7 +399,13 @@ docker compose stop
 
 ### 7.2 更新发布
 
-**当前 Vercel + Neon 已有库：先迁移，再更新应用。** 生产已于 2026-09-25 迁移至 008；阶段 4–6 代码启动前需用已有幂等迁移器应用待执行的 009–015。先完成隔离恢复演练，再按下列步骤更新应用。即使 `MIDI_IMPORT_ENABLED=false`，新版启动与 `/ready` 也要求所有结构。
+每次版本推送必须同步更新公开日志：在 `frontend/src/lib/changelog.json` 顶部新增版本条目（版本、日期、标题、具体变化），提升 `frontend/package.json` 版本并同步 `package-lock.json` 的根版本。采用递增的 `major.minor.patch`，保留历史条目，不改写或删除；需要更正历史说明或回退功能时，在新版本中说明。一个版本可包含多个提交，无须每个提交单独发布。
+
+首次克隆后在仓库根执行 `node scripts/install-release-hook.mjs` 安装本地 pre-push 校验。安装器不覆盖已有钩子、不修改 Git 配置；存在自定义钩子时，应将 `node scripts/check-release.mjs --pre-push` 串联进去并转发 Git 提供的标准输入。校验比较实际推送的提交与远端旧提交，不接受仅保存在工作区的日志；新分支以本地 `origin/main` 的共同祖先为基线，推送前先 fetch。未知基线会拒绝推送，不能跳过钩子。
+
+发布前运行 `node --test scripts/release-check.test.mjs` 与 `npm --prefix frontend run check`。GitHub CI 的 `release` job 比较本次 push / PR 的完整差异，要求新增版本且保留历史；独立前端构建也会检查日志格式、版本及 lockfile 一致性。公开入口为 `/changelog` 和站点页脚。CI 不等同于 Git 服务端拒绝推送，也不保证阻止 Vercel 的并行自动构建；其他工作副本须安装钩子。未配置云端分支保护，不宣称强制覆盖所有客户端。
+
+**当前 Vercel + Neon 已有库：先迁移，再更新应用。** 上一版 `eb303ab` 已于 2026-09-25 迁移至 011；阶段 4–6 代码启动前需用已有幂等迁移器应用待执行的 012–015。先完成隔离恢复演练，再按下列步骤更新应用。即使 `MIDI_IMPORT_ENABLED=false`，新版启动与 `/ready` 也要求所有结构。
 
 1. 记录当前版本与配置，安排维护窗口、暂停写入，安全备份现有 Neon 数据库及匹配存储；确认备份可恢复。迁移用受控维护连接，核对目标库，不能重新创建或清空数据库。
 2. 在可信维护环境使用已经配置好的 libpq 连接变量（不得打印凭据），保持 `SEED_DEMO=false`，执行仓库现有幂等脚本：
@@ -412,7 +418,7 @@ docker compose stop
 3. 退出码必须为 0，再只读核对 `schema_migrations` 中已要求的迁移至 015、审核申请表及 013 用户表，同时保留此前结构、`site_installation` 锁及已有资料。失败先排障，不能发布新版绕过检查。
 4. 本地检查及迁移确认后，在该次发布授权范围内先发布到**后端独立项目**并显式选择 `vercel.json`，后端就绪后再推送前端更新；不反复触发云构建。核对 `/ready`、已有安装状态与只读页面。真实桶未验证前保持导入关闭；S3 配置与密钥不得复制到前端。
 
-本次已完成 008 迁移和前后端发布；实际交付与本机直连生产健康端点连接超时的限制见 [验证报告](docs/implementation-report.md)。部署 READY 不等同于本机 `/health`、`/ready` 请求验收通过；未在生产试删或运行 cleanup。
+历史交付及本机直连生产健康端点连接超时的限制见 [验证报告](docs/implementation-report.md)。部署 READY 不等同于本机 `/health`、`/ready` 请求验收通过；未在生产试删或运行 cleanup。
 
 **旧 VPS / Compose** 仍采用可接受短暂停机的单机流程：
 
