@@ -24,5 +24,6 @@ export default async function EditMidi({ params, searchParams }: { params: Promi
     {saved === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已保存。<Link className="ml-3 underline" href={`/midis/${entry.public_id}`}>查看公开详情 ↗</Link></p>}
     <nav aria-label="作品资料管理" className="mb-6 flex flex-wrap gap-5 text-sm"><Link className="underline" href={`/admin/midis/${entry.id}/credits`}>管理作品署名 →</Link><Link className="underline" href={`/admin/midis/${entry.id}/history`}>管理来源与寻回 →</Link><Link className="underline" href={`/admin/midis/${entry.id}/files`}>管理 MIDI 文件 →</Link></nav>
     <MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} reviewRequired={session.role === "admin"} />
-    {session.role === "super_admin" && <DeleteConfirmation key={`delete-${entry.id}-${entry.revision}`} resource="midis" id={entry.id} revision={entry.revision} name={entry.title} />}</>;
+    <DeleteConfirmation key={`delete-${entry.id}-${entry.revision}`} resource="midis" id={entry.id} revision={entry.revision} name={entry.title} reviewRequired={session.role === "admin"} />
+  </>;
 }

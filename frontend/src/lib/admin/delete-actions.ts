@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { ApiError } from "@/lib/api/client";
 import { adminRequest } from "./auth";
 
-export type DeleteState = { error: string; deletedId?: string; unauthorized?: boolean };
+export type DeleteState = { error: string; deletedId?: string; queuedId?: string; unauthorized?: boolean };
 
 export async function deleteEntryAction(_previous: DeleteState, form: FormData): Promise<DeleteState> {
   const resource = form.get("resource");
@@ -23,10 +23,11 @@ export async function deleteEntryAction(_previous: DeleteState, form: FormData):
 
     // Only the DELETE response may acknowledge an already absent record.
     try {
-      const result = await adminRequest<{ deleted_id: string }>(`/api/v1/admin/${resource}/${id}`, {
+      const result = await adminRequest<{ deleted_id?: string; request_id?: string; status?: string }>(`/api/v1/admin/${resource}/${id}`, {
         method: "DELETE", redirect: "error", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ revision: Number(revision) }),
       });
+      if (result?.status === "pending" && result.request_id) return { error: "", queuedId: id };
       if (result?.deleted_id !== id) throw new ApiError(502, "INVALID_RESPONSE");
     } catch (error) {
       const notFound = resource === "midis" ? "MIDI_NOT_FOUND" : "PERSON_NOT_FOUND";

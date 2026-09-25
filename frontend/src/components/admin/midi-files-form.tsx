@@ -5,8 +5,8 @@ import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { importMidiFileAction, type MidiFileImportState } from "@/lib/admin/files-actions";
 
-export function MidiFilesForm({ midiId, revision, maxFileSize, enabled }: {
-  midiId: string; revision: number; maxFileSize: number; enabled: boolean;
+export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRequired = false }: {
+  midiId: string; revision: number; maxFileSize: number; enabled: boolean; reviewRequired?: boolean;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const rightsInput = useRef<HTMLInputElement>(null);
@@ -17,7 +17,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled }: {
   const [state, action, pending] = useActionState<MidiFileImportState, FormData>(async (previous, form) => {
     try {
       const next = await importMidiFileAction(previous, form);
-      if (next.result) {
+      if (next.result || next.queued) {
         if (fileInput.current) fileInput.current.value = "";
         if (rightsInput.current) rightsInput.current.checked = false;
       }
@@ -47,7 +47,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled }: {
     <h2 className="text-lg font-semibold">导入单个 MIDI 文件</h2>
     <input type="hidden" name="id" value={midiId} />
     <input type="hidden" name="revision" value={currentRevision} />
-    <p className="text-sm leading-7 text-muted">上传即表示同意公开分发：文件会存入对象存储并可被任何人公开读取，不会修改作品的归档状态或权利字段。文件、署名、来源与基础资料共用版本，请勿同时在其他页面修改。</p>
+    <p className="text-sm leading-7 text-muted">上传即表示确认有权公开分发。{reviewRequired ? "文件会先提交审核，批准后存入公开对象存储。" : "文件会存入对象存储并可被任何人公开读取。"}不会修改作品的归档状态或权利字段。文件、署名、来源与基础资料共用版本，请勿同时在其他页面修改。</p>
     {!enabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，已有文件仍可查看。</p>}
     <fieldset disabled={busy || !enabled} className="min-w-0 space-y-5 disabled:opacity-60">
       <legend className="sr-only">公开分发文件</legend>
@@ -69,8 +69,9 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled }: {
       {state.result.duplicate ? "当前档案已存在相同文件，已去重，未重复新增。" : "文件已成功上传并公开分发。"}
       <br />{state.result.filename} · 文件编号 {state.result.fileId} · 返回版本 {state.result.revision}
     </p>}
+    {!state.error && state.queued && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-7 text-amber-950">文件导入申请已提交，批准后才会公开分发。<Link className="ml-2 underline" href="/admin/changes">查看审核进度</Link></p>}
     <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5">
-      <button type="submit" disabled={busy || !enabled} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在导入，请勿重复操作…" : "确认并公开上传"}</button>
+      <button type="submit" disabled={busy || !enabled} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交，请勿重复操作…" : reviewRequired ? "提交文件审核" : "确认并公开上传"}</button>
       <button type="button" disabled={busy} onClick={() => { if (!submitting.current) startRefresh(() => router.refresh()); }} className="text-sm underline disabled:opacity-50">{refreshing ? "正在刷新…" : "刷新版本与文件列表"}</button>
       <span className="text-xs text-muted">当前版本 {currentRevision}</span>
     </div>

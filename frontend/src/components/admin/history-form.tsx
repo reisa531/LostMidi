@@ -35,8 +35,8 @@ function UTCInput({ name, label, value, onChange }: { name: string; label: strin
   </label>;
 }
 
-function HistoryRecordForm({ midiId, revision, selection, people, onCancel }: {
-  midiId: string; revision: number; selection: Selection; people: PeopleList; onCancel: () => void;
+function HistoryRecordForm({ midiId, revision, selection, people, onCancel, reviewRequired }: {
+  midiId: string; revision: number; selection: Selection; people: PeopleList; onCancel: () => void; reviewRequired: boolean;
 }) {
   const source = selection.kind === "source" ? selection.record : undefined;
   const event = selection.kind === "event" ? selection.record : undefined;
@@ -89,7 +89,7 @@ function HistoryRecordForm({ midiId, revision, selection, people, onCancel }: {
     <input type="hidden" name="revision" value={revision} />
     <input type="hidden" name="kind" value={selection.kind} />
     <input type="hidden" name="record_id" value={selection.record?.id ?? ""} />
-    <p className="text-sm leading-7 text-muted">本次仅保存这一条记录，保存后立即公开。时间均按 UTC 填写，不转换本地时区；不知道完整日期时请留空，将已知年份写入{selection.kind === "source" ? "备注" : "证据说明"}。已有微秒精度会保留；改动毫秒或清空重填会重置更细精度。</p>
+    <p className="text-sm leading-7 text-muted">本次仅保存这一条记录，{reviewRequired ? "提交后由超级管理员审核，批准后公开。" : "保存后立即公开。"}时间均按 UTC 填写，不转换本地时区；不知道完整日期时请留空，将已知年份写入{selection.kind === "source" ? "备注" : "证据说明"}。已有微秒精度会保留；改动毫秒或清空重填会重置更细精度。</p>
     <fieldset disabled={pending || confirming} className="min-w-0 space-y-5 disabled:opacity-60"><legend className="sr-only">{label}资料</legend>
       {selection.kind === "source" ? <>
         <label className="block text-sm">网站名称 *<input name="website_name" className={inputClass} required maxLength={300} value={values.website_name} onChange={event => change("website_name", event.target.value)} /><span className="mt-2 block text-xs text-muted">最多 300 UTF-8 字节，中文字符通常占 3 字节。</span></label>
@@ -132,25 +132,25 @@ function HistoryRecordForm({ midiId, revision, selection, people, onCancel }: {
       <p>{state.error}</p><div className="flex flex-wrap gap-x-4"><Link href="/admin/login" target="_blank" rel="noopener noreferrer" className="underline">在新页面登录</Link><Link href={`/admin/midis/${midiId}/history`} target="_blank" rel="noopener noreferrer" className="underline">重新打开来源与寻回页核对 / 合并</Link></div>
     </div>}
     {confirming ? <div className="space-y-4 rounded-lg border border-red-200 bg-red-50 p-4">
-      <p role="alert" className="text-sm leading-7 text-red-900">确认删除这条{label}（编号 {selection.record?.id}）？这会立即移除公开资料，不能撤销，当前表单的修改不会保存。取消删除会保留输入。</p>
+      <p role="alert" className="text-sm leading-7 text-red-900">确认删除这条{label}（编号 {selection.record?.id}）？{reviewRequired ? "删除申请经超级管理员批准后才会生效。" : "这会立即移除公开资料，不能撤销。"}当前表单的修改不会保存。取消删除会保留输入。</p>
       <div className="flex flex-wrap gap-5">
-        <button type="submit" name="operation" value="delete" disabled={pending || loading} className="rounded bg-red-800 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在删除…" : "确认永久删除本条记录"}</button>
+        <button type="submit" name="operation" value="delete" disabled={pending || loading} className="rounded bg-red-800 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? "提交删除审核" : "确认永久删除本条记录"}</button>
         <button type="button" disabled={pending} className={buttonClass} onClick={() => setConfirming(false)}>取消删除，继续编辑</button>
       </div>
     </div> : <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5">
-      <button type="submit" name="operation" value="save" disabled={pending || loading} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在保存…" : `保存本条${label}`}</button>
+      <button type="submit" name="operation" value="save" disabled={pending || loading} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? `提交${label}审核` : `保存本条${label}`}</button>
       <button type="button" disabled={pending || loading} className={buttonClass} onClick={onCancel}>放弃本条编辑</button>
       {selection.record && <button type="button" disabled={pending || loading} className={`${buttonClass} text-red-800`} onClick={() => setConfirming(true)}>删除本条记录…</button>}
     </div>}
   </form>;
 }
 
-export function HistoryForm({ history, people }: { history: HistoryEdit; people: PeopleList }) {
+export function HistoryForm({ history, people, reviewRequired = false }: { history: HistoryEdit; people: PeopleList; reviewRequired?: boolean }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const busy = selection !== null;
   return <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
-    <p className="text-sm leading-7 text-muted" role="status">{busy ? "正在编辑一条记录。请先保存或放弃本条编辑，再操作其他记录。其他记录暂不可编辑。" : "每次仅编辑一条历史来源或寻回记录；保存后会重新读取作品版本。来源、寻回、署名与基础资料共用版本，请勿在多个页面同时修改。"}</p>
-    {selection && <HistoryRecordForm key={`${selection.kind}-${selection.record?.id ?? "new"}`} midiId={history.entry.id} revision={history.entry.revision} selection={selection} people={people} onCancel={() => setSelection(null)} />}
+    <p className="text-sm leading-7 text-muted" role="status">{busy ? "正在编辑一条记录。请先保存或放弃本条编辑，再操作其他记录。其他记录暂不可编辑。" : `每次仅编辑一条历史来源或寻回记录；${reviewRequired ? "管理员提交后由超级管理员审核。" : "超级管理员保存后立即公开。"}来源、寻回、署名与基础资料共用版本，请勿在多个页面同时修改。`}</p>
+    {selection && <HistoryRecordForm key={`${selection.kind}-${selection.record?.id ?? "new"}`} midiId={history.entry.id} revision={history.entry.revision} selection={selection} people={people} reviewRequired={reviewRequired} onCancel={() => setSelection(null)} />}
     <section aria-labelledby="history-sources" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-sources" className="text-lg font-semibold">历史来源</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "source" })} className={buttonClass}>新增历史来源</button></div>
       {history.historical_sources.length ? <ul className="space-y-6">{history.historical_sources.map(source => <li key={source.id} className="min-w-0 space-y-3 border-t border-line pt-5">
@@ -158,7 +158,7 @@ export function HistoryForm({ history, people }: { history: HistoryEdit; people:
         <p className="text-xs leading-6 text-muted">编号 {source.id} · {sourceTypeLabels[source.source_type] ?? "其他 / 未知"} · 人工可信度 {source.credibility}/5 · 最近核验：{utcLabel(source.checked_at)}<br />首次记录：{utcLabel(source.first_seen_at)} · 最后记录：{utcLabel(source.last_seen_at)}</p>
         <div className="flex flex-wrap gap-4 text-sm">{source.original_url ? <ExternalSource url={source.original_url} label="原始网址" /> : <span className="text-muted">原始网址未登记</span>}{source.wayback_url ? <ExternalSource url={source.wayback_url} label="历史快照" /> : <span className="text-muted">存档网址未登记</span>}</div>
         <p className="whitespace-pre-wrap text-sm leading-7">{source.notes ?? "暂无补充说明。"}</p>
-        <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="source" recordId={source.id} files={source.evidence_files ?? []} />
+        <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="source" recordId={source.id} files={source.evidence_files ?? []} reviewRequired={reviewRequired} />
       </li>)}</ul> : <p className="text-sm text-muted">尚未登记历史来源。可新增网站、原始网址及存档线索。</p>}
     </section>
     <section aria-labelledby="history-events" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
@@ -168,13 +168,13 @@ export function HistoryForm({ history, people }: { history: HistoryEdit; people:
         <p className="text-xs leading-6 text-muted">寻回时间：{utcLabel(event.recovered_at)} · 寻回人：{event.recovered_by ? <Link href={`/people/${event.recovered_by}`} target="_blank" rel="noopener noreferrer" className="underline">{event.recovered_by_name ?? "姓名不详"}（编号 {event.recovered_by}）</Link> : "人物不详"}</p>
         <p className="whitespace-pre-wrap text-sm leading-7">{event.story}</p>
         <p className="whitespace-pre-wrap text-sm leading-7 text-muted">证据说明：{event.evidence ?? "尚未补充"}</p>
-        <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="event" recordId={event.id} files={event.evidence_files ?? []} />
+        <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="event" recordId={event.id} files={event.evidence_files ?? []} reviewRequired={reviewRequired} />
       </li>)}</ul> : <p className="text-sm text-muted">尚无寻回记录。可新增寻回经过、人物及证据说明。</p>}
     </section>
   </div>;
 }
 
-function EvidenceFiles({ midiId, revision, kind, recordId, files }: { midiId: string; revision: number; kind: "source" | "event"; recordId: string; files: { id: string; filename: string; sha256: string; file_size: number; created_at: string }[] }) {
+function EvidenceFiles({ midiId, revision, kind, recordId, files, reviewRequired }: { midiId: string; revision: number; kind: "source" | "event"; recordId: string; reviewRequired: boolean; files: { id: string; filename: string; sha256: string; file_size: number; created_at: string }[] }) {
   return <div className="space-y-3 rounded-lg bg-surface p-4">
     <h4 className="text-sm font-semibold">证据附件</h4>
     {files.length ? <ul className="space-y-2 text-sm">{files.map(file => <li key={file.id} className="break-all">
@@ -185,7 +185,7 @@ function EvidenceFiles({ midiId, revision, kind, recordId, files }: { midiId: st
       <input type="hidden" name="midi_id" value={midiId} /><input type="hidden" name="revision" value={revision} />
       <input type="hidden" name="kind" value={kind} /><input type="hidden" name="record_id" value={recordId} />
       <label className="text-xs">选择证据文件<input required type="file" name="evidence_file" accept=".pdf,.png,.jpg,.jpeg,.txt,application/pdf,image/png,image/jpeg,text/plain" className="mt-2 block max-w-full text-xs" /></label>
-      <button type="submit" className={buttonClass}>上传并计算 SHA-256</button>
+      <button type="submit" className={buttonClass}>{reviewRequired ? "提交附件审核并计算 SHA-256" : "上传并计算 SHA-256"}</button>
     </form>
   </div>;
 }

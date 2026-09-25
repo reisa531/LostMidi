@@ -59,6 +59,21 @@ void ApiController::dispatchResponse(Callback callback, std::function<drogon::Ht
     });
 }
 
+Json::Value ApiController::submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
+                                              std::int64_t entityId, const Json::Value& payload) {
+    const auto rows = db_->execSqlSync(
+        "INSERT INTO admin_change_requests(request_type,entity_id,proposed_by,payload) "
+        "VALUES($1,$2,$3,$4::jsonb) RETURNING id::text,created_at",
+        type, entityId > 0 ? std::optional<std::int64_t>(entityId) : std::nullopt,
+        actor.username, payload.toStyledString());
+    Json::Value result;
+    result["request_id"] = rows[0]["id"].as<std::string>();
+    result["status"] = "pending";
+    result["created_at"] = rows[0]["created_at"].as<std::string>();
+    result["message"] = "Submitted for super administrator review.";
+    return result;
+}
+
 void ApiController::registerRoutes() {
     registerAdminRoutes();
     registerAdminRecoveryRoutes();

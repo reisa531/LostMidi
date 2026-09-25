@@ -115,10 +115,11 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
       };
     }
     const collection = kind === "source" ? "sources" : "recovery-events";
-    await adminRequest(`/api/v1/admin/midis/${midiId}/${collection}${recordId ? `/${recordId}` : ""}`, {
+    const result = await adminRequest<{ request_id?: string; status?: string }>(`/api/v1/admin/midis/${midiId}/${collection}${recordId ? `/${recordId}` : ""}`, {
       method: operation === "delete" ? "DELETE" : recordId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
+    if (result.status === "pending" && result.request_id) redirect("/admin/changes?submitted=1");
   } catch (error) { return { error: errorMessage(error) }; }
   redirect(`/admin/midis/${midiId}/history?${operation === "delete" ? "deleted" : "saved"}=1`);
 }
@@ -144,11 +145,12 @@ export async function uploadEvidenceAction(form: FormData): Promise<never> {
   const collection = kind === "source" ? "sources" : "recovery-events";
   const encodedName = encodeURIComponent(file.name);
   try {
-    await adminRequest(`/api/v1/admin/midis/${midiId}/${collection}/${recordId}/evidence`, {
+    const result = await adminRequest<{ request_id?: string; status?: string }>(`/api/v1/admin/midis/${midiId}/${collection}/${recordId}/evidence`, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodedName, "X-Evidence-Media-Type": mediaType, "X-Entry-Revision": String(revision) },
       body: Buffer.from(await file.arrayBuffer()),
     }, 60000);
+    if (result.status === "pending" && result.request_id) redirect("/admin/changes?submitted=1");
   } catch (error) { throw errorMessage(error); }
   redirect(`/admin/midis/${midiId}/history?evidence=uploaded`);
 }

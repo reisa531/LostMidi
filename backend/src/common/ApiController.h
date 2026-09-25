@@ -25,6 +25,8 @@ private:
     using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
     void dispatch(Callback callback, std::function<Json::Value()> work, int successStatus = 200);
     void dispatchResponse(Callback callback, std::function<drogon::HttpResponsePtr()> work);
+    Json::Value submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
+                                  std::int64_t entityId, const Json::Value& payload);
     void registerAdminRoutes();
     void registerAdminRecoveryRoutes();
     void registerInstallationRoutes();

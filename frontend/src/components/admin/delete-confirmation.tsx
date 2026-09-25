@@ -5,8 +5,8 @@ import { useActionState, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteEntryAction, type DeleteState } from "@/lib/admin/delete-actions";
 
-export function DeleteConfirmation({ resource, id, revision, name }: {
-  resource: "midis" | "people"; id: string; revision: number; name: string;
+export function DeleteConfirmation({ resource, id, revision, name, reviewRequired = false }: {
+  resource: "midis" | "people"; id: string; revision: number; name: string; reviewRequired?: boolean;
 }) {
   const router = useRouter();
   const headingId = useId();
@@ -23,17 +23,17 @@ export function DeleteConfirmation({ resource, id, revision, name }: {
       return { error: "连接中断，无法确认删除结果，记录可能已删除。请先在新页面核对列表，再决定是否重试。" };
     } finally { submitting.current = false; }
     // Navigate only after acknowledgement, outside the request error handler.
-    if (!next.error && next.deletedId === id) {
-      router.replace(`${listPath}?deleted=1`);
+    if (!next.error && (next.deletedId === id || next.queuedId === id)) {
+      router.replace(next.queuedId === id ? "/admin/changes?submitted=1" : `${listPath}?deleted=1`);
       router.refresh();
     }
     return next;
   }, { error: "" });
-  const busy = pending || Boolean(state.deletedId);
+  const busy = pending || Boolean(state.deletedId || state.queuedId);
 
   return <section aria-labelledby={headingId} className="mt-10 min-w-0 space-y-4 rounded-xl border border-red-200 bg-white p-5 sm:p-6">
     <h2 id={headingId} className="text-lg font-semibold text-red-900">危险操作：删除{label}</h2>
-    <p className="break-words text-sm leading-7">即将将「{name}」（编号 {id}）移入回收站。可以从后台回收站恢复；不会保存上方表单中尚未提交的修改。</p>
+    <p className="break-words text-sm leading-7">{reviewRequired ? `将提交「${name}」（编号 ${id}）的删除申请，超级管理员批准后才会移入回收站。` : `即将将「${name}」（编号 ${id}）移入回收站。可以从后台回收站恢复。`}不会保存上方表单中尚未提交的修改。</p>
     {resource === "midis" ? <div className="space-y-2 text-sm leading-7 text-muted">
       <p>作品署名、来源、寻回记录、文件登记和外部文件都会保留，恢复后继续可用。</p>
     </div> : <p className="text-sm leading-7 text-muted">人物历史昵称会保留，恢复后继续可用。仍有作品署名或寻回记录引用的人物需要先解除引用。</p>}
@@ -44,11 +44,11 @@ export function DeleteConfirmation({ resource, id, revision, name }: {
       <input type="hidden" name="resource" value={resource} />
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="revision" value={revision} />
-      {confirming ? <fieldset disabled={busy} className="min-w-0 space-y-4 disabled:opacity-60">
+    {confirming ? <fieldset disabled={busy} className="min-w-0 space-y-4 disabled:opacity-60">
         <legend className="sr-only">确认删除{label}</legend>
-        <label className="flex items-start gap-3 text-sm leading-7"><input type="checkbox" name="confirmed" value="true" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-2 shrink-0" /><span className="min-w-0 break-words">我确认将{label}「{name}」（编号 {id}）移入回收站，并了解可从后台恢复。</span></label>
+        <label className="flex items-start gap-3 text-sm leading-7"><input type="checkbox" name="confirmed" value="true" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-2 shrink-0" /><span className="min-w-0 break-words">我确认{reviewRequired ? "提交" : "将"}{label}「{name}」（编号 {id}）的删除操作{reviewRequired ? "申请" : "移入回收站"}，并了解可从后台恢复。</span></label>
         <div className="flex flex-wrap gap-5">
-          <button type="submit" disabled={busy || !confirmed} className="rounded-lg bg-red-700 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在移入回收站…" : "移入回收站"}</button>
+          <button type="submit" disabled={busy || !confirmed} className="rounded-lg bg-red-700 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? "提交删除审核" : "移入回收站"}</button>
           <button type="button" disabled={busy} onClick={() => {
             if (!submitting.current) { setConfirming(false); setConfirmed(false); }
           }} className="text-sm underline disabled:opacity-50">取消</button>

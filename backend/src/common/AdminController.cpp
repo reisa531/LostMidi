@@ -3,8 +3,10 @@
 #include "common/Log.h"
 #include "common/Transaction.h"
 #include "auth/Password.h"
+#include "storage/IObjectStorage.h"
 #include <set>
 #include <regex>
+#include <span>
 
 namespace lostmidi {
 namespace {
@@ -35,18 +37,6 @@ std::int64_t revisionOf(const Json::Value& json) {
         throw ApiError(400, "INVALID_INPUT", "A positive revision is required.");
     return json["revision"].asInt64();
 }
-Json::Value proposeChange(const drogon::orm::DbClientPtr& db, const auth::SessionPrincipal& actor,
-                          const std::string& type, std::int64_t entityId, const Json::Value& payload) {
-    const auto rows = db->execSqlSync(
-        "INSERT INTO admin_change_requests(request_type,entity_id,proposed_by,payload) VALUES($1,$2,$3,$4::jsonb) RETURNING id::text,created_at",
-        type, entityId > 0 ? std::optional<std::int64_t>(entityId) : std::nullopt, actor.username, payload.toStyledString());
-    Json::Value result;
-    result["request_id"] = rows[0]["id"].as<std::string>();
-    result["status"] = "pending";
-    result["created_at"] = rows[0]["created_at"].as<std::string>();
-    result["message"] = "Submitted for super administrator review.";
-    return result;
-}
 person::PersonEdit personOf(const Json::Value& json, bool editing) {
     fieldsOf(json, {"display_name", "biography", "aliases", "revision"});
     person::PersonEdit edit;
@@ -71,6 +61,30 @@ person::CreditEdit creditsOf(const Json::Value& json) {
         edit.credits.push_back({idOf(stringOf(credit, "person_id", 19)), "", stringOf(credit, "role", 30)});
     }
     return edit;
+}
+recovery::HistoricalSource sourceOf(const Json::Value& json) {
+    fieldsOf(json, {"revision", "record_id", "website_name", "original_url", "first_seen_at", "last_seen_at", "wayback_url", "notes", "source_type", "credibility", "checked_at"});
+    recovery::HistoricalSource source;
+    source.websiteName = stringOf(json, "website_name", 300);
+    const auto optional = [&](const char* name, std::size_t limit) -> std::optional<std::string> {
+        if (json[name].isNull()) return std::nullopt;
+        return stringOf(json, name, limit);
+    };
+    source.originalUrl = optional("original_url", 4096); source.firstSeenAt = optional("first_seen_at", 40);
+    source.lastSeenAt = optional("last_seen_at", 40); source.waybackUrl = optional("wayback_url", 4096);
+    source.notes = optional("notes", 20000); source.checkedAt = optional("checked_at", 40);
+    if (json["source_type"].isString()) source.sourceType = json["source_type"].asString();
+    if (json["credibility"].isInt()) source.credibility = json["credibility"].asInt();
+    return source;
+}
+recovery::RecoveryEvent eventOf(const Json::Value& json) {
+    fieldsOf(json, {"revision", "record_id", "recovered_at", "recovered_by", "story", "evidence"});
+    recovery::RecoveryEvent event;
+    if (!json["recovered_at"].isNull()) event.recoveredAt = stringOf(json, "recovered_at", 40);
+    if (!json["recovered_by"].isNull()) event.recoveredBy = idOf(stringOf(json, "recovered_by", 19));
+    event.story = stringOf(json, "story", 20000);
+    if (!json["evidence"].isNull()) event.evidence = stringOf(json, "evidence", 20000);
+    return event;
 }
 midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
     const std::set<std::string> allowed{"title","slug","description","estimated_year","archive_status","copyright_status","license","rights_holder","distribution_permission","revision"};
@@ -142,15 +156,122 @@ void ApiController::registerAdminRoutes() {
             } else {
                 try {
                     Json::Value applied;
-                    if (type == "midi.create") applied = toJson(writer_.create(entryOf(payload, false)));
+                    if (type == "midi.create") {
+                        auto entryPayload = payload;
+                        std::optional<midi::MidiCreationFile> upload;
+                        const auto hasRequestId = payload["request_id"].isString();
+                        const auto creationRequestId = hasRequestId ? payload["request_id"].asString() : std::string{};
+                        if (payload["file"].isObject()) {
+                            const auto& file = payload["file"];
+                            fieldsOf(file, {"filename", "content_base64", "rights_confirmed"});
+                            if (!file["filename"].isString() || !file["content_base64"].isString() || !file["rights_confirmed"].isBool())
+                                throw ApiError(400, "INVALID_FILE", "The proposed MIDI file is invalid.");
+                            upload.emplace(); upload->filename = file["filename"].asString();
+                            upload->bytes = midi::decodeMidiContentBase64(file["content_base64"].asString());
+                            upload->rightsConfirmed = file["rights_confirmed"].asBool();
+                            entryPayload.removeMember("file");
+                        }
+                        entryPayload.removeMember("request_id");
+                        if (upload || hasRequestId) {
+                            if (upload) { midi::validateMidiFilename(upload->filename); midi::validateMidi(upload->bytes); }
+                            applied = toJson(importer_.create(entryOf(entryPayload, false), creationRequestId, upload));
+                        }
+                        else applied = toJson(writer_.create(entryOf(entryPayload, false)));
+                    }
                     else if (type == "midi.update") applied = toJson(writer_.update(entity, entryOf(payload, true)));
                     else if (type == "person.create") applied = toJson(personWriter_.save(0, personOf(payload, false)));
                     else if (type == "person.update") applied = toJson(personWriter_.save(entity, personOf(payload, true)));
                     else if (type == "credits.update") applied = toJson(personWriter_.saveCredits(entity, creditsOf(payload)));
+                    else if (type == "midi.delete") {
+                        writer_.remove(entity, revisionOf(payload), reviewer.username);
+                        applied["deleted_id"] = std::to_string(entity);
+                    }
+                    else if (type == "person.delete") {
+                        personWriter_.remove(entity, revisionOf(payload), reviewer.username);
+                        applied["deleted_id"] = std::to_string(entity);
+                    }
+                    else if (type == "midi.restore" || type == "person.restore") {
+                        const bool midiEntity = type == "midi.restore";
+                        TransactionScope tx(db_);
+                        const auto rows = midiEntity
+                            ? tx.db->execSqlSync("UPDATE midi_entries SET deleted_at=NULL,deleted_by=NULL WHERE id=$1 AND deleted_at IS NOT NULL RETURNING title AS label", entity)
+                            : tx.db->execSqlSync("UPDATE people SET deleted_at=NULL,deleted_by=NULL WHERE id=$1 AND deleted_at IS NOT NULL RETURNING display_name AS label", entity);
+                        if (rows.empty()) throw ApiError(404, "TRASH_RECORD_NOT_FOUND", "The deleted record no longer exists.");
+                        tx.db->execSqlSync("INSERT INTO admin_audit_log(actor,action,entity_type,entity_id,entity_label) VALUES($1,'restore',$2,$3,$4)", reviewer.username, midiEntity ? "midi" : "person", entity, rows[0]["label"].as<std::string>());
+                        tx.commit(); applied["restored_id"] = std::to_string(entity); applied["entity_type"] = midiEntity ? "midi" : "person";
+                    }
+                    else if (type == "history.source.create" || type == "history.source.update" || type == "history.source.delete") {
+                        const auto revision = revisionOf(payload);
+                        const auto recordId = payload["record_id"].isString() ? idOf(payload["record_id"].asString()) : 0;
+                        auto body = payload; body.removeMember("record_id");
+                        if (type == "history.source.delete") applied = toJson(recoveryWriter_.deleteSource(entity, recordId, revision));
+                        else applied = toJson(recoveryWriter_.saveSource(entity, recordId, revision, sourceOf(body)));
+                    }
+                    else if (type == "history.event.create" || type == "history.event.update" || type == "history.event.delete") {
+                        const auto revision = revisionOf(payload);
+                        const auto recordId = payload["record_id"].isString() ? idOf(payload["record_id"].asString()) : 0;
+                        auto body = payload; body.removeMember("record_id");
+                        if (type == "history.event.delete") applied = toJson(recoveryWriter_.deleteEvent(entity, recordId, revision));
+                        else applied = toJson(recoveryWriter_.saveEvent(entity, recordId, revision, eventOf(body)));
+                    }
+                    else if (type == "file.import") {
+                        fieldsOf(payload, {"revision", "filename", "content_base64", "rights_confirmed"});
+                        const auto filename = stringOf(payload, "filename", 255);
+                        const auto encoded = stringOf(payload, "content_base64", 1400000);
+                        if (!payload["rights_confirmed"].isBool()) throw ApiError(400, "INVALID_INPUT", "Distribution confirmation is required.");
+                        const auto bytes = midi::decodeMidiContentBase64(encoded);
+                        midi::validateMidiFilename(filename); midi::validateMidi(bytes);
+                        if (!payload["rights_confirmed"].asBool()) throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
+                        const auto result = importer_.import(entity, revisionOf(payload), filename, bytes, payload["rights_confirmed"].asBool());
+                        applied["file"] = toJson(result.file); applied["duplicate"] = result.duplicate; applied["revision"] = Json::Int64(result.revision);
+                    }
+                    else if (type == "evidence.upload") {
+                        fieldsOf(payload, {"revision", "record_id", "relation_type", "filename", "media_type", "content_base64", "sha256"});
+                        const auto recordId = idOf(stringOf(payload, "record_id", 19));
+                        const auto relationType = stringOf(payload, "relation_type", 10);
+                        if (relationType != "source" && relationType != "event") throw ApiError(400, "INVALID_INPUT", "Evidence relation type is invalid.");
+                        const auto filename = stringOf(payload, "filename", 255); const auto mediaType = stringOf(payload, "media_type", 64);
+                        const auto bytes = midi::decodeMidiContentBase64(stringOf(payload, "content_base64", 1400000));
+                        const auto digest = storage::sha256(bytes);
+                        if (digest != stringOf(payload, "sha256", 64) || bytes.empty() || bytes.size() > 1024 * 1024)
+                            throw ApiError(400, "INVALID_FILE", "Evidence file integrity check failed.");
+                        if (filename.empty() || filename.size() > 255 || filename == "." || filename == ".." ||
+                            std::any_of(filename.begin(), filename.end(), [](unsigned char c) { return c < 0x20 || c == 0x7f || c == '/' || c == '\\'; }))
+                            throw ApiError(400, "INVALID_FILE", "Evidence filename must be a safe basename of at most 255 bytes.");
+                        if (mediaType == "application/pdf") {
+                            if (bytes.size() < 5 || !std::equal(bytes.begin(), bytes.begin() + 5, "%PDF-", [](std::byte a, char b) { return std::to_integer<unsigned char>(a) == static_cast<unsigned char>(b); })) throw ApiError(400, "INVALID_FILE", "PDF signature is invalid.");
+                        } else if (mediaType == "image/png") {
+                            constexpr unsigned char signature[] = {0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+                            if (bytes.size() < sizeof(signature) || !std::equal(std::begin(signature), std::end(signature), bytes.begin(), [](unsigned char a, std::byte b) { return a == std::to_integer<unsigned char>(b); })) throw ApiError(400, "INVALID_FILE", "PNG signature is invalid.");
+                        } else if (mediaType == "image/jpeg") {
+                            if (bytes.size() < 3 || std::to_integer<unsigned char>(bytes[0]) != 0xff || std::to_integer<unsigned char>(bytes[1]) != 0xd8 || std::to_integer<unsigned char>(bytes[2]) != 0xff) throw ApiError(400, "INVALID_FILE", "JPEG signature is invalid.");
+                        } else if (mediaType != "text/plain") throw ApiError(415, "INVALID_FILE", "Unsupported evidence media type.");
+                        const auto proposedRevision = revisionOf(payload);
+                        TransactionScope tx(db_);
+                        const auto parent = tx.db->execSqlSync("SELECT 1 FROM midi_entries WHERE id=$1 AND deleted_at IS NULL", entity);
+                        if (parent.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "The MIDI entry no longer exists.");
+                        const auto relation = relationType == "source"
+                            ? tx.db->execSqlSync("SELECT 1 FROM historical_sources WHERE midi_id=$1 AND id=$2", entity, recordId)
+                            : tx.db->execSqlSync("SELECT 1 FROM recovery_events WHERE midi_id=$1 AND id=$2", entity, recordId);
+                        if (relation.empty()) throw ApiError(404, "HISTORY_RECORD_NOT_FOUND", "The evidence parent record no longer exists.");
+                        auto existing = relationType == "source"
+                            ? tx.db->execSqlSync("SELECT id,original_filename,media_type,sha256,file_size,created_at FROM historical_evidence WHERE midi_id=$1 AND source_id=$2 AND sha256=$3", entity, recordId, digest)
+                            : tx.db->execSqlSync("SELECT id,original_filename,media_type,sha256,file_size,created_at FROM historical_evidence WHERE midi_id=$1 AND recovery_event_id=$2 AND sha256=$3", entity, recordId, digest);
+                        if (existing.empty()) {
+                            const auto bumped = tx.db->execSqlSync("UPDATE midi_entries SET updated_at=updated_at WHERE id=$1 AND revision=$2 AND deleted_at IS NULL RETURNING revision", entity, proposedRevision);
+                            if (bumped.empty()) throw ApiError(409, "STALE_ENTRY", "Entry changed elsewhere. Reload before saving.");
+                            const auto encoded = payload["content_base64"].asString();
+                            existing = relationType == "source"
+                                ? tx.db->execSqlSync("INSERT INTO historical_evidence(midi_id,source_id,original_filename,media_type,sha256,file_size,content,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,decode($7,'base64'),$8) RETURNING id,original_filename,media_type,sha256,file_size,created_at", entity, recordId, filename, mediaType, digest, static_cast<std::int32_t>(bytes.size()), encoded, proposedBy)
+                                : tx.db->execSqlSync("INSERT INTO historical_evidence(midi_id,recovery_event_id,original_filename,media_type,sha256,file_size,content,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,decode($7,'base64'),$8) RETURNING id,original_filename,media_type,sha256,file_size,created_at", entity, recordId, filename, mediaType, digest, static_cast<std::int32_t>(bytes.size()), encoded, proposedBy);
+                        }
+                        tx.commit();
+                        applied["evidence"] = toJson(recovery::EvidenceFile{existing[0]["id"].as<std::int64_t>(), existing[0]["original_filename"].as<std::string>(), existing[0]["media_type"].as<std::string>(), existing[0]["sha256"].as<std::string>(), existing[0]["file_size"].as<std::uint32_t>(), existing[0]["created_at"].as<std::string>()});
+                    }
                     else throw ApiError(422, "REVIEW_TYPE_UNSUPPORTED", "This request type cannot be approved through the review panel.");
                     db_->execSqlSync("UPDATE admin_change_requests SET status='approved',review_note=$2,reviewed_by=$3,reviewed_at=CURRENT_TIMESTAMP,result=$4::jsonb WHERE id=$1::uuid", requestId, note, reviewer.username, applied.toStyledString());
                 } catch (const ApiError& error) {
-                    const auto status = error.code == "STALE_ENTRY" ? "stale" : "failed";
+                    const auto status = (error.code == "STALE_ENTRY" || error.code == "STALE_PERSON") ? "stale" : "failed";
                     db_->execSqlSync("UPDATE admin_change_requests SET status=$2,review_note=$3,reviewed_by=$4,reviewed_at=CURRENT_TIMESTAMP WHERE id=$1::uuid", requestId, status, std::string(error.what()).substr(0, 2000), reviewer.username);
                     throw;
                 }
@@ -202,16 +323,19 @@ void ApiController::registerAdminRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/admin/trash/{1}/{2}/restore", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string type, std::string value) {
         dispatch(std::move(callback), [this, request, type = std::move(type), value = std::move(value)] {
-            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization")).username;
+            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (type != "midi" && type != "person") throw ApiError(400, "INVALID_INPUT", "Unknown trash record type.");
             const auto id = idOf(value);
+            if (actor.role == "admin") {
+                return submitAdminChange(actor, type + ".restore", id, Json::Value(Json::objectValue));
+            }
             TransactionScope tx(db_);
             const auto rows = type == "midi"
                 ? tx.db->execSqlSync("UPDATE midi_entries SET deleted_at=NULL,deleted_by=NULL WHERE id=$1 AND deleted_at IS NOT NULL RETURNING title AS label", id)
                 : tx.db->execSqlSync("UPDATE people SET deleted_at=NULL,deleted_by=NULL WHERE id=$1 AND deleted_at IS NOT NULL RETURNING display_name AS label", id);
             if (rows.empty()) throw ApiError(404, "TRASH_RECORD_NOT_FOUND", "The deleted record no longer exists.");
             const auto label = rows[0]["label"].as<std::string>();
-                tx.db->execSqlSync("INSERT INTO admin_audit_log(actor,action,entity_type,entity_id,entity_label) VALUES($1,'restore',$2,$3,$4)", actor, type, id, label);
+                tx.db->execSqlSync("INSERT INTO admin_audit_log(actor,action,entity_type,entity_id,entity_label) VALUES($1,'restore',$2,$3,$4)", actor.username, type, id, label);
             tx.commit();
             Json::Value result; result["restored_id"] = std::to_string(id); result["entity_type"] = type; return result;
         });
@@ -221,7 +345,7 @@ void ApiController::registerAdminRoutes() {
             const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (request->method() == drogon::Post) {
                 const auto body = bodyOf(request);
-                if (actor.role == "admin") return proposeChange(db_, actor, "person.create", 0, body);
+                if (actor.role == "admin") return submitAdminChange(actor, "person.create", 0, body);
                 const auto result = personWriter_.save(0, personOf(body, false));
                 logEvent("person_created"); return toJson(result);
             }
@@ -244,15 +368,15 @@ void ApiController::registerAdminRoutes() {
             const auto actor = actorPrincipal.username;
             if (request->method() == drogon::Get) return toJson(personWriter_.get(idOf(id)));
             if (request->method() == drogon::Delete) {
-                if (actorPrincipal.role != "super_admin") throw ApiError(403, "SUPER_ADMIN_REQUIRED", "Deletion requires a super administrator.");
                 const auto body = bodyOf(request); fieldsOf(body, {"revision"});
                 const auto personId = idOf(id);
+                if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "person.delete", personId, body);
                 personWriter_.remove(personId, revisionOf(body), actor);
                 logEvent("person_deleted");
                 Json::Value result; result["deleted_id"] = std::to_string(personId); return result;
             }
             const auto body = bodyOf(request);
-            if (actorPrincipal.role == "admin") return proposeChange(db_, actorPrincipal, "person.update", idOf(id), body);
+            if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "person.update", idOf(id), body);
             const auto result = personWriter_.save(idOf(id), personOf(body, true));
             logEvent("person_updated"); return toJson(result);
         });
@@ -262,7 +386,7 @@ void ApiController::registerAdminRoutes() {
             const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return toJson(personWriter_.getCredits(idOf(id)));
             const auto body = bodyOf(request);
-            if (actor.role == "admin") return proposeChange(db_, actor, "credits.update", idOf(id), body);
+            if (actor.role == "admin") return submitAdminChange(actor, "credits.update", idOf(id), body);
             const auto result = personWriter_.saveCredits(idOf(id), creditsOf(body));
             logEvent("midi_credits_updated"); return toJson(result);
         });
@@ -420,17 +544,15 @@ void ApiController::registerAdminRoutes() {
                 throw ApiError(400, "INVALID_INPUT", "A file requires request_id for safe retries.");
             if (!body.isMember("request_id")) {
                 if (actor.role == "admin") {
-                    if (body.isMember("file")) throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a super administrator.");
-                    body.removeMember("request_id");
-                    return proposeChange(db_, actor, "midi.create", 0, body);
+                    if (body.isMember("file"))
+                        throw ApiError(400, "INVALID_INPUT", "A request_id is required when proposing a MIDI file.");
+                    return submitAdminChange(actor, "midi.create", 0, body);
                 }
                 const auto entry = writer_.create(entryOf(body, false));
                 logEvent("midi_created"); return toJson(entry);
             }
             if (actor.role == "admin") {
-                if (hasFile) throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a super administrator.");
-                body.removeMember("request_id");
-                return proposeChange(db_, actor, "midi.create", 0, body);
+                return submitAdminChange(actor, "midi.create", 0, body);
             }
             const auto requestId = stringOf(body, "request_id", 36);
             body.removeMember("request_id");
@@ -456,15 +578,15 @@ void ApiController::registerAdminRoutes() {
             const auto actorPrincipal = auth_.requirePrincipal(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return toJson(writer_.get(idOf(id)));
             if (request->method() == drogon::Delete) {
-                if (actorPrincipal.role != "super_admin") throw ApiError(403, "SUPER_ADMIN_REQUIRED", "Deletion requires a super administrator.");
                 const auto body = bodyOf(request); fieldsOf(body, {"revision"});
                 const auto midiId = idOf(id);
+                if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "midi.delete", midiId, body);
                 writer_.remove(midiId, revisionOf(body), actorPrincipal.username);
                 logEvent("midi_deleted");
                 Json::Value result; result["deleted_id"] = std::to_string(midiId); return result;
             }
             const auto body = bodyOf(request);
-            if (actorPrincipal.role == "admin") return proposeChange(db_, actorPrincipal, "midi.update", idOf(id), body);
+            if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "midi.update", idOf(id), body);
             const auto entry = writer_.update(idOf(id), entryOf(body, true));
             logEvent("midi_updated"); return toJson(entry);
         });

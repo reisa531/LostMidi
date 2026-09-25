@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { ApiError } from "@/lib/api/client";
 import { adminRequest } from "./auth";
 
-export type RestoreState = { error: string; restoredId?: string };
+export type RestoreState = { error: string; restoredId?: string; queuedId?: string };
 
 export async function restoreTrashAction(_previous: RestoreState, form: FormData): Promise<RestoreState> {
   const type = form.get("type"), id = form.get("id");
@@ -14,7 +14,8 @@ export async function restoreTrashAction(_previous: RestoreState, form: FormData
     if ((type !== "midi" && type !== "person") || typeof id !== "string" || !/^[1-9]\d{0,18}$/.test(id) ||
         BigInt(id) > BigInt("9223372036854775807") || form.getAll("type").length !== 1 || form.getAll("id").length !== 1)
       throw new ApiError(400, "INVALID_INPUT");
-    const result = await adminRequest<{ restored_id: string }>(`/api/v1/admin/trash/${type}/${id}/restore`, { method: "POST", redirect: "error" });
+    const result = await adminRequest<{ restored_id?: string; request_id?: string; status?: string }>(`/api/v1/admin/trash/${type}/${id}/restore`, { method: "POST", redirect: "error" });
+    if (result.status === "pending" && result.request_id) return { error: "", queuedId: id };
     if (result.restored_id !== id) throw new ApiError(502, "INVALID_RESPONSE");
     return { error: "", restoredId: id };
   } catch (error) {

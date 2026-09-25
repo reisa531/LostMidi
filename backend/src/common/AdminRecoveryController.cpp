@@ -135,8 +135,9 @@ void ApiController::registerAdminRecoveryRoutes() {
     drogon::app().registerHandler("/api/v1/admin/midis/{1}/sources",
         [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
             dispatch(std::move(callback), [this, request, id = std::move(id)] {
-                auth_.requireSuperAdmin(request->getHeader("authorization"));
+                const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
                 const auto body = bodyOf(request);
+                if (actor.role == "admin") return submitAdminChange(actor, "history.source.create", idOf(id), body);
                 const auto result = recoveryWriter_.saveSource(idOf(id), 0, revisionOf(body), sourceOf(body));
                 logEvent("historical_source_created");
                 return toJson(result);
@@ -145,14 +146,16 @@ void ApiController::registerAdminRecoveryRoutes() {
     drogon::app().registerHandler("/api/v1/admin/midis/{1}/sources/{2}",
         [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id, std::string sourceId) {
             dispatch(std::move(callback), [this, request, id = std::move(id), sourceId = std::move(sourceId)] {
-                auth_.requireSuperAdmin(request->getHeader("authorization"));
-                const auto body = bodyOf(request);
+                const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+                auto body = bodyOf(request);
                 if (request->method() == drogon::Delete) {
                     fieldsOf(body, {"revision"});
+                    if (actor.role == "admin") { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.delete", idOf(id), body); }
                     const auto result = recoveryWriter_.deleteSource(idOf(id), idOf(sourceId), revisionOf(body));
                     logEvent("historical_source_deleted");
                     return toJson(result);
                 }
+                if (actor.role == "admin") { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.update", idOf(id), body); }
                 const auto result = recoveryWriter_.saveSource(idOf(id), idOf(sourceId), revisionOf(body), sourceOf(body));
                 logEvent("historical_source_updated");
                 return toJson(result);
@@ -161,8 +164,9 @@ void ApiController::registerAdminRecoveryRoutes() {
     drogon::app().registerHandler("/api/v1/admin/midis/{1}/recovery-events",
         [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
             dispatch(std::move(callback), [this, request, id = std::move(id)] {
-                auth_.requireSuperAdmin(request->getHeader("authorization"));
+                const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
                 const auto body = bodyOf(request);
+                if (actor.role == "admin") return submitAdminChange(actor, "history.event.create", idOf(id), body);
                 const auto result = recoveryWriter_.saveEvent(idOf(id), 0, revisionOf(body), eventOf(body));
                 logEvent("recovery_event_created");
                 return toJson(result);
@@ -171,14 +175,16 @@ void ApiController::registerAdminRecoveryRoutes() {
     drogon::app().registerHandler("/api/v1/admin/midis/{1}/recovery-events/{2}",
         [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id, std::string eventId) {
             dispatch(std::move(callback), [this, request, id = std::move(id), eventId = std::move(eventId)] {
-                auth_.requireSuperAdmin(request->getHeader("authorization"));
-                const auto body = bodyOf(request);
+                const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+                auto body = bodyOf(request);
                 if (request->method() == drogon::Delete) {
                     fieldsOf(body, {"revision"});
+                    if (actor.role == "admin") { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.delete", idOf(id), body); }
                     const auto result = recoveryWriter_.deleteEvent(idOf(id), idOf(eventId), revisionOf(body));
                     logEvent("recovery_event_deleted");
                     return toJson(result);
                 }
+                if (actor.role == "admin") { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.update", idOf(id), body); }
                 const auto result = recoveryWriter_.saveEvent(idOf(id), idOf(eventId), revisionOf(body), eventOf(body));
                 logEvent("recovery_event_updated");
                 return toJson(result);
@@ -195,7 +201,7 @@ void ApiController::registerAdminRecoveryRoutes() {
         }
         auto slot = std::shared_ptr<int>(new int(0), [this](int* value) { delete value; --importsPending_; });
         dispatch(std::move(callback), [this, request, midiValue = std::move(midiValue), relationId = std::move(relationId), source, slot] {
-            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization")).username;
+            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (request->getHeader("content-type") != "application/octet-stream") throw ApiError(415, "INVALID_FILE", "An application/octet-stream body is required.");
             const auto bytesText = request->body();
             const auto bytes = std::as_bytes(std::span(bytesText.data(), bytesText.size()));
@@ -206,6 +212,12 @@ void ApiController::registerAdminRecoveryRoutes() {
             const auto childId = idOf(relationId);
             const auto revision = idOf(request->getHeader("x-entry-revision"));
             const auto digest = storage::sha256(bytes);
+            if (actor.role == "admin") {
+                Json::Value payload; payload["revision"] = Json::Int64(revision); payload["record_id"] = std::to_string(childId);
+                payload["relation_type"] = source ? "source" : "event"; payload["filename"] = filename;
+                payload["media_type"] = mediaType; payload["content_base64"] = base64(bytes); payload["sha256"] = digest;
+                return submitAdminChange(actor, "evidence.upload", midiId, payload);
+            }
             TransactionScope tx(db_);
             const auto parent = tx.db->execSqlSync("SELECT 1 FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR SHARE", midiId);
             if (parent.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "MIDI entry does not exist.");
@@ -224,8 +236,8 @@ void ApiController::registerAdminRecoveryRoutes() {
             if (!duplicate) {
                 nextRevision = advanceEntry(tx.db, midiId, revision);
                 saved = source
-                    ? tx.db->execSqlSync("INSERT INTO historical_evidence(midi_id,source_id,original_filename,media_type,sha256,file_size,content,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,decode($7,'base64'),$8) RETURNING id,original_filename,media_type,sha256,file_size,created_at", midiId, childId, filename, mediaType, digest, static_cast<std::int32_t>(bytes.size()), base64(bytes), actor)
-                    : tx.db->execSqlSync("INSERT INTO historical_evidence(midi_id,recovery_event_id,original_filename,media_type,sha256,file_size,content,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,decode($7,'base64'),$8) RETURNING id,original_filename,media_type,sha256,file_size,created_at", midiId, childId, filename, mediaType, digest, static_cast<std::int32_t>(bytes.size()), base64(bytes), actor);
+                    ? tx.db->execSqlSync("INSERT INTO historical_evidence(midi_id,source_id,original_filename,media_type,sha256,file_size,content,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,decode($7,'base64'),$8) RETURNING id,original_filename,media_type,sha256,file_size,created_at", midiId, childId, filename, mediaType, digest, static_cast<std::int32_t>(bytes.size()), base64(bytes), actor.username)
+                    : tx.db->execSqlSync("INSERT INTO historical_evidence(midi_id,recovery_event_id,original_filename,media_type,sha256,file_size,content,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,decode($7,'base64'),$8) RETURNING id,original_filename,media_type,sha256,file_size,created_at", midiId, childId, filename, mediaType, digest, static_cast<std::int32_t>(bytes.size()), base64(bytes), actor.username);
             }
             tx.commit();
             Json::Value result; result["evidence"] = toJson(recovery::EvidenceFile{saved[0]["id"].as<std::int64_t>(),

@@ -9,6 +9,7 @@ import { adminRequest } from "./auth";
 export type MidiFileImportState = {
   error: string;
   unauthorized?: boolean;
+  queued?: boolean;
   result?: { fileId: string; filename: string; duplicate: boolean; revision: number };
 };
 
@@ -55,15 +56,20 @@ export async function importMidiFileAction(_previous: MidiFileImportState, form:
       throw new ApiError(400, "INVALID_FILE");
     if (file.size > 1048576) throw new ApiError(413, "FILE_TOO_LARGE");
 
-    const imported = await adminRequest<{ file: MidiDetail["files"][number]; duplicate: boolean; revision: number }>(`/api/v1/admin/midis/${id}/files`, {
+    const imported = await adminRequest<{ request_id?: string; status?: string; file?: MidiDetail["files"][number]; duplicate?: boolean; revision?: number }>(`/api/v1/admin/midis/${id}/files`, {
       method: "POST", redirect: "error",
       headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(file.name),
         "X-Entry-Revision": revision, "X-Rights-Confirmed": "true" },
       body: await file.arrayBuffer(),
     }, 60000);
+    if (imported.status === "pending" && imported.request_id) {
+      revalidatePath("/admin/changes");
+      return { error: "", queued: true };
+    }
+    if (!imported.file || typeof imported.revision !== "number") throw new ApiError(502, "INVALID_RESPONSE");
     revalidatePath(`/admin/midis/${id}/files`);
     // Return only the result metadata needed by the form, never storage credentials or locations.
     return { error: "", result: { fileId: imported.file.id, filename: imported.file.original_filename,
-      duplicate: imported.duplicate, revision: imported.revision } };
+      duplicate: Boolean(imported.duplicate), revision: imported.revision } };
   } catch (error) { return errorState(error); }
 }

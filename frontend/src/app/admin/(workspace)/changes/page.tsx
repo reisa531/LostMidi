@@ -4,18 +4,40 @@ import { getChangeRequests, reviewChangeAction } from "@/lib/admin/review-action
 
 const labels: Record<string, string> = {
   "midi.create": "新增 MIDI 档案", "midi.update": "修改 MIDI 档案", "person.create": "新增人物",
-  "person.update": "修改人物", "credits.update": "修改作品署名",
+  "midi.delete": "删除 MIDI 档案", "midi.restore": "恢复 MIDI 档案", "person.update": "修改人物",
+  "person.delete": "删除人物", "person.restore": "恢复人物", "credits.update": "修改作品署名",
+  "history.source.create": "新增历史来源", "history.source.update": "修改历史来源", "history.source.delete": "删除历史来源",
+  "history.event.create": "新增寻回记录", "history.event.update": "修改寻回记录", "history.event.delete": "删除寻回记录",
+  "evidence.upload": "上传历史证据附件", "file.import": "导入 MIDI 文件",
 };
 
-export default async function ChangeReviewPage() {
+function reviewPayload(raw: unknown) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const payload = { ...(raw as Record<string, unknown>) };
+  for (const key of ["content_base64"]) {
+    const value = payload[key];
+    if (typeof value === "string") payload[key] = `[已提交附件 ${String(payload.filename ?? "")}，${Math.floor(value.length * 3 / 4).toLocaleString("zh-CN")} 字节，SHA-256 ${String(payload.sha256 ?? "由审批时复核")}]`;
+  }
+  const file = payload.file;
+  if (file && typeof file === "object" && !Array.isArray(file)) {
+    const clean = { ...(file as Record<string, unknown>) };
+    if (typeof clean.content_base64 === "string") clean.content_base64 = `[MIDI 文件，${Math.floor(clean.content_base64.length * 3 / 4).toLocaleString("zh-CN")} 字节，审批时验证]`;
+    payload.file = clean;
+  }
+  return payload;
+}
+
+export default async function ChangeReviewPage({ searchParams }: { searchParams: Promise<{ submitted?: string }> }) {
   const admin = await requireAdmin();
+  const { submitted } = await searchParams;
   const requests = await getChangeRequests();
   return <>
-    <AdminPageHeader eyebrow="Review" title="内容审核" description={admin.role === "super_admin" ? "审核管理员提交的档案、人物与署名变更。批准后会立即发布。" : "查看自己提交的变更及审核结果。"} />
+    <AdminPageHeader eyebrow="Review" title="内容审核" description={admin.role === "super_admin" ? "审核管理员提交的内容申请。批准后会执行申请并按对应权限公开。" : "查看自己提交的内容申请及审核结果。"} />
+    {submitted === "1" && <p role="status" className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">申请已提交，超级管理员审核通过后才会执行。</p>}
     <div className="space-y-4">
       {requests.length === 0 ? <AdminPanel title="审核队列"><p className="text-sm text-muted">目前没有变更申请。</p></AdminPanel> : requests.map(request => {
         let payload: unknown = request.payload;
-        try { payload = JSON.parse(request.payload); } catch { /* preserve the stored text for diagnosis */ }
+        try { payload = reviewPayload(JSON.parse(request.payload)); } catch { /* preserve the stored text for diagnosis */ }
         return <AdminPanel key={request.id} title={labels[request.type] ?? request.type}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><p className="text-xs text-muted">提交者 {request.proposed_by} · {new Date(request.created_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · {request.status}</p></div>

@@ -316,7 +316,7 @@ page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回
 {"error": {"code": "MIDI_NOT_FOUND", "message": "The requested MIDI entry does not exist."}}
 ```
 
-异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志不记录连接串或异常原文。公开查询和获准文件下载无需登录；后台接口在 C++ 验证角色。管理员的 MIDI/人物基础资料及作品署名修改先经超级管理员审核，其他内容修改限超级管理员。无公开上传或试听接口；导入、下载及清理契约见 [RUN.md](RUN.md)，其他后台合约见 [后台平台说明](docs/admin.md)。
+异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志不记录连接串或异常原文。公开查询和获准文件下载无需登录；后台接口在 C++ 验证角色。管理员提交的所有内容变更及删除、恢复、文件操作均进入超级管理员审核队列。无公开上传或试听接口；导入、下载及清理契约见 [RUN.md](RUN.md)，其他后台合约见 [后台平台说明](docs/admin.md)。
 
 ## Testing
 
@@ -384,7 +384,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。支持多位超级管理员和管理员：管理员提交的 MIDI/人物资料及作品署名修改需超级管理员审核发布；删除、来源/寻回、证据和 MIDI 文件操作当前由超级管理员执行。访问者匿名只读。浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证角色。稳定 UUID 是作品和人物的公开 canonical ID，旧链接兼容跳转。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
+统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。支持多位超级管理员和管理员：管理员提交的所有内容修改、删除、恢复、来源/寻回、证据和 MIDI 文件导入申请均由超级管理员审核执行。访问者匿名只读。浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证角色。稳定 UUID 是作品和人物的公开 canonical ID，旧链接兼容跳转。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 
