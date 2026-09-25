@@ -222,6 +222,12 @@ EventWriteResult RecoveryWriteService::saveEvent(std::int64_t midiId, std::int64
     optionalText(event.evidence, 20000);
     utcTimestamp(event.recoveredAt);
     if (event.recoveredBy) positive(*event.recoveredBy);
+    if (event.recoveredByName) {
+        if (event.recoveredByName->size() > 300 || event.recoveredByName->find('\0') != std::string::npos) invalid("Recovered-by name must be at most 300 UTF-8 bytes.");
+        const auto first = event.recoveredByName->find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) event.recoveredByName.reset();
+        else *event.recoveredByName = event.recoveredByName->substr(first, event.recoveredByName->find_last_not_of(" \t\r\n") - first + 1);
+    }
     noNul(event.createdAt);
     if (event.recoveredByName) noNul(*event.recoveredByName);
     return repository_.saveEvent(midiId, eventId, revision, event);

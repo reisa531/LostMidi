@@ -114,10 +114,12 @@ recovery::HistoricalSource sourceOf(const Json::Value& json) {
     return source;
 }
 recovery::RecoveryEvent eventOf(const Json::Value& json) {
-    fieldsOf(json, {"revision", "recovered_at", "recovered_by", "story", "evidence"});
+    fieldsOf(json, {"revision", "recovered_at", "recovered_by", "recovered_by_name", "story", "evidence"});
     recovery::RecoveryEvent event;
     event.recoveredAt = optionalText(json, "recovered_at");
     if (!json["recovered_by"].isNull()) event.recoveredBy = idOf(stringOf(json, "recovered_by"));
+    if (json.isMember("recovered_by_name") && !json["recovered_by_name"].isNull()) event.recoveredByName = stringOf(json, "recovered_by_name");
+    if (event.recoveredBy && event.recoveredByName) throw ApiError(400, "INVALID_INPUT", "Use either recovered_by or recovered_by_name, not both.");
     event.story = stringOf(json, "story");
     event.evidence = optionalText(json, "evidence");
     return event;
@@ -261,7 +263,7 @@ void ApiController::registerAdminRecoveryRoutes() {
             dispatchResponse(std::move(callback), [this, request, midiValue = std::move(midiValue), evidenceValue = std::move(evidenceValue)] {
                 auth_.require(request->getHeader("authorization"));
                 const auto midiId = idOf(midiValue); const auto evidenceId = idOf(evidenceValue);
-                const auto rows = db_->execSqlSync("SELECT original_filename,media_type,sha256,file_size,encode(content,'base64') AS body FROM historical_evidence WHERE midi_id=$1 AND id=$2 AND EXISTS(SELECT 1 FROM midi_entries WHERE id=$1 AND deleted_at IS NULL)", midiId, evidenceId);
+                const auto rows = db_->execSqlSync("SELECT original_filename,media_type,sha256,file_size,replace(encode(content,'base64'),chr(10),'') AS body FROM historical_evidence WHERE midi_id=$1 AND id=$2 AND EXISTS(SELECT 1 FROM midi_entries WHERE id=$1 AND deleted_at IS NULL)", midiId, evidenceId);
                 if (rows.empty()) throw ApiError(404, "EVIDENCE_NOT_FOUND", "Evidence file does not exist.");
                 const auto bytes = midi::decodeMidiContentBase64(rows[0]["body"].as<std::string>());
                 const auto expectedDigest = rows[0]["sha256"].as<std::string>();

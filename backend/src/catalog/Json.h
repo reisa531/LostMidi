@@ -10,6 +10,7 @@ inline Json::Value toJson(const CatalogEntry& entry) {
     json["slug"] = entry.slug;
     json["title"] = entry.title;
     json["estimated_year"] = entry.estimatedYear ? Json::Value(*entry.estimatedYear) : Json::Value(Json::nullValue);
+    json["estimated_date"] = entry.estimatedDate ? Json::Value(*entry.estimatedDate) : Json::Value(Json::nullValue);
     json["archive_status"] = entry.archiveStatus;
     json["updated_at"] = entry.updatedAt;
     json["credits"] = Json::Value(Json::arrayValue);
@@ -32,6 +33,8 @@ inline Json::Value toJson(const Person& person) {
     json["public_id"] = person.publicId;
     json["display_name"] = person.displayName;
     json["biography"] = person.biography ? Json::Value(*person.biography) : Json::Value(Json::nullValue);
+    json["summary"] = person.summary ? Json::Value(*person.summary) : Json::Value(Json::nullValue);
+    json["updated_at"] = person.updatedAt;
     json["aliases"] = Json::Value(Json::arrayValue);
     for (const auto& alias : person.aliases) json["aliases"].append(alias);
     json["midi_count"] = Json::Int64(person.midiCount);

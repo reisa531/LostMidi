@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { saveHistoryAction } from "@/lib/admin/history-actions";
 import { uploadEvidenceAction } from "@/lib/admin/history-actions";
-import { loadPeopleAction } from "@/lib/admin/people-actions";
 import type { HistoricalSource, HistoryEdit, RecoveryEvent } from "@/lib/admin/history";
-import type { PeopleList } from "@/lib/admin/people";
 import { ExternalSource } from "@/components/archive";
 
 type Selection = { kind: "source"; record?: HistoricalSource } | { kind: "event"; record?: RecoveryEvent };
@@ -35,8 +33,8 @@ function UTCInput({ name, label, value, onChange }: { name: string; label: strin
   </label>;
 }
 
-function HistoryRecordForm({ midiId, revision, selection, people, onCancel, reviewRequired }: {
-  midiId: string; revision: number; selection: Selection; people: PeopleList; onCancel: () => void; reviewRequired: boolean;
+function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequired }: {
+  midiId: string; revision: number; selection: Selection; onCancel: () => void; reviewRequired: boolean;
 }) {
   const source = selection.kind === "source" ? selection.record : undefined;
   const event = selection.kind === "event" ? selection.record : undefined;
@@ -49,41 +47,17 @@ function HistoryRecordForm({ midiId, revision, selection, people, onCancel, revi
     website_name: source?.website_name ?? "", original_url: source?.original_url ?? "", wayback_url: source?.wayback_url ?? "",
     first_seen_at: localUTC(source?.first_seen_at), last_seen_at: localUTC(source?.last_seen_at), notes: source?.notes ?? "",
     source_type: source?.source_type ?? "other", credibility: String(source?.credibility ?? 3), checked_at: localUTC(source?.checked_at),
-    recovered_at: localUTC(event?.recovered_at), recovered_by: event?.recovered_by ?? "", story: event?.story ?? "", evidence: event?.evidence ?? "",
+    recovered_at: localUTC(event?.recovered_at), recovered_by_name: event?.recovered_by_name ?? "", story: event?.story ?? "", evidence: event?.evidence ?? "",
   });
   const change = (name: keyof typeof values, value: string) => setValues(old => ({ ...old, [name]: value }));
-  const [choices, setChoices] = useState(() => {
-    const options = new Map(people.data.map(person => [person.id, person.display_name]));
-    if (event?.recovered_by && !options.has(event.recovered_by)) options.set(event.recovered_by, event.recovered_by_name ?? "姓名不详");
-    return [...options].map(([id, name]) => ({ id, name }));
-  });
-  const [page, setPage] = useState(people.pagination.page);
-  const [pageSize, setPageSize] = useState(people.pagination.pageSize);
-  const [total, setTotal] = useState(people.pagination.total);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  async function loadPeople(refresh: boolean) {
-    if (loading || pending) return;
-    setLoading(true); setLoadError("");
-    try {
-      const result = await loadPeopleAction(refresh ? 1 : page + 1);
-      setChoices(old => {
-        const options = new Map((refresh ? old.filter(person => person.id === values.recovered_by || person.id === event?.recovered_by) : old).map(person => [person.id, person.name]));
-        for (const person of result.data) options.set(person.id, person.display_name);
-        return [...options].map(([id, name]) => ({ id, name }));
-      });
-      setPage(result.pagination.page); setPageSize(result.pagination.pageSize); setTotal(result.pagination.total);
-    } catch { setLoadError("人物列表加载失败，已有选项与当前输入已保留。请重试；若会话过期，请在新页面登录后刷新人物列表。"); }
-    finally { setLoading(false); }
-  }
-  const textarea = (name: "notes" | "story" | "evidence", title: string, required = false) => <label className="block text-sm">{title}{required ? " *" : "（可留空）"}
+  const textarea = (name: "notes" | "story" | "evidence", title: string, required = false) => <label className="block text-sm">{title}（支持 Markdown）{required ? " *" : "（可留空）"}
     <textarea className={inputClass} name={name} value={values[name]} onChange={event => change(name, event.target.value)} rows={name === "story" ? 7 : 5} required={required} maxLength={20000} />
     <span className="mt-2 block text-xs text-muted">最多 20,000 UTF-8 字节，中文字符通常占 3 字节。</span>
   </label>;
 
   // React resets native controls even when an action returns a handled error.
   // Keep the selected person intact; successful saves redirect and remount this form.
-  return <form action={action} onReset={event => event.preventDefault()} onSubmit={event => { if (pending || loading) event.preventDefault(); }} className="min-w-0 space-y-6 rounded-xl border border-accent bg-white p-5 sm:p-6 [overflow-wrap:anywhere]">
+  return <form action={action} onReset={event => event.preventDefault()} onSubmit={event => { if (pending) event.preventDefault(); }} className="min-w-0 space-y-6 rounded-xl border border-accent bg-white p-5 sm:p-6 [overflow-wrap:anywhere]">
     <h2 ref={heading} tabIndex={-1} className="text-lg font-semibold">{selection.record ? "编辑" : "新增"}{label}{selection.record ? ` · 编号 ${selection.record.id}` : ""}</h2>
     <input type="hidden" name="midi_id" value={midiId} />
     <input type="hidden" name="revision" value={revision} />
@@ -116,14 +90,7 @@ function HistoryRecordForm({ midiId, revision, selection, people, onCancel, revi
         {textarea("notes", "备注")}
       </> : <>
         <UTCInput name="recovered_at" label="寻回时间" value={values.recovered_at} onChange={value => change("recovered_at", value)} />
-        <label className="block min-w-0 text-sm">寻回人（可不选）<select name="recovered_by" className={inputClass} value={values.recovered_by} disabled={loading} onChange={event => change("recovered_by", event.target.value)}><option value="">人物不详</option>{choices.map(person => <option key={person.id} value={person.id}>{person.name}（编号 {person.id}）</option>)}</select></label>
-        <div className="flex flex-wrap gap-4 text-sm">
-          <Link href="/admin/people/new" target="_blank" rel="noopener noreferrer" className="underline">在新页面创建人物</Link>
-          <button type="button" disabled={loading} onClick={() => loadPeople(true)} className={buttonClass}>刷新人物列表</button>
-          {page * pageSize < total && <button type="button" disabled={loading} onClick={() => loadPeople(false)} className={buttonClass}>加载更多人物</button>}
-          {loading && <span role="status" className="text-muted">正在加载人物…</span>}
-        </div>
-        {loadError && <div role="alert" className="text-sm leading-7 text-red-800"><p>{loadError}</p><Link href="/admin/login" target="_blank" rel="noopener noreferrer" className="underline">在新页面登录</Link></div>}
+        <label className="block min-w-0 text-sm">寻回人（姓名或昵称，可留空）<input name="recovered_by_name" className={inputClass} maxLength={300} value={values.recovered_by_name} onChange={event => change("recovered_by_name", event.target.value)} /><span className="mt-2 block text-xs text-muted">记录实际寻回该 MIDI 的人；无需建立人物档案。</span></label>
         {textarea("story", "寻回经过", true)}
         {textarea("evidence", "证据说明")}
       </>}
@@ -134,23 +101,23 @@ function HistoryRecordForm({ midiId, revision, selection, people, onCancel, revi
     {confirming ? <div className="space-y-4 rounded-lg border border-red-200 bg-red-50 p-4">
       <p role="alert" className="text-sm leading-7 text-red-900">确认删除这条{label}（编号 {selection.record?.id}）？{reviewRequired ? "删除申请经超级管理员批准后才会生效。" : "这会立即移除公开资料，不能撤销。"}当前表单的修改不会保存。取消删除会保留输入。</p>
       <div className="flex flex-wrap gap-5">
-        <button type="submit" name="operation" value="delete" disabled={pending || loading} className="rounded bg-red-800 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? "提交删除审核" : "确认永久删除本条记录"}</button>
+        <button type="submit" name="operation" value="delete" disabled={pending} className="rounded bg-red-800 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? "提交删除审核" : "确认永久删除本条记录"}</button>
         <button type="button" disabled={pending} className={buttonClass} onClick={() => setConfirming(false)}>取消删除，继续编辑</button>
       </div>
     </div> : <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5">
-      <button type="submit" name="operation" value="save" disabled={pending || loading} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? `提交${label}审核` : `保存本条${label}`}</button>
-      <button type="button" disabled={pending || loading} className={buttonClass} onClick={onCancel}>放弃本条编辑</button>
-      {selection.record && <button type="button" disabled={pending || loading} className={`${buttonClass} text-red-800`} onClick={() => setConfirming(true)}>删除本条记录…</button>}
+      <button type="submit" name="operation" value="save" disabled={pending} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? `提交${label}审核` : `保存本条${label}`}</button>
+      <button type="button" disabled={pending} className={buttonClass} onClick={onCancel}>放弃本条编辑</button>
+      {selection.record && <button type="button" disabled={pending} className={`${buttonClass} text-red-800`} onClick={() => setConfirming(true)}>删除本条记录…</button>}
     </div>}
   </form>;
 }
 
-export function HistoryForm({ history, people, reviewRequired = false }: { history: HistoryEdit; people: PeopleList; reviewRequired?: boolean }) {
+export function HistoryForm({ history, reviewRequired = false }: { history: HistoryEdit; reviewRequired?: boolean }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const busy = selection !== null;
   return <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
     <p className="text-sm leading-7 text-muted" role="status">{busy ? "正在编辑一条记录。请先保存或放弃本条编辑，再操作其他记录。其他记录暂不可编辑。" : `每次仅编辑一条历史来源或寻回记录；${reviewRequired ? "管理员提交后由超级管理员审核。" : "超级管理员保存后立即公开。"}来源、寻回、署名与基础资料共用版本，请勿在多个页面同时修改。`}</p>
-    {selection && <HistoryRecordForm key={`${selection.kind}-${selection.record?.id ?? "new"}`} midiId={history.entry.id} revision={history.entry.revision} selection={selection} people={people} reviewRequired={reviewRequired} onCancel={() => setSelection(null)} />}
+    {selection && <HistoryRecordForm key={`${selection.kind}-${selection.record?.id ?? "new"}`} midiId={history.entry.id} revision={history.entry.revision} selection={selection} reviewRequired={reviewRequired} onCancel={() => setSelection(null)} />}
     <section aria-labelledby="history-sources" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-sources" className="text-lg font-semibold">历史来源</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "source" })} className={buttonClass}>新增历史来源</button></div>
       {history.historical_sources.length ? <ul className="space-y-6">{history.historical_sources.map(source => <li key={source.id} className="min-w-0 space-y-3 border-t border-line pt-5">
@@ -165,7 +132,7 @@ export function HistoryForm({ history, people, reviewRequired = false }: { histo
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-events" className="text-lg font-semibold">寻回记录</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "event" })} className={buttonClass}>新增寻回记录</button></div>
       {history.recovery_events.length ? <ul className="space-y-6">{history.recovery_events.map(event => <li key={event.id} className="min-w-0 space-y-3 border-t border-line pt-5">
         <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="text-sm font-semibold">寻回记录 · 编号 {event.id}</h3><button type="button" disabled={busy} className={buttonClass} onClick={() => setSelection({ kind: "event", record: event })} aria-label={`编辑寻回记录 ${event.id}`}>编辑 / 删除</button></div>
-        <p className="text-xs leading-6 text-muted">寻回时间：{utcLabel(event.recovered_at)} · 寻回人：{event.recovered_by ? <Link href={`/people/${event.recovered_by}`} target="_blank" rel="noopener noreferrer" className="underline">{event.recovered_by_name ?? "姓名不详"}（编号 {event.recovered_by}）</Link> : "人物不详"}</p>
+        <p className="text-xs leading-6 text-muted">寻回时间：{utcLabel(event.recovered_at)} · 寻回人：{event.recovered_by_name ?? "姓名不详"}</p>
         <p className="whitespace-pre-wrap text-sm leading-7">{event.story}</p>
         <p className="whitespace-pre-wrap text-sm leading-7 text-muted">证据说明：{event.evidence ?? "尚未补充"}</p>
         <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="event" recordId={event.id} files={event.evidence_files ?? []} reviewRequired={reviewRequired} />

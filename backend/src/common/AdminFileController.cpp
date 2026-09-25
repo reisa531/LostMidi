@@ -50,7 +50,7 @@ void ApiController::registerAdminFileRoutes() {
             slot = std::shared_ptr<int>(new int(0), [this](int* p) { delete p; --importsPending_; });
         }
         dispatch(std::move(callback), [this, request, id = std::move(id), slot] {
-            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+            const auto actor = requireFilePrincipal(request);
             const auto midiId = positiveId(id);
             Json::Value json;
             if (request->method() == drogon::Get) {
@@ -60,15 +60,15 @@ void ApiController::registerAdminFileRoutes() {
             }
             if (request->getHeader("content-type") != "application/octet-stream") throw ApiError(415, "INVALID_FILE", "An application/octet-stream body is required.");
             const auto body = request->body();
-            if (body.empty()) throw ApiError(400, "INVALID_MIDI", "MIDI files must not be empty.");
-            if (body.size() > midi::maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "MIDI files must not exceed 1 MiB.");
+            if (body.empty()) throw ApiError(400, "INVALID_FILE", "Files must not be empty.");
+            if (body.size() > midi::maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "Files must not exceed 15 MB.");
+            if (!importer_.enabled()) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled.");
             const auto filename = filenameOf(request->getHeader("x-file-name"));
             const auto rightsConfirmed = request->getHeader("x-rights-confirmed") == "true";
             const auto revision = positiveId(request->getHeader("x-entry-revision"));
             const auto bytes = std::as_bytes(std::span(body.data(), body.size()));
             if (actor.role == "admin") {
-                // Run the format and filename validators before storing the proposed bytes.
-                midi::validateMidiFilename(filename); midi::validateMidi(bytes);
+                midi::validateFilename(filename); midi::validateFileContent(bytes);
                 if (!rightsConfirmed) throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
                 Json::Value payload; payload["revision"] = Json::Int64(revision); payload["filename"] = filename;
                 payload["content_base64"] = base64(bytes); payload["rights_confirmed"] = true;

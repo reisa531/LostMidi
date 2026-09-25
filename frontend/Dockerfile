@@ -4,6 +4,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 NEXT_OUTPUT_STANDALONE=true
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . ./
+ARG BACKEND_API_URL
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

@@ -1,8 +1,10 @@
 {
   "name": "lost-midi-archive-frontend",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "engines": { "node": ">=22.13.0 <23" },
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "changelog:check": "node scripts/check-changelog.mjs",
@@ -17,6 +19,9 @@
     "next": "16.3.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "rehype-sanitize": "6.0.0",
+    "remark-gfm": "4.0.1",
     "server-only": "0.0.1"
   },
   "devDependencies": {

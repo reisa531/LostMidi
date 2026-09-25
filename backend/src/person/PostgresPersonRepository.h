@@ -11,6 +11,7 @@ public:
     std::optional<Person> findPersonByPublicId(const std::string& id) override;
     std::vector<std::string> aliasesFor(std::int64_t id) override;
     std::vector<CreditedMidi> midisFor(std::int64_t id) override;
+    std::pair<std::optional<Person>, std::optional<Person>> neighborsFor(std::int64_t id) override;
     std::vector<Credit> creditsFor(std::int64_t midiId) override;
     std::vector<Person> peopleFor(std::int64_t midiId) override;
     PersonList list(Page page) override;

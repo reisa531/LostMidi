@@ -25,6 +25,6 @@ export async function reviewChangeAction(form: FormData) {
   if (!/^[0-9a-f-]{36}$/.test(id) || !["approve", "reject"].includes(decision)) throw new Error("Invalid review request");
   await adminRequest(`/api/v1/admin/changes/${id}/review`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, note }),
-  });
+  }, 120_000);
   revalidatePath("/admin/changes");
 }

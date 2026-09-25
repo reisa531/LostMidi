@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 const errorMessages: Record<number, string> = {
-  403: "此文件尚未确认可公开分发，或档案限制分发、仅公开资料，暂时无法下载。",
+  403: "此文件尚未确认可公开分发，或档案限制分发、仅公开资料，暂时无法下载。请通过联系我们说明用途。",
   404: "档案或文件不存在，可能已被移除，请刷新页面后重试。",
   503: "下载服务暂时不可用，请稍后重试。",
   504: "下载请求超时，请稍后重试。",
@@ -24,21 +25,20 @@ export function MidiDownload({ slug, id, filename }: { slug: string; id: string;
     if (inFlight.current) return;
     const controller = new AbortController();
     inFlight.current = controller;
-    setState({ kind: "loading", message: "正在获取 MIDI 文件，请稍候。" });
+    setState({ kind: "loading", message: "正在获取文件，请稍候。" });
     let timedOut = false;
     let failureMessage = "下载失败，请检查网络连接后重试。";
-    // Allow the route's 30-second deadline to return its own error first.
-    const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, 35_000);
+    const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
     try {
       const response = await fetch(`/api/midis/${encodeURIComponent(slug)}/files/${encodeURIComponent(id)}/download`, {
         cache: "no-store", credentials: "omit", redirect: "error", signal: controller.signal,
-        headers: { Accept: "audio/midi" },
+        headers: { Accept: "application/octet-stream" },
       });
       failureMessage = errorMessages[response.status] ?? "下载服务返回了无效文件，请稍后重试。";
       const lengthHeader = response.headers.get("Content-Length");
       const length = Number(lengthHeader);
-      if (response.status !== 200 || response.headers.get("Content-Type")?.toLowerCase() !== "audio/midi"
-        || !lengthHeader || !/^[1-9][0-9]{0,6}$/.test(lengthHeader) || length > 1_048_576) {
+      if (response.status !== 200 || response.headers.get("Content-Type")?.toLowerCase() !== "application/octet-stream"
+        || !lengthHeader || !/^[1-9][0-9]{0,7}$/.test(lengthHeader) || length > 15_000_000) {
         void response.body?.cancel().catch(() => {});
         throw new Error("Invalid download response");
       }
@@ -70,10 +70,11 @@ export function MidiDownload({ slug, id, filename }: { slug: string; id: string;
 
   return <div className="mt-5 min-w-0 space-y-2">
     <button type="button" onClick={download} disabled={state.kind === "loading"} aria-busy={state.kind === "loading"}
-      aria-label={`下载 MIDI：${filename}`}
+      aria-label={`下载文件：${filename}`}
       className="w-full cursor-pointer rounded-sm border border-accent bg-accent px-4 py-2 text-sm text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60 sm:w-auto">
-      {state.kind === "loading" ? "正在下载…" : "下载 MIDI"}
+      {state.kind === "loading" ? "正在下载…" : "下载文件"}
     </button>
     <p role={state.kind === "error" ? "alert" : "status"} aria-live={state.kind === "error" ? "assertive" : "polite"} aria-atomic="true" className={`min-w-0 text-sm [overflow-wrap:anywhere] ${state.kind === "error" ? "text-red-800" : "text-muted"}`}>{state.message}</p>
+    {state.kind === "error" && <p className="text-sm"><Link href="/about#contact" className="archive-link">通过联系我们申请获取</Link></p>}
   </div>;
 }

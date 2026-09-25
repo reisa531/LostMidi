@@ -45,8 +45,9 @@ int main(int argc, char** argv) {
         catalog::PostgresCatalogRepository catalogRepository(db);
         catalog::CatalogService catalog(catalogRepository);
         ApiController controller(midis, people, db, config.workerThreads, auth, writer, personWriter, recoveryWriter, installation, importer, *objects, catalog);
-        drogon::app().setClientMaxBodySize(2 * 1024 * 1024);
-        drogon::app().setClientMaxMemoryBodySize(2 * 1024 * 1024);
+        // Atomic creation carries base64 plus metadata; the decoded file limit is enforced separately.
+        drogon::app().setClientMaxBodySize(21 * 1000 * 1000);
+        drogon::app().setClientMaxMemoryBodySize(21 * 1000 * 1000);
         controller.registerRoutes();
         drogon::app().setThreadNum(static_cast<std::size_t>(config.httpThreads));
         drogon::app().addListener(config.host, config.port);

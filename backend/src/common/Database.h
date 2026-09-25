@@ -77,5 +77,12 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
         "AND attname='recovered_at' AND attnum>0 AND NOT attisdropped AND NOT attnotnull) AS nullable_date");
     if (!rows[0]["applied"].as<bool>() || !rows[0]["installation_applied"].as<bool>() || !rows[0]["nullable_date"].as<bool>())
         throw ApiError(503, "DATABASE_NOT_READY", "Required database migrations are not applied.");
+    const auto profile = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='016_profile_and_estimated_date.sql') AS applied, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='midi_entries'::regclass AND attname='estimated_date' AND attnum>0 AND NOT attisdropped) AS estimated_date, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='people'::regclass AND attname='profile' AND attnum>0 AND NOT attisdropped) AS profile, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='recovery_events'::regclass AND attname='recovered_by_name' AND attnum>0 AND NOT attisdropped) AS recovered_by_name");
+    if (!profile[0]["applied"].as<bool>() || !profile[0]["estimated_date"].as<bool>() || !profile[0]["profile"].as<bool>() || !profile[0]["recovered_by_name"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required profile and date migration is not applied.");
 }
 }  // namespace lostmidi

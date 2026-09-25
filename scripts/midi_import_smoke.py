@@ -1,4 +1,4 @@
-"""Admin MIDI import HTTP checks. Use ONLY a migrated disposable database and private test storage."""
+"""Admin raw-file import HTTP checks. Use ONLY a migrated disposable database and private test storage."""
 import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +10,20 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+
+
+MAX_FILE_SIZE = 15_000_000  # Decimal MB, not MiB.
+UNSAFE_FILENAMES = (
+    '', '.', '..', '../file.mid', 'path/file.zip', '/file', 'path\\file', 'C:\\file.mid',
+    ' file.mid', 'file.mid ', 'bad\x00.mid', 'bad\t.mid', 'bad\r.mid', 'bad\n.mid',
+    'bad\x1f.mid', 'bad\x7f.mid', 'bad\u0085.mid', 'bad\u009f.mid', 'a' * 256, '音' * 85 + 'a',
+)
+
+
+def raw_file(size, marker):
+    """Deterministic non-SMF bytes, including NUL and non-UTF-8 data."""
+    block = marker.encode('utf-8') + b'\x00\xff\x80\r\n' + bytes(range(256))
+    return (block * ((size + len(block) - 1) // len(block)))[:size]
 
 
 def midi(note=60):
@@ -46,10 +60,46 @@ def main():
                 assert key not in raw.decode()
             return payload
 
+    def exact_download(path, filename, content):
+        # This opener has neither a cookie jar nor Authorization headers.
+        with opener.open(args.api.rstrip('/') + path, timeout=60) as response:
+            raw = response.read()
+            assert response.status == 200 and raw == content
+            assert hashlib.sha256(raw).hexdigest() == hashlib.sha256(content).hexdigest()
+            assert response.headers['Content-Type'].split(';')[0] == 'application/octet-stream'
+            assert response.headers.get_all('Content-Length') == [str(len(content))]
+            assert response.headers['X-Content-Type-Options'] == 'nosniff'
+            assert 'no-store' in response.headers['Cache-Control']
+            disposition = response.headers['Content-Disposition']
+            assert disposition.startswith('attachment;')
+            assert urllib.parse.unquote(disposition.split("filename*=UTF-8''")[1]) == filename
+
     token = request('/api/v1/admin/login', 'POST', {
         'username': os.environ['ADMIN_TEST_USERNAME'], 'password': os.environ['ADMIN_TEST_PASSWORD']})['token']
     session = request('/api/v1/admin/session', token=token)
     assert session['midi_import_enabled'] is (not args.expect_disabled)
+    origin = os.environ.get('ADMIN_ORIGIN', 'http://localhost:3000')
+    cookie_auth = {'Origin': origin, 'Cookie': 'lostmidi_admin=' + token}
+
+    def rejected_upload_auth(path, body, headers=None):
+        cases = [
+            ('anonymous without origin', {}, 401, 'UNAUTHORIZED'),
+            ('anonymous with origin', {'Origin': origin}, 401, 'UNAUTHORIZED'),
+            ('missing origin', {'Cookie': cookie_auth['Cookie']}, 403, 'INVALID_ORIGIN'),
+            ('wrong origin', {**cookie_auth, 'Origin': 'https://untrusted.invalid'}, 403, 'INVALID_ORIGIN'),
+            ('origin must match exactly', {**cookie_auth, 'Origin': origin + '/'}, 403, 'INVALID_ORIGIN'),
+            ('null origin', {**cookie_auth, 'Origin': 'null'}, 403, 'INVALID_ORIGIN'),
+            ('invalid cookie', {**cookie_auth, 'Cookie': 'lostmidi_admin=invalid-session'}, 401, 'UNAUTHORIZED'),
+            ('wrong cookie name', {'Origin': origin, 'Cookie': 'other_session=' + token}, 401, 'UNAUTHORIZED'),
+            ('invalid bearer cannot fall back to cookie', {**cookie_auth, 'Authorization': 'Bearer invalid-session'}, 401, 'UNAUTHORIZED'),
+        ]
+        for label, auth, status, code in cases:
+            result = request(path, 'POST', body, extra={**(headers or {}), **auth}, expected=(status,))
+            assert result['error']['code'] == code, label  # Never print credentials.
+
+    for path in ('/api/v1/admin/session', '/api/v1/admin/users', '/api/v1/admin/changes'):
+        assert request(path, extra=cookie_auth, expected=(401,))['error']['code'] == 'UNAUTHORIZED'
+    assert request('/api/v1/admin/people', 'POST', {}, extra=cookie_auth, expected=(401,))['error']['code'] == 'UNAUTHORIZED'
     draft = {'title': 'Import smoke', 'slug': 'import-check-' + uuid.uuid4().hex, 'description': None,
              'estimated_year': None, 'archive_status': 'uncertain', 'copyright_status': 'unknown',
              'distribution_permission': 'restricted', 'license': None, 'rights_holder': None}
@@ -91,28 +141,41 @@ def main():
     restored_person = request(person_path, token=token)
     assert restored_person['person']['revision'] == 3 and restored_person['aliases'] == ['Old']
     print('PASS: authenticated soft deletion, deleted replay rejection, restore, retained aliases and audit history')
+    combined_bytes = raw_file(1024, 'atomic-' + uuid.uuid4().hex)
     combined = {**draft, 'slug': 'create-file-' + uuid.uuid4().hex, 'request_id': str(uuid.uuid4()),
                 'distribution_permission': 'permission_granted', 'file': {
-                    'filename': '一起保存.mid', 'content_base64': base64.b64encode(midi(80)).decode(), 'rights_confirmed': True}}
-    request('/api/v1/admin/midis', 'POST', combined, expected=(401,))
+                    'filename': '一起保存.zip', 'content_base64': base64.b64encode(combined_bytes).decode(), 'rights_confirmed': True}}
+    rejected_upload_auth('/api/v1/admin/midis', combined)
+    request('/api/v1/midis/' + combined['slug'], expected=(404,))
     if args.expect_disabled:
         assert request('/api/v1/admin/midis', 'POST', combined, token, expected=(503,))['error']['code'] == 'IMPORT_DISABLED'
+        assert request('/api/v1/admin/midis', 'POST', combined, extra=cookie_auth, expected=(503,))['error']['code'] == 'IMPORT_DISABLED'
         request('/api/v1/midis/' + combined['slug'], expected=(404,))
     else:
-        for file_change, status in [({'rights_confirmed': False}, 400), ({'content_base64': '!!!!'}, 400),
-                                    ({'content_base64': base64.b64encode(b'invalid').decode()}, 400),
-                                    ({'filename': '../file.mid'}, 400),
-                                    ({'content_base64': base64.b64encode(b'x' * 1048577).decode()}, 413)]:
-            request('/api/v1/admin/midis', 'POST', {**combined, 'file': {**combined['file'], **file_change}}, token, expected=(status,))
+        invalid_files = [
+            ({'rights_confirmed': False}, 400, 'RIGHTS_CONFIRMATION_REQUIRED'),
+            ({'content_base64': '!!!!'}, 400, 'INVALID_FILE'),
+            ({'content_base64': ''}, 400, 'INVALID_FILE'),
+            ({'content_base64': base64.b64encode(b'x' * (MAX_FILE_SIZE + 1)).decode()}, 413, 'FILE_TOO_LARGE'),
+        ] + [({'filename': name}, 400, 'INVALID_FILE') for name in UNSAFE_FILENAMES]
+        for file_change, status, code in invalid_files:
+            result = request('/api/v1/admin/midis', 'POST', {**combined, 'file': {**combined['file'], **file_change}}, token, expected=(status,))
+            assert result['error']['code'] == code
             request('/api/v1/midis/' + combined['slug'], expected=(404,))
         request('/api/v1/admin/midis', 'POST', {key: value for key, value in combined.items() if key != 'request_id'}, token, expected=(400,))
-        created = request('/api/v1/admin/midis', 'POST', combined, token, expected=(201,))
+        created = request('/api/v1/admin/midis', 'POST', combined, extra=cookie_auth, expected=(201,))
         with ThreadPoolExecutor(max_workers=2) as pool:
-            retries = list(pool.map(lambda _: request('/api/v1/admin/midis', 'POST', combined, token, expected=(201,)), range(2)))
+            retries = list(pool.map(lambda _: request('/api/v1/admin/midis', 'POST', combined, token,
+                extra={'Origin': 'https://untrusted.invalid'}, expected=(201,)), range(2)))
         assert all(item['id'] == created['id'] for item in retries)
+        changed_file = {**combined, 'file': {**combined['file'], 'content_base64': base64.b64encode(b'different raw bytes').decode()}}
+        assert request('/api/v1/admin/midis', 'POST', changed_file, token, expected=(409,))['error']['code'] == 'IDEMPOTENCY_CONFLICT'
         detail = request('/api/v1/midis/' + combined['slug'])
         assert len(detail['files']) == 1 and detail['files'][0]['download_available']
-        assert detail['files'][0]['original_filename'] == '一起保存.mid'
+        assert detail['files'][0]['original_filename'] == combined['file']['filename']
+        assert detail['files'][0]['sha256'] == hashlib.sha256(combined_bytes).hexdigest()
+        exact_download('/api/v1/midis/' + combined['slug'] + '/files/' + detail['files'][0]['id'] + '/download',
+                       combined['file']['filename'], combined_bytes)
         duplicate = {**combined, 'slug': combined['slug'] + '-duplicate', 'request_id': str(uuid.uuid4())}
         assert request('/api/v1/admin/midis', 'POST', duplicate, token, expected=(409,))['error']['code'] == 'FILE_OWNERSHIP_CONFLICT'
         request('/api/v1/midis/' + duplicate['slug'], expected=(404,))
@@ -153,40 +216,60 @@ def main():
         credits = request(entry_path + '/credits', token=token)
         assert len(credits['credits']) == 1 and credits['credits'][0]['person_id'] == referenced['id']
         download = '/api/v1/midis/' + combined['slug'] + '/files/' + detail['files'][0]['id'] + '/download'
-        with opener.open(args.api.rstrip('/') + download, timeout=60) as response:
-            assert response.status == 200 and response.read() == midi(80)
+        exact_download(download, combined['file']['filename'], combined_bytes)
         request(entry_path + '/credits', 'PUT', {'revision': restored['revision'], 'credits': []}, token)
         request(person_path, 'DELETE', {'revision': 1}, token)
-        print('PASS: atomic creation, replay, ownership, search visibility, retained credits and exact-byte download after restore')
+        boundary_bytes = raw_file(MAX_FILE_SIZE, 'atomic-boundary-' + uuid.uuid4().hex)
+        boundary = {**combined, 'slug': 'create-limit-' + uuid.uuid4().hex, 'request_id': str(uuid.uuid4()),
+                    'file': {'filename': '音' * 85, 'content_base64': base64.b64encode(boundary_bytes).decode(), 'rights_confirmed': True}}
+        assert len(boundary['file']['filename'].encode('utf-8')) == 255
+        boundary_entry = request('/api/v1/admin/midis', 'POST', boundary, extra=cookie_auth, expected=(201,))
+        boundary_detail = request('/api/v1/midis/' + boundary['slug'])
+        assert boundary_detail['entry']['id'] == boundary_entry['id'] and len(boundary_detail['files']) == 1
+        boundary_file = boundary_detail['files'][0]
+        assert boundary_file['file_size'] == MAX_FILE_SIZE
+        assert boundary_file['sha256'] == hashlib.sha256(boundary_bytes).hexdigest()
+        assert boundary_file['original_filename'] == boundary['file']['filename']
+        exact_download('/api/v1/midis/' + boundary['slug'] + '/files/' + boundary_file['id'] + '/download',
+                       boundary['file']['filename'], boundary_bytes)
+        print('PASS: atomic arbitrary-file creation, 15,000,000-byte/255-byte-name boundaries, replay, ownership and restore')
     first = request('/api/v1/admin/midis', 'POST', draft, token, expected=(201,))
     other = request('/api/v1/admin/midis', 'POST', {**draft, 'slug': draft['slug']+'-other'}, token, expected=(201,))
     path = '/api/v1/admin/midis/' + first['id'] + '/files'
     headers = {'Content-Type': 'application/octet-stream', 'X-File-Name': urllib.parse.quote('测试+乐曲.MID'),
                'X-Entry-Revision': '1', 'X-Rights-Confirmed': 'true'}
-    request(path, expected=(401,))
-    request(path, 'POST', midi(), extra=headers, expected=(401,))
+    assert request(path, expected=(401,))['error']['code'] == 'UNAUTHORIZED'
+    assert request(path, extra=cookie_auth, expected=(401,))['error']['code'] == 'UNAUTHORIZED'
+    rejected_upload_auth(path, midi(), headers)
+    # Cookie permission is limited to the two POST endpoints, not metadata edits/deletes.
+    for method, body in [('PUT', {**draft, 'revision': 1}), ('DELETE', {'revision': 1})]:
+        assert request('/api/v1/admin/midis/' + first['id'], method, body, extra=cookie_auth,
+                       expected=(401,))['error']['code'] == 'UNAUTHORIZED'
     initial = request(path, token=token)
     if args.expect_disabled:
         assert not initial['enabled'] and initial['files'] == []
         assert request(path, 'POST', midi(), token, headers, (503,))['error']['code'] == 'IMPORT_DISABLED'
+        assert request(path, 'POST', midi(), extra={**headers, **cookie_auth}, expected=(503,))['error']['code'] == 'IMPORT_DISABLED'
         assert request(path, token=token)['entry']['revision'] == 1
-        print('PASS: disabled imports reject writes while metadata remains accessible')
+        print('PASS: disabled imports reject Bearer/cookie writes while metadata remains accessible')
         return
-    assert initial['enabled'] and initial['max_file_size'] == 1048576 and initial['files'] == []
-    for extra, body, status, code in [
+    assert initial['enabled'] and initial['max_file_size'] == MAX_FILE_SIZE and initial['files'] == []
+    invalid_uploads = [
         ({'X-Rights-Confirmed': 'false'}, midi(), 400, 'RIGHTS_CONFIRMATION_REQUIRED'),
-        ({'X-File-Name': 'file.zip'}, midi(), 400, 'INVALID_FILE'),
         ({'X-File-Name': '%ZZ.mid'}, midi(), 400, 'INVALID_FILE'),
-        ({'X-File-Name': 'path%2Ffile.mid'}, midi(), 400, 'INVALID_FILE'),
+        ({'X-File-Name': '%FF.mid'}, midi(), 400, 'INVALID_FILE'),
         ({'X-Entry-Revision': '0'}, midi(), 400, 'INVALID_INPUT'),
         ({'X-Entry-Revision': '9223372036854775808'}, midi(), 400, 'INVALID_INPUT'),
         ({'Content-Type': 'application/json'}, midi(), 415, 'INVALID_FILE'),
-        ({}, b'not midi', 400, 'INVALID_MIDI'), ({}, b'', 400, 'INVALID_MIDI'),
-        ({}, b'x' * 1048577, 413, 'FILE_TOO_LARGE')]:
+        ({}, b'', 400, 'INVALID_FILE'),
+        ({}, b'x' * (MAX_FILE_SIZE + 1), 413, 'FILE_TOO_LARGE'),
+    ] + [({'X-File-Name': urllib.parse.quote(name, safe='')}, midi(), 400, 'INVALID_FILE') for name in UNSAFE_FILENAMES]
+    for extra, body, status, code in invalid_uploads:
         result = request(path, 'POST', body, token, {**headers, **extra}, (status,))
         assert result['error']['code'] == code, (extra, len(body), result['error']['code'], code)
-        assert request(path, token=token)['files'] == []
-    saved = request(path, 'POST', midi(), token, headers)
+        unchanged = request(path, token=token)
+        assert unchanged['files'] == [] and unchanged['entry']['revision'] == 1
+    saved = request(path, 'POST', midi(), extra={**headers, **cookie_auth})
     assert not saved['duplicate'] and saved['revision'] == 2
     assert saved['file']['sha256'] == hashlib.sha256(midi()).hexdigest()
     assert saved['file']['original_filename'] == '测试+乐曲.MID'
@@ -207,23 +290,40 @@ def main():
     allowed = {**draft, 'revision': current['entry']['revision'], 'distribution_permission': 'permission_granted'}
     updated = request('/api/v1/admin/midis/' + first['id'], 'PUT', allowed, token)
     assert request('/api/v1/midis/' + draft['slug'])['files'][0]['download_available'] is True
-    with opener.open(args.api.rstrip('/') + download_path, timeout=60) as response:
-        raw = response.read()
-        assert response.status == 200 and raw == midi()
-        assert response.headers['Content-Type'].split(';')[0] == 'audio/midi'
-        assert response.headers.get_all('Content-Length') == [str(len(raw))]
-        assert response.headers['X-Content-Type-Options'] == 'nosniff'
-        assert 'no-store' in response.headers['Cache-Control']
-        disposition = response.headers['Content-Disposition']
-        assert disposition.startswith('attachment;')
-        assert urllib.parse.unquote(disposition.split("filename*=UTF-8''")[1]) == '测试+乐曲.MID'
+    exact_download(download_path, '测试+乐曲.MID', midi())
     request('/api/v1/midis/' + other['slug'] + '/files/' + saved['file']['id'] + '/download', expected=(404,))
     for invalid in ('0', '-1', 'abc', '9223372036854775808'):
         request('/api/v1/midis/' + draft['slug'] + '/files/' + invalid + '/download', expected=(400,))
     request(download_path.replace(draft['slug'], 'missing-entry'), expected=(404,))
-    request('/api/v1/admin/midis/' + first['id'], 'PUT', {**allowed, 'revision': updated['revision'], 'distribution_permission': 'metadata_only'}, token)
-    assert request(download_path, expected=(403,))['error']['code'] == 'DOWNLOAD_NOT_ALLOWED'
-    print('PASS: import validation, dedupe, ownership, revision, anonymous exact-byte download, filenames and distribution restrictions')
+    revision = updated['revision']
+    download_paths = [download_path]
+    # Extensions, the MThd magic and SMF structure no longer constrain raw uploads.
+    accepted = [
+        ('file.zip', midi(79)),
+        ('not-midi.mid', raw_file(1024, 'no-magic-' + uuid.uuid4().hex)),
+        ('broken.midi', b'MThd\x00\x00\x00\x06\xff\xff' + uuid.uuid4().bytes),
+        ('no-extension', b'\xff'),
+        ('音' * 85, raw_file(MAX_FILE_SIZE, 'raw-boundary-' + uuid.uuid4().hex)),
+    ]
+    for filename, content in accepted:
+        result = request(path, 'POST', content, extra={**headers, **cookie_auth,
+            'X-File-Name': urllib.parse.quote(filename, safe=''), 'X-Entry-Revision': str(revision)})
+        assert not result['duplicate'] and result['revision'] == revision + 1
+        revision = result['revision']
+        registered = result['file']
+        assert registered['file_size'] == len(content)
+        assert registered['original_filename'] == filename
+        assert registered['sha256'] == hashlib.sha256(content).hexdigest()
+        public_file = next(item for item in request('/api/v1/midis/' + draft['slug'])['files'] if item['id'] == registered['id'])
+        assert public_file['download_available'] and public_file['sha256'] == registered['sha256']
+        accepted_path = '/api/v1/midis/' + draft['slug'] + '/files/' + registered['id'] + '/download'
+        exact_download(accepted_path, filename, content)
+        download_paths.append(accepted_path)
+    request('/api/v1/admin/midis/' + first['id'], 'PUT', {**allowed, 'revision': revision, 'distribution_permission': 'metadata_only'}, token)
+    for revoked in download_paths:
+        assert request(revoked, expected=(403,))['error']['code'] == 'DOWNLOAD_NOT_ALLOWED'
+    assert not any(item['download_available'] for item in request('/api/v1/midis/' + draft['slug'])['files'])
+    print('PASS: arbitrary bytes, 1/15,000,000/+1 size bounds, safe UTF-8 names, cookie origin/auth, dedupe, exact SHA and revocation')
 
 
 if __name__ == '__main__':

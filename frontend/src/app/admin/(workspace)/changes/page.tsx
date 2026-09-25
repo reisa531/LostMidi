@@ -8,7 +8,7 @@ const labels: Record<string, string> = {
   "person.delete": "删除人物", "person.restore": "恢复人物", "credits.update": "修改作品署名",
   "history.source.create": "新增历史来源", "history.source.update": "修改历史来源", "history.source.delete": "删除历史来源",
   "history.event.create": "新增寻回记录", "history.event.update": "修改寻回记录", "history.event.delete": "删除寻回记录",
-  "evidence.upload": "上传历史证据附件", "file.import": "导入 MIDI 文件",
+  "evidence.upload": "上传历史证据附件", "file.import": "导入音乐文件",
 };
 const statusLabels: Record<string, string> = {
   pending: "待审核", reviewing: "审核执行中", approved: "已批准", rejected: "已拒绝",
@@ -25,7 +25,7 @@ function reviewPayload(raw: unknown) {
   const file = payload.file;
   if (file && typeof file === "object" && !Array.isArray(file)) {
     const clean = { ...(file as Record<string, unknown>) };
-    if (typeof clean.content_base64 === "string") clean.content_base64 = `[MIDI 文件，${Math.floor(clean.content_base64.length * 3 / 4).toLocaleString("zh-CN")} 字节，审批时验证]`;
+    if (typeof clean.content_base64 === "string") clean.content_base64 = `[音乐文件，${Math.floor(clean.content_base64.length * 3 / 4).toLocaleString("zh-CN")} 字节，审批时验证]`;
     payload.file = clean;
   }
   return payload;

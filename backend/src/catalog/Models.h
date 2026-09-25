@@ -23,11 +23,15 @@ struct CatalogEntry {
     std::int64_t fileCount = 0;
     std::int64_t downloadableFileCount = 0;
     std::string publicId;
+    std::optional<std::string> estimatedDate;
+    std::optional<std::string> summary;
 };
 struct Person {
     std::int64_t id = 0;
     std::string displayName;
     std::optional<std::string> biography;
+    std::optional<std::string> summary;
+    std::string updatedAt;
     std::vector<std::string> aliases;
     std::int64_t midiCount = 0;
     std::string publicId;

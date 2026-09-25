@@ -1,5 +1,6 @@
 #pragma once
 #include <json/json.h>
+#include <sstream>
 #include "midi/Models.h"
 #include "person/PersonWriteService.h"
 #include "recovery/RecoveryWriteService.h"
@@ -15,7 +16,14 @@ inline Json::Value toJson(const person::Person& p) {
     j["public_id"] = p.publicId;
     j["display_name"] = p.displayName;
     j["biography"] = jsonOptional(p.biography);
+    j["summary"] = jsonOptional(p.summary);
+    Json::CharReaderBuilder reader;
+    Json::Value profile;
+    std::string errors;
+    std::istringstream input(p.profile);
+    if (Json::parseFromStream(reader, input, &profile, &errors)) j["profile"] = profile;
     j["created_at"] = p.createdAt;
+    j["updated_at"] = p.updatedAt;
     j["revision"] = Json::Int64(p.revision);
     return j;
 }
@@ -34,6 +42,7 @@ inline Json::Value toJson(const midi::MidiEntry& e) {
     j["title"] = e.title;
     j["description"] = jsonOptional(e.description);
     j["estimated_year"] = jsonOptional(e.estimatedYear);
+    j["estimated_date"] = jsonOptional(e.estimatedDate);
     j["archive_status"] = e.archiveStatus;
     j["created_at"] = e.createdAt;
     j["updated_at"] = e.updatedAt;
@@ -74,7 +83,7 @@ inline Json::Value toJson(const recovery::RecoveryEvent& e) {
     Json::Value j;
     j["id"] = std::to_string(e.id);
     j["recovered_at"] = jsonOptional(e.recoveredAt);
-    j["recovered_by"] = e.recoveredBy ? Json::Value(std::to_string(*e.recoveredBy)) : Json::Value(Json::nullValue);
+    j["recovered_by"] = Json::Value(Json::nullValue);
     j["recovered_by_name"] = jsonOptional(e.recoveredByName);
     j["story"] = e.story;
     j["evidence"] = jsonOptional(e.evidence);
@@ -163,6 +172,8 @@ inline Json::Value toJson(const person::PersonDetail& d) {
         item["role"] = m.role;
         j["midis"].append(item);
     }
+    j["previous"] = d.previous ? toJson(*d.previous) : Json::Value(Json::nullValue);
+    j["next"] = d.next ? toJson(*d.next) : Json::Value(Json::nullValue);
     return j;
 }
 inline Json::Value toJson(const person::PersonEdit& edit) {

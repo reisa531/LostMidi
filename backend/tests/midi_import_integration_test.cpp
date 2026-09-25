@@ -9,6 +9,7 @@
 #include "common/Json.h"
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <memory>
 #include <atomic>
@@ -78,10 +79,10 @@ protected:
         }
         if (!directory.empty()) { std::error_code error; std::filesystem::remove_all(directory,error); EXPECT_FALSE(error); }
     }
-    std::vector<std::byte> data(unsigned note = 60) {
+    std::vector<std::byte> data(unsigned marker = 60) {
         std::vector<std::byte> result;
-        for (auto b : {77u,84u,104u,100u,0u,0u,0u,6u,0u,0u,0u,1u,0u,96u,
-            77u,84u,114u,107u,0u,0u,0u,8u,0u,0x90u,note,100u,0u,255u,47u,0u}) result.push_back(static_cast<std::byte>(b));
+        for (unsigned i = 0; i < 256; ++i) result.push_back(static_cast<std::byte>(i));
+        result.push_back(static_cast<std::byte>(marker));
         return result;
     }
     midi::MidiFile file(unsigned note = 60) {
@@ -298,14 +299,23 @@ TEST_F(ImportPostgres, CreationInvalidDisabledAndUnconfirmedFilesPerformNoWrites
     const auto input=entry(); const auto uploaded=upload();
     ObservedStorage observed(*objects); midi::MidiImportService create(*repo,observed,true), disabled(*repo,observed,false);
     apiError([&] { disabled.create(input,requestA,uploaded); },503,"IMPORT_DISABLED");
+    apiError([&] { disabled.import(first,1,uploaded.filename,uploaded.bytes,true); },503,"IMPORT_DISABLED");
     auto invalid=uploaded; invalid.rightsConfirmed=false;
     apiError([&] { create.create(input,requestA,invalid); },400,"RIGHTS_CONFIRMATION_REQUIRED");
-    invalid=uploaded; invalid.filename="../bad.mid";
-    apiError([&] { create.create(input,requestA,invalid); },400,"INVALID_FILE");
+    apiError([&] { create.import(first,1,uploaded.filename,uploaded.bytes,false); },400,"RIGHTS_CONFIRMATION_REQUIRED");
+    invalid=uploaded;
+    for (const auto& name : std::vector<std::string>{"", ".", "..", "../bad.mid", "a/b.mp3", "a\\b.flac",
+            " a.wav", "a.ogg ", "a\t.bin", std::string("a\0b",3), std::string(256,'a'), "\xc0\xaf.bin", "\xed\xa0\x80.bin"}) {
+        SCOPED_TRACE(name); invalid.filename=name;
+        apiError([&] { create.create(input,requestA,invalid); },400,"INVALID_FILE");
+        apiError([&] { create.import(first,1,name,uploaded.bytes,true); },400,"INVALID_FILE");
+    }
     invalid=uploaded; invalid.bytes.clear();
-    apiError([&] { create.create(input,requestA,invalid); },400,"INVALID_MIDI");
+    apiError([&] { create.create(input,requestA,invalid); },400,"INVALID_FILE");
+    apiError([&] { create.import(first,1,invalid.filename,invalid.bytes,true); },400,"INVALID_FILE");
     invalid.bytes.resize(midi::maxImportBytes+1);
     apiError([&] { create.create(input,requestA,invalid); },413,"FILE_TOO_LARGE");
+    apiError([&] { create.import(first,1,invalid.filename,invalid.bytes,true); },413,"FILE_TOO_LARGE");
     auto metadata=input; metadata.archiveStatus="invalid";
     apiError([&] { create.create(metadata,requestA,uploaded); },400,"INVALID_INPUT");
     apiError([&] { create.create(input,"not-a-uuid",uploaded); },400,"INVALID_INPUT");
@@ -358,22 +368,98 @@ TEST_F(ImportPostgres, SoftDeletionRetainsFilesAndPreventsReplayAndUnsafeCleanup
     EXPECT_EQ(service->cleanup(), 0u); EXPECT_TRUE(objects->exists(key));
     EXPECT_FALSE(journal(key)); counts(3,1,1,0);
 }
+TEST_F(ImportPostgres, ImportAndCreationPreserveEveryExtensionAndArbitraryBinaryContent) {
+    const std::vector<std::string> names{"乐曲.mid","track.mp3","lossless.flac","sound.ogg","sample.wav","raw.bin","no-extension"};
+    person::PostgresPersonRepository people(db); recovery::PostgresRecoveryRepository historyRepository(db);
+    recovery::RecoveryService history(historyRepository); midi::MidiService downloads(*repo,people,history);
+    std::int64_t revision = 1;
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        SCOPED_TRACE(names[i]);
+        const auto content = data(static_cast<unsigned>(i));
+        const auto saved = service->import(first,revision,names[i],content,true);
+        revision = saved.revision;
+        EXPECT_FALSE(saved.duplicate); EXPECT_TRUE(saved.file.publicDistributionConfirmed);
+        EXPECT_EQ(saved.file.originalFilename,names[i]); EXPECT_EQ(saved.file.fileSize,content.size());
+        EXPECT_EQ(saved.file.sha256,storage::sha256(content));
+        const auto importedFiles = repo->filesFor(first); ASSERT_EQ(importedFiles.size(),i+1);
+        const auto& persisted = importedFiles.back();
+        EXPECT_EQ(persisted.originalFilename,names[i]); EXPECT_EQ(persisted.sha256,saved.file.sha256);
+        EXPECT_EQ(objects->read(persisted.storageKey,content.size()),std::string(reinterpret_cast<const char*>(content.data()),content.size()));
+        EXPECT_EQ(service->get(first).entry.distributionPermission,"restricted");
+        apiError([&] { downloads.fileForDownload("first",saved.file.id); },403,"DOWNLOAD_NOT_ALLOWED");
+
+        const midi::MidiCreationFile uploaded{names[i],data(static_cast<unsigned>(i)+16),true};
+        const auto input = entry("format-"+std::to_string(i));
+        auto request = std::string(requestA); request.back() = static_cast<char>('0'+i);
+        const auto created = service->create(input,request,uploaded);
+        EXPECT_EQ(created.distributionPermission,input.distributionPermission);
+        const auto files = repo->filesFor(created.id); ASSERT_EQ(files.size(),1u);
+        const auto file = downloads.fileForDownload(created.slug,files[0].id);
+        EXPECT_EQ(file.originalFilename,names[i]); EXPECT_EQ(file.fileSize,uploaded.bytes.size());
+        EXPECT_TRUE(file.publicDistributionConfirmed); EXPECT_EQ(file.sha256,storage::sha256(uploaded.bytes));
+        EXPECT_EQ(objects->read(file.storageKey,uploaded.bytes.size()),std::string(reinterpret_cast<const char*>(uploaded.bytes.data()),uploaded.bytes.size()));
+    }
+    EXPECT_EQ(repo->filesFor(first).size(),names.size());
+}
+TEST_F(ImportPostgres, InclusiveFifteenMillionByteImportAndBase64CreationRoundTrip) {
+    ASSERT_EQ(midi::maxImportBytes,15'000'000u);
+    ObservedStorage observed(*objects); midi::MidiImportService imports(*repo,observed,true);
+    std::vector<std::byte> content(15'000'000,std::byte{0xff});
+    const auto saved = imports.import(first,1,"limit.bin",content,true);
+    EXPECT_EQ(saved.file.fileSize,15'000'000u); EXPECT_EQ(saved.file.sha256,storage::sha256(content));
+    EXPECT_EQ(objects->read(saved.file.storageKey,content.size()),std::string(content.size(),'\xff'));
+    content.push_back(std::byte{0});
+    apiError([&] { imports.import(first,saved.revision,"too-large.wav",content,true); },413,"FILE_TOO_LARGE");
+    midi::MidiCreationFile uploaded{"limit.flac",midi::decodeMidiContentBase64(std::string(20'000'000,'A')),true};
+    ASSERT_EQ(uploaded.bytes.size(),15'000'000u);
+    const auto created = imports.create(entry(),requestA,uploaded);
+    const auto files = repo->filesFor(created.id); ASSERT_EQ(files.size(),1u);
+    EXPECT_EQ(files[0].fileSize,15'000'000u); EXPECT_EQ(files[0].sha256,storage::sha256(uploaded.bytes));
+    EXPECT_EQ(files[0].originalFilename,uploaded.filename); EXPECT_TRUE(files[0].publicDistributionConfirmed);
+    person::PostgresPersonRepository people(db); recovery::PostgresRecoveryRepository historyRepository(db);
+    recovery::RecoveryService history(historyRepository); midi::MidiService downloads(*repo,people,history);
+    const auto downloadable = downloads.fileForDownload(created.slug,files[0].id);
+    EXPECT_EQ(objects->read(downloadable.storageKey,uploaded.bytes.size()),std::string(uploaded.bytes.size(),'\0'));
+    uploaded.bytes.push_back(std::byte{0});
+    apiError([&] { imports.create(entry("oversized-entry"),requestB,uploaded); },413,"FILE_TOO_LARGE");
+    EXPECT_EQ(observed.writes.load(),2); EXPECT_EQ(observed.removals.load(),0); counts(3,2,1,0);
+}
+TEST_F(ImportPostgres, CorruptObjectsRejectDownloadAndDuplicateRepairWithoutOverwriting) {
+    const auto content = data(); const auto saved = service->import(second,1,"raw.bin",content,true);
+    {
+        std::fstream corrupt(directory/saved.file.storageKey,std::ios::binary|std::ios::in|std::ios::out);
+        corrupt.put('\x7f'); ASSERT_TRUE(corrupt);
+    }
+    person::PostgresPersonRepository people(db); recovery::PostgresRecoveryRepository historyRepository(db);
+    recovery::RecoveryService history(historyRepository); midi::MidiService downloads(*repo,people,history);
+    const auto file = downloads.fileForDownload("second",saved.file.id);
+    apiError([&] { objects->read(file.storageKey,content.size()); },503,"STORAGE_UNAVAILABLE");
+    EXPECT_THROW(service->import(second,1,"retry.wav",content,true),std::runtime_error);
+    apiError([&] { objects->read(file.storageKey,content.size()); },503,"STORAGE_UNAVAILABLE");
+    const auto editor = service->get(second); ASSERT_EQ(editor.files.size(),1u);
+    EXPECT_EQ(editor.entry.revision,2); EXPECT_EQ(editor.files[0].originalFilename,"raw.bin");
+    EXPECT_EQ(editor.files[0].sha256,saved.file.sha256); EXPECT_TRUE(editor.files[0].publicDistributionConfirmed);
+    std::filesystem::resize_file(directory/file.storageKey,content.size()-1);
+    apiError([&] { objects->read(file.storageKey,content.size()); },503,"STORAGE_UNAVAILABLE");
+    EXPECT_THROW(service->import(second,1,"retry",content,true),std::runtime_error);
+    EXPECT_EQ(std::filesystem::file_size(directory/file.storageKey),content.size()-1);
+}
 TEST_F(ImportPostgres, IdempotentSameEntryConflictsAndRightsRemainUnchanged) {
     const auto content=data(); const auto before=service->get(first).entry;
     const auto saved=service->import(first,1,"乐曲.mid",content,true);
     EXPECT_EQ(saved.revision,2); EXPECT_FALSE(saved.duplicate); EXPECT_TRUE(objects->exists(saved.file.sha256));
     EXPECT_FALSE(journal(saved.file.sha256));
     EXPECT_TRUE(db->execSqlSync("SELECT private_archive_confirmed FROM midi_files")[0][0].as<bool>());
-    auto duplicate=service->import(first,1,"other-name.mid",content,true);
+    auto duplicate=service->import(first,1,"other-name.mp3",content,true);
     EXPECT_TRUE(duplicate.duplicate); EXPECT_EQ(duplicate.file.id,saved.file.id); EXPECT_EQ(duplicate.file.originalFilename,"乐曲.mid");
     EXPECT_EQ(duplicate.revision,2); EXPECT_EQ(service->get(first).files.size(),1u);
     // Missing object after a committed metadata record is repaired by exact-byte retry.
     objects->remove(saved.file.sha256);
-    EXPECT_TRUE(service->import(first,1,"repair.mid",content,true).duplicate);
+    EXPECT_TRUE(service->import(first,1,"repair.flac",content,true).duplicate);
     EXPECT_TRUE(objects->exists(saved.file.sha256));
-    apiError([&] { service->import(second,1,"other.mid",content,true); },409,"FILE_OWNERSHIP_CONFLICT");
+    apiError([&] { service->import(second,1,"other",content,true); },409,"FILE_OWNERSHIP_CONFLICT");
     EXPECT_TRUE(service->get(second).files.empty()); EXPECT_EQ(service->get(second).entry.revision,1);
-    apiError([&] { service->import(first,1,"new.mid",data(61),true); },409,"STALE_ENTRY");
+    apiError([&] { service->import(first,1,"new.bin",data(61),true); },409,"STALE_ENTRY");
     EXPECT_FALSE(objects->exists(storage::sha256(data(61))));
     const auto after=service->get(first).entry;
     EXPECT_EQ(after.distributionPermission,before.distributionPermission); EXPECT_EQ(after.copyrightStatus,before.copyrightStatus);

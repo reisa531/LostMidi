@@ -107,10 +107,9 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
         checked_at: utcOf(form, "checked_at", "最近核验时间"),
       };
     } else if (operation === "save") {
-      const person = text(form, "recovered_by");
       body = { revision,
         recovered_at: utcOf(form, "recovered_at", "寻回时间"),
-        recovered_by: person ? idOf(person) : null,
+        recovered_by_name: boundedText(form, "recovered_by_name", "寻回人", 300),
         story: boundedText(form, "story", "寻回经过", 20000, true),
         evidence: boundedText(form, "evidence", "证据说明", 20000),
       };

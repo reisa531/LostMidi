@@ -38,10 +38,20 @@ std::int64_t revisionOf(const Json::Value& json) {
     return json["revision"].asInt64();
 }
 person::PersonEdit personOf(const Json::Value& json, bool editing) {
-    fieldsOf(json, {"display_name", "biography", "aliases", "revision"});
+    fieldsOf(json, {"display_name", "biography", "summary", "profile", "aliases", "revision"});
     person::PersonEdit edit;
     edit.person.displayName = stringOf(json, "display_name", 300);
     if (!json["biography"].isNull()) edit.person.biography = stringOf(json, "biography", 20000);
+    if (json.isMember("summary")) {
+        if (!json["summary"].isNull()) edit.person.summary = stringOf(json, "summary", 500);
+        edit.summaryProvided = true;
+    }
+    if (json.isMember("profile")) {
+        if (!json["profile"].isObject()) throw ApiError(400, "INVALID_INPUT", "Profile must be an object.");
+        Json::StreamWriterBuilder writer; writer["indentation"] = "";
+        edit.person.profile = Json::writeString(writer, json["profile"]);
+        edit.profileProvided = true;
+    }
     if (!json["aliases"].isArray() || json["aliases"].size() > 50)
         throw ApiError(400, "INVALID_INPUT", "Aliases must be an array with at most 50 entries.");
     for (const auto& alias : json["aliases"]) {
@@ -78,16 +88,18 @@ recovery::HistoricalSource sourceOf(const Json::Value& json) {
     return source;
 }
 recovery::RecoveryEvent eventOf(const Json::Value& json) {
-    fieldsOf(json, {"revision", "record_id", "recovered_at", "recovered_by", "story", "evidence"});
+    fieldsOf(json, {"revision", "record_id", "recovered_at", "recovered_by", "recovered_by_name", "story", "evidence"});
     recovery::RecoveryEvent event;
     if (!json["recovered_at"].isNull()) event.recoveredAt = stringOf(json, "recovered_at", 40);
     if (!json["recovered_by"].isNull()) event.recoveredBy = idOf(stringOf(json, "recovered_by", 19));
+    if (json.isMember("recovered_by_name") && !json["recovered_by_name"].isNull()) event.recoveredByName = stringOf(json, "recovered_by_name", 300);
+    if (event.recoveredBy && event.recoveredByName) throw ApiError(400, "INVALID_INPUT", "Use either recovered_by or recovered_by_name, not both.");
     event.story = stringOf(json, "story", 20000);
     if (!json["evidence"].isNull()) event.evidence = stringOf(json, "evidence", 20000);
     return event;
 }
 midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
-    const std::set<std::string> allowed{"title","slug","description","estimated_year","archive_status","copyright_status","license","rights_holder","distribution_permission","revision"};
+    const std::set<std::string> allowed{"title","slug","description","estimated_year","estimated_date","archive_status","copyright_status","license","rights_holder","distribution_permission","revision"};
     for (const auto& name : json.getMemberNames())
         if (!allowed.contains(name)) throw ApiError(400, "INVALID_INPUT", "Unknown entry field.");
     midi::MidiEntry entry;
@@ -106,6 +118,9 @@ midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
         if (!json["estimated_year"].isInt()) throw ApiError(400, "INVALID_INPUT", "Estimated year must be an integer or null.");
         entry.estimatedYear = json["estimated_year"].asInt();
     }
+    entry.estimatedDateProvided = json.isMember("estimated_date");
+    if (entry.estimatedDateProvided && !json["estimated_date"].isNull())
+        entry.estimatedDate = stringOf(json, "estimated_date", 10);
     if (editing) {
         if (!json["revision"].isInt64() || json["revision"].asInt64() < 1)
             throw ApiError(400, "INVALID_INPUT", "Revision is required for editing.");
@@ -120,8 +135,8 @@ void ApiController::registerAdminRoutes() {
             const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             Json::Value result(Json::arrayValue);
             const auto rows = actor.role == "super_admin"
-                ? db_->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,payload,status,review_note,created_at FROM admin_change_requests WHERE status IN ('pending','reviewing','failed') ORDER BY created_at,id LIMIT 200")
-                : db_->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,payload,status,review_note,created_at FROM admin_change_requests WHERE proposed_by=$1 ORDER BY created_at DESC,id DESC LIMIT 100", actor.username);
+                ? db_->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE status IN ('pending','reviewing','failed') ORDER BY created_at,id LIMIT 200")
+                : db_->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE proposed_by=$1 ORDER BY created_at DESC,id DESC LIMIT 100", actor.username);
             for (const auto& row : rows) {
                 Json::Value item; item["id"] = row["id"].as<std::string>(); item["type"] = row["request_type"].as<std::string>();
                 item["entity_id"] = nullable<std::int64_t>(row["entity_id"]) ? Json::Value(Json::Int64(*nullable<std::int64_t>(row["entity_id"]))) : Json::Value(Json::nullValue);
@@ -173,7 +188,7 @@ void ApiController::registerAdminRoutes() {
                         }
                         entryPayload.removeMember("request_id");
                         if (upload || hasRequestId) {
-                            if (upload) { midi::validateMidiFilename(upload->filename); midi::validateMidi(upload->bytes); }
+                            if (upload) { midi::validateFilename(upload->filename); midi::validateFileContent(upload->bytes); }
                             applied = toJson(importer_.create(entryOf(entryPayload, false), creationRequestId, upload));
                         }
                         else applied = toJson(writer_.create(entryOf(entryPayload, false)));
@@ -217,10 +232,10 @@ void ApiController::registerAdminRoutes() {
                     else if (type == "file.import") {
                         fieldsOf(payload, {"revision", "filename", "content_base64", "rights_confirmed"});
                         const auto filename = stringOf(payload, "filename", 255);
-                        const auto encoded = stringOf(payload, "content_base64", 1400000);
+                        const auto encoded = stringOf(payload, "content_base64", ((midi::maxImportBytes + 2) / 3) * 4);
                         if (!payload["rights_confirmed"].isBool()) throw ApiError(400, "INVALID_INPUT", "Distribution confirmation is required.");
                         const auto bytes = midi::decodeMidiContentBase64(encoded);
-                        midi::validateMidiFilename(filename); midi::validateMidi(bytes);
+                        midi::validateFilename(filename); midi::validateFileContent(bytes);
                         if (!payload["rights_confirmed"].asBool()) throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
                         const auto result = importer_.import(entity, revisionOf(payload), filename, bytes, payload["rights_confirmed"].asBool());
                         applied["file"] = toJson(result.file); applied["duplicate"] = result.duplicate; applied["revision"] = Json::Int64(result.revision);
@@ -538,7 +553,7 @@ void ApiController::registerAdminRoutes() {
         }
         auto slot = std::shared_ptr<int>(new int(0), [this](int* p) { delete p; --importsPending_; });
         dispatch(std::move(callback), [this, request, slot] {
-            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+            const auto actor = requireFilePrincipal(request);
             auto body = bodyOf(request);
             const bool hasFile = body.isMember("file");
             if (hasFile && !body.isMember("request_id"))
@@ -553,6 +568,16 @@ void ApiController::registerAdminRoutes() {
                 logEvent("midi_created"); return toJson(entry);
             }
             if (actor.role == "admin") {
+                if (hasFile) {
+                    if (!importer_.enabled()) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled.");
+                    const auto& file = body["file"];
+                    fieldsOf(file, {"filename", "content_base64", "rights_confirmed"});
+                    if (!file["rights_confirmed"].isBool() || !file["rights_confirmed"].asBool())
+                        throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
+                    midi::validateFilename(stringOf(file, "filename", 255));
+                    if (!file["content_base64"].isString()) throw ApiError(400, "INVALID_FILE", "File content is required.");
+                    midi::validateFileContent(midi::decodeMidiContentBase64(file["content_base64"].asString()));
+                }
                 return submitAdminChange(actor, "midi.create", 0, body);
             }
             const auto requestId = stringOf(body, "request_id", 36);

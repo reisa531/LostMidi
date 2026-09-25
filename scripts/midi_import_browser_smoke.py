@@ -1,13 +1,60 @@
 """Optional Playwright acceptance. Only use a disposable migrated database and test storage."""
 import argparse
+import base64
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import urllib.parse
 import urllib.request
 import uuid
 from playwright.sync_api import sync_playwright, expect
-from midi_import_smoke import midi
+from midi_import_smoke import MAX_FILE_SIZE, midi, raw_file
+
+
+def check_transfer(request, url, payload, combined=False):
+    assert request.url == url and request.method == 'POST' and request.resource_type == 'fetch'
+    headers = request.all_headers()
+    assert 'next-action' not in headers and 'authorization' not in headers
+    assert 'lostmidi_admin=' in headers.get('cookie', '')
+    parsed = urllib.parse.urlsplit(url)
+    assert headers['origin'] == parsed.scheme + '://' + parsed.netloc
+    if combined:
+        assert headers['content-type'].split(';')[0] == 'application/json'
+        body = request.post_data_json
+        assert str(uuid.UUID(body['request_id'], version=4)) == body['request_id']
+        assert body['file']['filename'] == payload['name'] and body['file']['rights_confirmed'] is True
+        content = base64.b64decode(body['file']['content_base64'], validate=True)
+    else:
+        assert headers['content-type'] == 'application/octet-stream'
+        assert urllib.parse.unquote(headers['x-file-name']) == payload['name']
+        assert headers['x-rights-confirmed'] == 'true' and int(headers['x-entry-revision']) > 0
+        # CDP can omit File/Blob POST bodies; verify these bytes through the anonymous download instead.
+        return
+    assert content == payload['buffer']
+    assert hashlib.sha256(content).digest() == hashlib.sha256(payload['buffer']).digest()
+
+
+def check_download(page, button, payload):
+    expect(button).to_have_text('下载文件')
+    with page.expect_response(lambda response: '/files/' in response.url and response.url.endswith('/download'), timeout=120000) as response_info:
+        with page.expect_download(timeout=120000) as saved:
+            button.click()
+    response = response_info.value
+    assert response.status == 200
+    assert response.header_value('content-type').split(';')[0] == 'application/octet-stream'
+    assert response.header_value('content-length') == str(len(payload['buffer']))
+    assert response.header_value('x-content-type-options') == 'nosniff'
+    disposition = response.header_value('content-disposition')
+    assert disposition.startswith('attachment;')
+    assert urllib.parse.unquote(disposition.split("filename*=UTF-8''")[1]) == payload['name']
+    assert 'no-store' in response.header_value('cache-control')
+    downloaded = saved.value
+    assert downloaded.suggested_filename == payload['name']
+    content = Path(downloaded.path()).read_bytes()
+    assert content == payload['buffer']
+    assert hashlib.sha256(content).hexdigest() == hashlib.sha256(payload['buffer']).hexdigest()
 
 
 def check_catalog(page, base, screenshots, search_slug):
@@ -23,7 +70,7 @@ def check_catalog(page, base, screenshots, search_slug):
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), path
             if screenshots:
                 screenshots.mkdir(parents=True, exist_ok=True)
-                page.screenshot(path=str(screenshots / f"catalog-{path.strip('/') or 'home'}-{width}.png"), full_page=True)
+                page.screenshot(path=str(screenshots / f"catalog-{path.strip('/') or 'home'}-{width}.png"), full_page=True, caret='initial')
     page.goto(base + "/midis?pageSize=1")
     expect(page.get_by_role("table").locator("tbody tr")).to_have_count(1)
     page.get_by_role("link", name="下一页", exact=True).click()
@@ -52,7 +99,9 @@ def check_catalog(page, base, screenshots, search_slug):
     page.get_by_role('button', name='搜索', exact=True).click()
     expect(page.get_by_text('没有匹配的作品', exact=True)).to_be_visible()
     expect(page.get_by_text('没有匹配的人物', exact=True)).to_be_visible()
-    for query in ('q=', 'q=a&q=b', 'q=a&page=0', 'q=' + 'a' * 201):
+    page.goto(base + '/search?q=')
+    expect(page.get_by_text('输入关键词开始搜索', exact=True)).to_be_visible()
+    for query in ('q=a&q=b', 'q=a&page=0', 'q=' + 'a' * 201):
         page.goto(base + '/search?' + query)
         expect(page.get_by_text('搜索条件无效', exact=True)).to_be_visible()
     print("PASS: six catalog modules, navigation, pagination, filters, groups, search/noindex, invalid/empty states and desktop/mobile layouts")
@@ -105,7 +154,7 @@ def check_deletion(page, context, base, screenshots):
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
         if screenshots:
             screenshots.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(screenshots / ('delete-' + resource + '.png')), full_page=True)
+            page.screenshot(path=str(screenshots / ('delete-' + resource + '.png')), full_page=True, caret='initial')
         def lose_response(route):
             if route.request.method == 'POST':
                 route.fetch(timeout=60000); route.abort()
@@ -172,7 +221,10 @@ def main():
         page.locator('[name=title]').fill('文件导入浏览器测试')
         slug = 'file-browser-' + uuid.uuid4().hex
         page.locator('[name=slug]').fill(slug)
-        page.get_by_role('button', name='创建档案', exact=True).click()
+        page.locator('[name=distribution_permission]').select_option('permission_granted')
+        with page.expect_request(lambda request: request.method == 'POST' and request.url == base + '/admin/midis/new') as metadata_request:
+            page.get_by_role('button', name='创建档案', exact=True).click()
+        assert 'next-action' in metadata_request.value.headers  # No-file creation stays a Server Action.
         expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
         edit_url = page.url
         visitor_context = browser.new_context(viewport={'width': 1280, 'height': 900}, accept_downloads=True)
@@ -181,28 +233,45 @@ def main():
         visitor.goto(base + '/midis/' + slug)
         public_url = visitor.url
         assert re.fullmatch(re.escape(base) + r'/midis/[0-9a-f-]{36}', public_url)
-        expect(visitor.get_by_text('尚无已登记的 MIDI 文件。此档案目前仅保存文字资料。')).to_be_visible()
+        expect(visitor.get_by_text('此档案目前仅保存文字资料。', exact=False)).to_be_visible()
         visitor.wait_for_load_state('networkidle')
-        page.get_by_role('link', name='管理 MIDI 文件 →', exact=True).click()
+        page.get_by_role('navigation', name='作品资料管理').locator('a[href$="/files"]').click()
         expect(page).to_have_url(re.compile(r'/admin/midis/\d+/files'))
         page.wait_for_load_state('networkidle')
         expect(page.locator('[name=revision]')).to_have_value('1')
-        upload = page.locator('[name=file]')
+        upload = page.locator('form input[name=file]')
+        assert upload.get_attribute('accept') is None and upload.get_attribute('multiple') is None
         rights = page.locator('[name=rights_confirmed]')
         submit = page.get_by_role('button', name='确认并公开上传', exact=True)
-        # Client validation rejects extensions and files beyond the inclusive limit.
-        upload.set_input_files({'name': 'file.zip', 'mimeType': 'application/zip', 'buffer': midi(70)})
-        expect(page.locator('form').get_by_role('alert')).to_contain_text('请选择一个非空')
-        upload.set_input_files({'name': 'large.mid', 'mimeType': 'audio/midi', 'buffer': b'x' * 1048577})
+        file_id = re.search(r'/admin/midis/(\d+)/files', page.url).group(1)
+        transfer_url = base + '/admin/file-transfer/' + file_id + '/files'
+        # Empty/+1 are rejected; the exact decimal 15 MB limit and arbitrary bytes are allowed.
+        upload.set_input_files({'name': 'empty.zip', 'mimeType': 'application/zip', 'buffer': b''})
+        expect(page.locator('form').get_by_role('alert')).to_contain_text('非空')
+        upload.set_input_files({'name': 'large.zip', 'mimeType': 'application/zip', 'buffer': b'x' * (MAX_FILE_SIZE + 1)})
         expect(page.locator('form').get_by_role('alert')).to_contain_text('文件过大')
-        # Server rejection preserves the selected file and checkbox for correction.
-        upload.set_input_files({'name': 'invalid.mid', 'mimeType': 'audio/midi', 'buffer': b'invalid midi'})
-        rights.check(); submit.click()
-        expect(page.locator('form').get_by_role('alert')).to_contain_text('文件不是有效的')
-        assert upload.evaluate('(el) => el.files[0].name') == 'invalid.mid'
+        payload = {'name': '归档测试.zip', 'mimeType': 'application/zip', 'buffer': raw_file(MAX_FILE_SIZE, slug)}
+        assert len(payload['buffer']) > 4_500_000 and not payload['buffer'].startswith(b'MThd')
+        upload.set_input_files(payload)
+        expect(page.locator('form').get_by_role('alert')).to_have_count(0)
+        # Simulated backend failure must not discard the valid large file or checkbox.
+        def unavailable(route):
+            route.fulfill(status=503, content_type='application/json',
+                          body=json.dumps({'error': {'code': 'STORAGE_UNAVAILABLE', 'message': 'Smoke storage failure'}}))
+        page.route(transfer_url, unavailable)
+        rights.check()
+        with page.expect_request(transfer_url) as failed_transfer:
+            submit.click()
+        check_transfer(failed_transfer.value, transfer_url, payload)
+        expect(page.locator('form').get_by_role('alert')).to_contain_text('存储服务暂时不可用')
+        assert upload.evaluate('(el) => el.files[0].name') == payload['name']
+        assert upload.evaluate('(el) => el.files[0].size') == MAX_FILE_SIZE
         expect(rights).to_be_checked()
-        payload = {'name': '归档测试.MID', 'mimeType': 'audio/midi', 'buffer': midi(70)}
-        upload.set_input_files(payload); submit.click()
+        expect(page.locator('[name=revision]')).to_have_value('1')
+        page.unroute(transfer_url, unavailable)
+        with page.expect_request(transfer_url) as sent_transfer:
+            submit.click()
+        check_transfer(sent_transfer.value, transfer_url, payload)
         expect(page.get_by_role('status')).to_contain_text('文件已成功上传并公开分发')
         expect(page.locator('[name=revision]')).to_have_value('2')
         expect(page.get_by_role('heading', name='已存文件（1）')).to_be_visible()
@@ -234,36 +303,32 @@ def main():
         expect(stale.locator('[name=revision]')).to_have_value('4')
         if args.screenshots:
             args.screenshots.mkdir(parents=True, exist_ok=True)
-            stale.screenshot(path=str(args.screenshots / 'files-desktop.png'), full_page=True)
+            stale.screenshot(path=str(args.screenshots / 'files-desktop.png'), full_page=True, caret='initial')
         stale.set_viewport_size({'width': 390, 'height': 844})
         assert stale.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Mobile overflow'
         if args.screenshots:
-            stale.screenshot(path=str(args.screenshots / 'files-mobile.png'), full_page=True)
+            stale.screenshot(path=str(args.screenshots / 'files-mobile.png'), full_page=True, caret='initial')
         stale.close()
         visitor.bring_to_front()
         visitor.reload()
-        downloads = visitor.get_by_role('button', name=re.compile(r'^下载 MIDI：'))
+        assert not any(cookie['name'] == 'lostmidi_admin' for cookie in visitor_context.cookies())
+        downloads = visitor.get_by_role('button', name=re.compile(r'^下载文件：'))
         expect(downloads).to_have_count(3)
-        with visitor.expect_download() as saved_download:
-            downloads.first.click()
-        downloaded = saved_download.value
-        assert downloaded.suggested_filename == '归档测试.MID'
-        assert Path(downloaded.path()).read_bytes() == midi(70)
+        raw_download = visitor.get_by_role('button', name='下载文件：' + payload['name'], exact=True)
+        check_download(visitor, raw_download, payload)
         assert visitor.url == public_url
         if args.screenshots:
-            visitor.screenshot(path=str(args.screenshots / 'download-desktop.png'), full_page=True)
+            visitor.screenshot(path=str(args.screenshots / 'download-desktop.png'), full_page=True, caret='initial')
         visitor.set_viewport_size({'width': 390, 'height': 844})
         assert visitor.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Public page mobile overflow'
         if args.screenshots:
-            visitor.screenshot(path=str(args.screenshots / 'download-mobile.png'), full_page=True)
+            visitor.screenshot(path=str(args.screenshots / 'download-mobile.png'), full_page=True, caret='initial')
         visitor.route('**/api/midis/*/files/*/download', lambda route: route.abort())
-        downloads.first.click()
+        raw_download.click()
         expect(visitor.get_by_role('main').get_by_role('alert')).to_be_visible()
         assert visitor.url == public_url
         visitor.unroute('**/api/midis/*/files/*/download')
-        with visitor.expect_download() as retry_download:
-            downloads.first.click()
-        assert Path(retry_download.value.path()).read_bytes() == midi(70)
+        check_download(visitor, raw_download, payload)
         expect(visitor.get_by_role('main').get_by_role('alert')).to_have_count(0)
         page.bring_to_front()
         page.goto(edit_url)
@@ -271,51 +336,75 @@ def main():
         revision_input = page.locator('form').filter(has=page.locator('[name=distribution_permission]')).locator('[name=revision]')
         revision_before = int(revision_input.input_value())
         page.locator('[name=distribution_permission]').select_option('restricted')
-        page.get_by_role('button', name='保存修改', exact=True).click()
+        with page.expect_request(lambda request: request.method == 'POST' and request.url == edit_url) as edit_request:
+            page.get_by_role('button', name='保存修改', exact=True).click()
+        assert 'next-action' in edit_request.value.headers
         expect(revision_input).to_have_value(str(revision_before + 1))
         expect(page.get_by_role('status')).to_contain_text('档案已保存')
         expect(page.locator('[name=distribution_permission]')).to_have_value('restricted')
         visitor.bring_to_front()
-        downloads.first.click()
+        raw_download.click()
         expect(visitor.get_by_role('main').get_by_role('alert')).to_contain_text('暂时无法下载')
         visitor.reload()
-        expect(visitor.get_by_role('button', name=re.compile(r'^下载 MIDI：'))).to_have_count(0)
+        expect(visitor.get_by_role('button', name=re.compile(r'^下载文件：'))).to_have_count(0)
         page.goto(base + '/admin/midis/new')
         page.wait_for_load_state('networkidle')
         create_slug = 'create-browser-' + uuid.uuid4().hex
         page.locator('[name=title]').fill('同页创建与上传')
         page.locator('[name=slug]').fill(create_slug)
-        new_file = page.locator('[name=file]')
+        page.locator('[name=distribution_permission]').select_option('permission_granted')
+        new_file = page.get_by_label('选择音乐文件', exact=True)
+        assert new_file.get_attribute('accept') is None and new_file.get_attribute('multiple') is None
         new_rights = page.locator('[name=rights_confirmed]')
         create = page.get_by_role('button', name='创建档案', exact=True)
-        new_file.set_input_files({'name': 'large.mid', 'mimeType': 'audio/midi', 'buffer': b'x' * 1048577})
+        create_transfer_url = base + '/admin/file-transfer/create'
+        new_file.set_input_files({'name': 'empty.raw', 'mimeType': 'application/octet-stream', 'buffer': b''})
+        expect(page.locator('form').get_by_role('alert')).to_contain_text('非空')
+        new_file.set_input_files({'name': 'large.raw', 'mimeType': 'application/octet-stream', 'buffer': b'x' * (MAX_FILE_SIZE + 1)})
         expect(page.locator('form').get_by_role('alert')).to_contain_text('文件过大')
-        new_file.set_input_files({'name': 'invalid.mid', 'mimeType': 'audio/midi', 'buffer': b'not midi'})
+        new_file.set_input_files(payload)  # Inclusive boundary must pass client validation here too.
+        expect(page.locator('form').get_by_role('alert')).to_have_count(0)
+        combined_payload = {'name': '同时创建.raw', 'mimeType': 'application/octet-stream',
+                            'buffer': raw_file(5_000_001, create_slug)}
+        assert len(combined_payload['buffer']) > 4_500_000 and not combined_payload['buffer'].startswith(b'MThd')
+        new_file.set_input_files(combined_payload)
         create.click()
         assert new_rights.evaluate('(el) => !el.checkValidity()')
         expect(page).to_have_url(base + '/admin/midis/new')
-        new_rights.check(); create.click()
-        expect(page.locator('form').get_by_role('alert')).to_contain_text('文件不是有效的')
+        def reject_creation(route):
+            route.fulfill(status=400, content_type='application/json',
+                          body=json.dumps({'error': {'code': 'INVALID_FILE', 'message': 'Smoke file validation failure'}}))
+        page.route(create_transfer_url, reject_creation)
+        new_rights.check()
+        with page.expect_request(create_transfer_url) as failed_creation:
+            create.click()
+        check_transfer(failed_creation.value, create_transfer_url, combined_payload, combined=True)
+        expect(page.locator('form').get_by_role('alert')).to_be_visible()
         expect(page.locator('[name=title]')).to_have_value('同页创建与上传')
-        assert new_file.evaluate('(el) => el.files[0].name') == 'invalid.mid'
+        assert new_file.evaluate('(el) => el.files[0].name') == combined_payload['name']
+        assert new_file.evaluate('(el) => el.files[0].size') == len(combined_payload['buffer'])
         expect(new_rights).to_be_checked()
-        new_file.set_input_files({'name': '同时创建.mid', 'mimeType': 'audio/midi', 'buffer': midi(81)})
-        create.click()
-        expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
+        assert visitor_context.request.get(os.environ['BACKEND_API_URL'] + '/api/v1/midis/' + create_slug).status == 404
+        page.unroute(create_transfer_url, reject_creation)
+        with page.expect_request(create_transfer_url) as sent_creation:
+            create.click()
+        check_transfer(sent_creation.value, create_transfer_url, combined_payload, combined=True)
+        expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'), timeout=60000)
         visitor.goto(base + '/midis/' + create_slug)
-        expect(visitor.get_by_role('button', name='下载 MIDI：同时创建.mid', exact=True)).to_be_visible()
-        with visitor.expect_download() as combined_download:
-            visitor.get_by_role('button', name='下载 MIDI：同时创建.mid', exact=True).click()
-        assert Path(combined_download.value.path()).read_bytes() == midi(81)
+        combined_public_url = visitor.url
+        expect(visitor.get_by_role('button', name='下载文件：' + combined_payload['name'], exact=True)).to_be_visible()
+        check_download(visitor, visitor.get_by_role('button', name='下载文件：' + combined_payload['name'], exact=True), combined_payload)
+        assert visitor.url == combined_public_url
         page.goto(base + '/admin/midis/new')
         page.wait_for_load_state('networkidle')
         page.locator('[name=title]').fill('重复文件不得建档')
         duplicate_slug = create_slug + '-duplicate'
         page.locator('[name=slug]').fill(duplicate_slug)
-        page.locator('[name=file]').set_input_files({'name': 'duplicate.mid', 'mimeType': 'audio/midi', 'buffer': midi(81)})
+        page.locator('[name=file]').set_input_files({**combined_payload, 'name': 'duplicate.zip'})
         page.locator('[name=rights_confirmed]').check()
         page.get_by_role('button', name='创建档案', exact=True).click()
         expect(page.locator('form').get_by_role('alert')).to_contain_text('相同文件已归属于其他档案')
+        assert visitor_context.request.get(os.environ['BACKEND_API_URL'] + '/api/v1/midis/' + duplicate_slug).status == 404
         page.get_by_role('button', name='移除文件，仅保存资料', exact=True).click()
         expect(page.locator('[name=file]')).to_have_value('')
         expect(page.locator('[name=rights_confirmed]')).not_to_be_checked()
@@ -326,27 +415,39 @@ def main():
         retry_slug = 'retry-browser-' + uuid.uuid4().hex
         page.locator('[name=title]').fill('响应丢失安全重试')
         page.locator('[name=slug]').fill(retry_slug)
-        page.locator('[name=file]').set_input_files({'name': '重试.mid', 'mimeType': 'audio/midi', 'buffer': midi(82)})
+        page.locator('[name=distribution_permission]').select_option('permission_granted')
+        retry_payload = {'name': '重试.mid', 'mimeType': 'audio/midi', 'buffer': midi(82)}
+        page.locator('[name=file]').set_input_files(retry_payload)
         page.locator('[name=rights_confirmed]').check()
+        lost_requests = []
         def lose_saved_response(route):
             if route.request.method == 'POST':
-                route.fetch(timeout=60000)
+                check_transfer(route.request, create_transfer_url, retry_payload, combined=True)
+                lost_requests.append(route.request.post_data_json)
+                response = route.fetch(timeout=60000)
+                assert response.status == 201
                 route.abort()
             else:
                 route.continue_()
-        page.route('**/admin/midis/new', lose_saved_response)
+        page.route(create_transfer_url, lose_saved_response)
         page.get_by_role('button', name='创建档案', exact=True).click()
         expect(page.locator('form').get_by_role('alert')).to_contain_text('连接中断')
         assert page.locator('[name=file]').evaluate('(el) => el.files[0].name') == '重试.mid'
+        expect(page.locator('[name=rights_confirmed]')).to_be_checked()
         expect(page.locator('[name=title]')).to_have_value('响应丢失安全重试')
         expect(page.locator('[name=title]')).to_be_disabled()
-        page.unroute('**/admin/midis/new', lose_saved_response)
+        assert len(lost_requests) == 1
+        page.unroute(create_transfer_url, lose_saved_response)
         visitor.goto(base + '/midis/' + retry_slug)
-        expect(visitor.get_by_role('button', name='下载 MIDI：重试.mid', exact=True)).to_have_count(1)
-        page.get_by_role('button', name='重试本次提交', exact=True).click()
+        expect(visitor.get_by_role('button', name='下载文件：重试.mid', exact=True)).to_have_count(1)
+        with page.expect_request(create_transfer_url) as retry_request:
+            page.get_by_role('button', name='重试本次提交', exact=True).click()
+        check_transfer(retry_request.value, create_transfer_url, retry_payload, combined=True)
+        assert retry_request.value.post_data_json == lost_requests[0]
         expect(page).to_have_url(re.compile(r'/admin/midis/\d+/edit'))
         visitor.reload()
-        expect(visitor.get_by_role('button', name='下载 MIDI：重试.mid', exact=True)).to_have_count(1)
+        expect(visitor.get_by_role('button', name='下载文件：重试.mid', exact=True)).to_have_count(1)
+        check_download(visitor, visitor.get_by_role('button', name='下载文件：重试.mid', exact=True), retry_payload)
         if os.environ.get('BACKEND_API_URL'):
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             with opener.open(os.environ['BACKEND_API_URL'] + '/api/v1/catalog/entries?pageSize=100') as response:
@@ -356,13 +457,13 @@ def main():
         page.set_viewport_size({'width': 390, 'height': 844})
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Create form mobile overflow'
         if args.screenshots:
-            page.screenshot(path=str(args.screenshots / 'create-mobile.png'), full_page=True)
+            page.screenshot(path=str(args.screenshots / 'create-mobile.png'), full_page=True, caret='initial')
         check_deletion(page, context, base, args.screenshots)
         check_catalog(visitor, base, args.screenshots, create_slug)
         assert not errors, errors
         visitor_context.close()
         browser.close()
-    print('PASS: upload regression, anonymous exact-byte download, original filename, error recovery, rights revocation and mobile layout')
+    print('PASS: same-origin fetch, 15 MB/+1, >4.5 MB non-MIDI import/create, anonymous exact SHA/name download, retries, rights and mobile layout')
 
 
 if __name__ == '__main__':

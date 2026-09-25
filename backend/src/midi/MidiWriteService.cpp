@@ -2,6 +2,7 @@
 #include "common/Error.h"
 #include <regex>
 #include <algorithm>
+#include <chrono>
 
 namespace lostmidi::midi {
 namespace {
@@ -24,6 +25,25 @@ void MidiWriteService::validate(MidiEntry& entry) {
         throw ApiError(400, "INVALID_INPUT", "Title must be at most 300 UTF-8 bytes; slug must be lowercase words separated by hyphens (maximum 160).");
     if (entry.estimatedYear && (*entry.estimatedYear < 1 || *entry.estimatedYear > 9999))
         throw ApiError(400, "INVALID_INPUT", "Estimated year must be 1 to 9999 or null.");
+    if (entry.estimatedDate) {
+        const auto& value = *entry.estimatedDate;
+        if (value.size() != 10 || value[4] != '-' || value[7] != '-')
+            throw ApiError(400, "INVALID_INPUT", "Estimated date must use YYYY-MM-DD.");
+        int year = 0, month = 0, day = 0;
+        try { year = std::stoi(value.substr(0, 4)); month = std::stoi(value.substr(5, 2)); day = std::stoi(value.substr(8, 2)); }
+        catch (...) { throw ApiError(400, "INVALID_INPUT", "Estimated date must use YYYY-MM-DD."); }
+        bool syntaxValid = true;
+        for (std::size_t i = 0; i < value.size(); ++i) {
+            const bool separator = i == 4 || i == 7;
+            syntaxValid = syntaxValid && (separator ? value[i] == '-' : value[i] >= '0' && value[i] <= '9');
+        }
+        if (!syntaxValid ||
+            !std::chrono::year_month_day{std::chrono::year{year},std::chrono::month{static_cast<unsigned>(month)},std::chrono::day{static_cast<unsigned>(day)}}.ok())
+            throw ApiError(400, "INVALID_INPUT", "Estimated date is not a valid calendar date.");
+        if (entry.estimatedYear && *entry.estimatedYear != year)
+            throw ApiError(400, "INVALID_INPUT", "Estimated year and date must agree.");
+        entry.estimatedYear = year;
+    }
     if (!oneOf(entry.archiveStatus, {"archived", "partially_recovered", "lost", "uncertain"}) ||
         !entry.copyrightStatus || !oneOf(*entry.copyrightStatus, {"unknown", "public_domain", "licensed", "copyrighted"}) ||
         !entry.distributionPermission || !oneOf(*entry.distributionPermission, {"unknown", "permission_granted", "metadata_only", "restricted"}))

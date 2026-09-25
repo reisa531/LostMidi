@@ -2,6 +2,7 @@
 #include "common/Error.h"
 #include "midi/MidiService.h"
 #include "midi/MidiFileService.h"
+#include "midi/MidiWriteService.h"
 #include "storage/LocalObjectStorage.h"
 #include <fstream>
 #include <limits>
@@ -69,6 +70,20 @@ TEST_F(ServiceTest, InvalidSlugDoesNotQueryRepository) {
     EXPECT_THROW(service.getBySlug("' OR 1=1"), ApiError);
     EXPECT_EQ(archive.queries, 0);
 }
+TEST(MidiEstimatedDate, ValidatesLeapDaysAndMatchingYear) {
+    midi::MidiEntry entry;
+    entry.title = "Test"; entry.slug = "test"; entry.archiveStatus = "uncertain";
+    entry.copyrightStatus = "unknown"; entry.distributionPermission = "unknown";
+    entry.estimatedYear = 2024; entry.estimatedDate = "2024-02-29";
+    midi::MidiWriteService::validate(entry);
+    EXPECT_EQ(entry.estimatedYear, 2024);
+    entry.estimatedDate = "2023-02-29";
+    EXPECT_THROW(midi::MidiWriteService::validate(entry), ApiError);
+    entry.estimatedDate = "2025-03-01";
+    EXPECT_THROW(midi::MidiWriteService::validate(entry), ApiError);
+    entry.estimatedDate = "2024-2-09";
+    EXPECT_THROW(midi::MidiWriteService::validate(entry), ApiError);
+}
 TEST_F(ServiceTest, PaginationKeepsTotalAndCredits) {
     midi::MidiEntry first;
     first.id = 1; first.slug = "first";
@@ -129,14 +144,16 @@ TEST_F(StorageTest, DuplicateContentHasOneFileEvenWithDifferentNames) {
     EXPECT_TRUE(service.registerFile(1, "retry.mid", bytesOf(bytes)).duplicate);
     EXPECT_TRUE(objects.exists(first.file.storageKey));
 }
-TEST_F(StorageTest, RejectsWhitespaceOnlyFilenames) {
+TEST_F(StorageTest, RejectsWhitespaceFilenamesWithoutTrimming) {
     MemoryArchive repository;
     storage::LocalObjectStorage objects(directory);
     midi::MidiFileService service(repository, objects);
 
     EXPECT_THROW(service.registerFile(1, "   ", bytesOf("abc")), ApiError);
     EXPECT_THROW(service.registerFile(1, "\n\t ", bytesOf("abc")), ApiError);
-    EXPECT_NO_THROW(service.registerFile(1, "  valid.mid  ", bytesOf("abc")));
+    EXPECT_THROW(service.registerFile(1, "  valid.mid  ", bytesOf("abc")), ApiError);
+    EXPECT_TRUE(repository.files.empty());
+    EXPECT_NO_THROW(service.registerFile(1, "valid.mid", bytesOf("abc")));
     EXPECT_EQ(repository.files.size(), 1u);
 }
 TEST_F(StorageTest, RejectsTraversalAndMismatchedContent) {
@@ -213,9 +230,9 @@ TEST_F(StorageTest, ReadRejectsIncorrectExpectedSize) {
     expectReadUnavailable(objects, key, 2);
     expectReadUnavailable(objects, key, 4);
 }
-TEST_F(StorageTest, ReadAcceptsOneByteAndOneMiB) {
+TEST_F(StorageTest, ReadAcceptsOneByteAndFifteenMB) {
     storage::LocalObjectStorage objects(directory);
-    for (const std::size_t size : {std::size_t{1}, std::size_t{1024 * 1024}}) {
+    for (const std::size_t size : {std::size_t{1}, std::size_t{15'000'000}}) {
         SCOPED_TRACE(size);
         std::string bytes(size, '\0');
         for (std::size_t i = 0; i < size; ++i) bytes[i] = static_cast<char>(i % 256);
@@ -232,7 +249,7 @@ TEST_F(StorageTest, ReadRejectsInvalidSizesBeforeReading) {
     const auto key = storage::sha256(bytesOf("a"));
     ASSERT_TRUE(objects.store(key, bytesOf("a")));
     EXPECT_THROW(objects.read(key, 0), std::invalid_argument);
-    EXPECT_THROW(objects.read(key, 1024 * 1024 + 1), std::invalid_argument);
+    EXPECT_THROW(objects.read(key, 15'000'001), std::invalid_argument);
     EXPECT_THROW(objects.read(key, std::numeric_limits<std::size_t>::max()), std::invalid_argument);
 }
 TEST_F(StorageTest, ReadRejectsInvalidKeys) {

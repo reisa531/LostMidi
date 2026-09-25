@@ -12,6 +12,9 @@ struct Person {
     std::string createdAt;
     std::int64_t revision = 1;
     std::string publicId;
+    std::optional<std::string> summary;
+    std::string profile = "{}";
+    std::string updatedAt;
 };
 struct Credit {
     std::int64_t personId = 0;
@@ -29,5 +32,7 @@ struct PersonDetail {
     Person person;
     std::vector<std::string> aliases;
     std::vector<CreditedMidi> midis;
+    std::optional<Person> previous;
+    std::optional<Person> next;
 };
 }  // namespace lostmidi::person

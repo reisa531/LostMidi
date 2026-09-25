@@ -11,7 +11,8 @@ MidiEntry entryFrom(const drogon::orm::Row& row) {
         row["created_at"].as<std::string>(), row["updated_at"].as<std::string>(),
         nullable<std::string>(row["copyright_status"]), nullable<std::string>(row["license"]),
         nullable<std::string>(row["rights_holder"]), nullable<std::string>(row["distribution_permission"]),
-        row["revision"].as<std::int64_t>(), row["public_id"].as<std::string>()};
+        row["revision"].as<std::int64_t>(), row["public_id"].as<std::string>(),
+        nullable<std::string>(row["estimated_date"])};
 }
 MidiFile fileFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), row["midi_id"].as<std::int64_t>(),
@@ -64,9 +65,9 @@ std::optional<MidiEntry> PostgresMidiRepository::findById(std::int64_t id) {
 }
 MidiEntry PostgresMidiRepository::create(const MidiEntry& e) {
     const auto rows = db_->execSqlSync(
-        "INSERT INTO midi_entries (slug,title,description,estimated_year,archive_status,copyright_status,license,rights_holder,distribution_permission) "
-        "VALUES ($1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,$5,$6,NULLIF($7,''),NULLIF($8,''),$9) ON CONFLICT(slug) DO NOTHING RETURNING *",
-        e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.archiveStatus,
+        "INSERT INTO midi_entries (slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
+        "VALUES ($1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
+        e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
         *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
     if (rows.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
     return entryFrom(rows[0]);
@@ -100,9 +101,9 @@ MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const st
     if (file && !tx.db->execSqlSync("SELECT 1 FROM midi_files WHERE sha256=$1", file->sha256).empty())
         throw ApiError(409, "FILE_OWNERSHIP_CONFLICT", "Identical bytes already belong to another MIDI entry.");
     const auto entries = tx.db->execSqlSync(
-        "INSERT INTO midi_entries (slug,title,description,estimated_year,archive_status,copyright_status,license,rights_holder,distribution_permission) "
-        "VALUES ($1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,$5,$6,NULLIF($7,''),NULLIF($8,''),$9) ON CONFLICT(slug) DO NOTHING RETURNING *",
-        e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.archiveStatus,
+        "INSERT INTO midi_entries (slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
+        "VALUES ($1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
+        e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
         *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
     if (entries.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
     const auto saved = entryFrom(entries[0]);
@@ -126,9 +127,10 @@ MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const st
 MidiEntry PostgresMidiRepository::update(std::int64_t id, const MidiEntry& e) {
     try {
         const auto rows = db_->execSqlSync(
-            "UPDATE midi_entries SET slug=$1,title=$2,description=NULLIF($3,''),estimated_year=NULLIF($4,0)::smallint,archive_status=$5,"
-            "copyright_status=$6,license=NULLIF($7,''),rights_holder=NULLIF($8,''),distribution_permission=$9 WHERE id=$10 AND revision=$11 AND deleted_at IS NULL RETURNING *",
-            e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.archiveStatus,
+            "UPDATE midi_entries SET slug=$1,title=$2,description=NULLIF($3,''),estimated_year=NULLIF($4,0)::smallint,"
+            "estimated_date=CASE WHEN $5 THEN NULLIF($6,'')::date WHEN estimated_date IS NOT NULL AND EXTRACT(YEAR FROM estimated_date)::int<>NULLIF($4,0) THEN NULL ELSE estimated_date END,archive_status=$7,"
+            "copyright_status=$8,license=NULLIF($9,''),rights_holder=NULLIF($10,''),distribution_permission=$11 WHERE id=$12 AND revision=$13 AND deleted_at IS NULL RETURNING *",
+            e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDateProvided, e.estimatedDate.value_or(""), e.archiveStatus,
             *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission, id, e.revision);
         if (!rows.empty()) return entryFrom(rows[0]);
     } catch (const drogon::orm::Failure& error) {

@@ -13,7 +13,7 @@ const std::string sourceSelect = R"SQL(
     FROM historical_sources
 )SQL";
 const std::string eventSelect = R"SQL(
-    SELECT r.id, CASE WHEN p.id IS NULL THEN NULL ELSE r.recovered_by END AS recovered_by, p.display_name AS recovered_by_name, r.story, r.evidence,
+    SELECT r.id, CASE WHEN p.id IS NULL THEN NULL ELSE r.recovered_by END AS recovered_by, COALESCE(r.recovered_by_name,p.display_name) AS recovered_by_name, r.story, r.evidence,
         to_char(r.recovered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS recovered_at,
         to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at
     FROM recovery_events r LEFT JOIN people p ON p.id = r.recovered_by AND p.deleted_at IS NULL
@@ -131,19 +131,24 @@ EventWriteResult PostgresRecoveryRepository::saveEvent(std::int64_t midiId, std:
     std::int64_t revision, const RecoveryEvent& event) {
     TransactionScope tx(db_);
     const auto nextRevision = advanceRevision(tx.db, midiId, revision);
+    auto recoveredByName = event.recoveredByName;
+    if (event.recoveredBy && !recoveredByName) {
+        const auto person = tx.db->execSqlSync("SELECT display_name FROM people WHERE id=$1", *event.recoveredBy);
+        if (person.empty()) throw ApiError(400, "UNKNOWN_PERSON", "The legacy recovered_by person does not exist.");
+        recoveredByName = person[0]["display_name"].as<std::string>();
+    }
+    // New recovery records keep a stable name snapshot, not a live person FK.
     if (eventId)
         requireEvent(tx.db->execSqlSync("SELECT id FROM recovery_events WHERE midi_id=$1 AND id=$2", midiId, eventId));
-    if (event.recoveredBy && tx.db->execSqlSync("SELECT id FROM people WHERE id=$1 AND deleted_at IS NULL FOR KEY SHARE", *event.recoveredBy).empty())
-        throw ApiError(400, "UNKNOWN_PERSON", "The selected person no longer exists.");
     const auto rows = eventId
         ? tx.db->execSqlSync(
-            "UPDATE recovery_events SET recovered_at=NULLIF($1,'')::timestamptz,recovered_by=NULLIF($2::bigint,0),"
+            "UPDATE recovery_events SET recovered_at=NULLIF($1,'')::timestamptz,recovered_by=NULL,recovered_by_name=NULLIF($2,''),"
             "story=$3,evidence=NULLIF($4,'') WHERE midi_id=$5 AND id=$6 RETURNING id",
-            event.recoveredAt.value_or(""), event.recoveredBy.value_or(0), event.story, event.evidence.value_or(""), midiId, eventId)
+            event.recoveredAt.value_or(""), recoveredByName.value_or(""), event.story, event.evidence.value_or(""), midiId, eventId)
         : tx.db->execSqlSync(
-            "INSERT INTO recovery_events(recovered_at,recovered_by,story,evidence,midi_id) "
-            "VALUES(NULLIF($1,'')::timestamptz,NULLIF($2::bigint,0),$3,NULLIF($4,''),$5) RETURNING id",
-            event.recoveredAt.value_or(""), event.recoveredBy.value_or(0), event.story, event.evidence.value_or(""), midiId);
+            "INSERT INTO recovery_events(recovered_at,recovered_by,recovered_by_name,story,evidence,midi_id) "
+            "VALUES(NULLIF($1,'')::timestamptz,NULLIF($2::bigint,0),NULLIF($3,''),$4,NULLIF($5,''),$6) RETURNING id",
+            event.recoveredAt.value_or(""), 0, recoveredByName.value_or(""), event.story, event.evidence.value_or(""), midiId);
     requireEvent(rows);
     const auto saved = tx.db->execSqlSync(eventSelect + " WHERE r.midi_id=$1 AND r.id=$2", midiId, rows[0]["id"].as<std::int64_t>());
     requireEvent(saved);

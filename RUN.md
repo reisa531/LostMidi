@@ -29,7 +29,7 @@
 
 后端项目使用仓库根目录及正式配置 `vercel.json`：`services.backend.root='.'`、`entrypoint='Dockerfile.vercel'`、region `iad1`，`/(.*)` rewrite 指向 backend。它不是前端配置，也不包含数据库或迁移任务；未来经确认发布时须显式选择此配置（CLI 对应 `--local-config vercel.json`），不能误部署到前端项目。
 
-后端容器接受平台 `PORT`，优先于 `BACKEND_PORT`；监听 `0.0.0.0`，默认 `DB_POOL_SIZE=2`、`HTTP_THREADS=2`、`WORKER_THREADS=2`。`DATABASE_URL` 使用现有 Neon 连接配置，数据库与存储密钥仅放在后端项目、按 Production / Preview 隔离；不要复制 Compose 的 `postgres` DNS 名称到云端。前端继续 Root Directory=`frontend`，只配置 `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE`。
+后端容器接受平台 `PORT`，优先于 `BACKEND_PORT`；监听 `0.0.0.0`，默认 `DB_POOL_SIZE=2`、`HTTP_THREADS=2`、`WORKER_THREADS=2`。`DATABASE_URL` 使用现有 Neon 连接配置，数据库与存储密钥仅放在后端项目、按 Production / Preview 隔离；不要复制 Compose 的 `postgres` DNS 名称到云端。前端继续 Root Directory=`frontend`，配置 `BACKEND_API_URL`、`ADMIN_ORIGIN`、`ADMIN_COOKIE_SECURE`；后端也须配置与前端一致的 `ADMIN_ORIGIN` 以验证文件上传来源。
 
 云容器 `/tmp` 不持久，导入默认关闭；按第 3.3 节配置真实 S3 桶并设置 `S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 后，才可启用 S3 导入。保持小连接池，避免自动反复云构建、密集轮询和生产写入测试；已有桶无需新建存储产品。完整设置见 [Vercel 部署指引](docs/vercel-assessment.md)。
 
@@ -156,7 +156,7 @@ ADMIN_COOKIE_SECURE=true
 
 旧站第一次运行新版必须保留完整环境凭据，待成功写入 `auth_source=environment` 的持久标记后才能改配置；标记的 username/password_hash 为 NULL，不复制环境哈希。之后移除凭据仍 installed，但登录禁用，需恢复环境或维护者应急覆盖，不能删除表重装。升级前先移除凭据时系统无法推断曾安装，详见第 7.2 节。
 
-`ADMIN_ORIGIN` 是浏览器看到的完整来源，必须包含协议、主机和非默认端口，不能包含路径或末尾 `/`。上例域名必须换成实际域名。本机 HTTP 使用 `.env.example` 的 `ADMIN_ORIGIN=http://localhost:3000` 和 `ADMIN_COOKIE_SECURE=false`；若用 `http://127.0.0.1:3000`，必须相应修改来源。正式部署使用 HTTPS 与 `ADMIN_COOKIE_SECURE=true`，不要保留开发示例的 false。
+`ADMIN_ORIGIN` 须同时配置在前端与后端，是浏览器看到的完整来源，必须包含协议、主机和非默认端口，不能包含路径或末尾 `/`。上例域名必须换成实际域名。本机 HTTP 使用 `.env.example` 的 `ADMIN_ORIGIN=http://localhost:3000` 和 `ADMIN_COOKIE_SECURE=false`；若用 `http://127.0.0.1:3000`，必须相应修改来源。正式部署使用 HTTPS 与 `ADMIN_COOKIE_SECURE=true`，不要保留开发示例的 false。
 
 修改环境凭据后，使用 `docker compose up -d --wait` 重建后端容器；无完整环境覆盖时，每次登录和鉴权重新读取数据库凭据，当前选用的用户名与哈希决定会话 identity。不匹配的 session 被拒绝，但恢复旧凭据可能让未过期旧 session 再次匹配，不能称为永久撤销。会话最长 8 小时，不随访问续期；退出只撤销当前会话。单后端进程每分钟最多 10 次登录尝试（包括成功登录），安装另有独立的每进程 10 次/分钟额度，分别超限返回 429，不跨实例共享。
 
@@ -171,7 +171,7 @@ ADMIN_COOKIE_SECURE=true
 | `STORAGE_PATH` | Compose 固定 `/app/storage` | 建议使用绝对路径 |
 | `INSTALLATION_TOKEN` | 仅注入 backend，空值禁用新安装 | 仅在后端进程环境中设置 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` | 仅注入 backend；完整有效时覆盖数据库管理员 | 在后端进程环境中设置；新安装保持哈希为空，升级保留完整旧凭据 |
-| `ADMIN_ORIGIN` / `ADMIN_COOKIE_SECURE` | 仅注入 frontend | 在 frontend/.env.local 中设置 |
+| `ADMIN_ORIGIN` / `ADMIN_COOKIE_SECURE` | 来源注入前后端，Cookie 开关仅 frontend | 来源在前后端均设置，Cookie 开关仅 frontend |
 
 容器内的 `localhost` 指容器自己，不能用它连接另一个服务。`POSTGRES_PORT` 只改变宿主映射，不改变容器间的 5432。修改 `BACKEND_PORT` 后需同步修改 `BACKEND_API_URL` 中的端口。
 
@@ -179,7 +179,7 @@ ADMIN_COOKIE_SECURE=true
 
 ### 3.3 私有持久存储：local / 已有 S3 桶
 
-`STORAGE_BACKEND=local|s3` 默认 `local`；`MIDI_IMPORT_ENABLED=true|false` 默认 `false`，这两项和全部 S3 变量仅由 backend 接收，不能传给 frontend 或浏览器。关闭导入不免除应用全部迁移至 015 的要求。
+`STORAGE_BACKEND=local|s3` 默认 `local`；`MIDI_IMPORT_ENABLED=true|false` 默认 `false`，这两项和全部 S3 变量仅由 backend 接收，不能传给 frontend 或浏览器。关闭导入不免除应用全部迁移至 016 的要求。
 
 **local：** 使用 `STORAGE_PATH`，Compose 固定把宿主 `./storage` 挂载到 `/app/storage`。保留专用持久目录，不要放在构建目录；Vercel 容器默认 `/tmp/lostmidi-storage` 会丢失，不能用于云导入。后端容器以 UID 10001 运行，Linux 首次建立专用目录可执行：
 
@@ -209,16 +209,16 @@ sudo install -d -o 10001 -g 10001 -m 0750 ./storage
 
 ### 3.4 管理员单文件导入与失败清理
 
-接口为 `GET/POST /api/v1/admin/midis/{id}/files`，两者均需 `Authorization: Bearer <管理员会话>`。GET 读取文件管理数据；POST 请求体是单个 MIDI 的原始字节，不是 multipart：
+接口为 `GET/POST /api/v1/admin/midis/{id}/files`，支持 `Authorization: Bearer <管理员会话>`；浏览器 POST 也支持下述 Cookie 与来源校验。GET 读取文件管理数据；POST 请求体是单个文件的原始字节，不是 multipart：
 
 - `Content-Type: application/octet-stream`
 - `X-File-Name: encodeURIComponent(原文件名)`
 - `X-Entry-Revision: 当前档案 revision`
 - `X-Rights-Confirmed: true`（确认有权公开分发此文件）
 
-只接受单个 `.mid` / `.midi`、SMF 0/1/2，文件不超过 **1 MiB（1,048,576 字节）**；前端 Server Action 请求上限是 `2mb`，用于容纳表单开销，并不放宽文件限制。浏览器经 Next.js 服务端向 C++ 转发 Bearer；密钥不会传到前端。上传即同意公开分发，不修改版权、分发许可或归档状态；后台页展示文件元数据，公开详情页提供下载按钮，不提供试听或对象 URL。
+每次上传单个非空文件，**不限扩展名或音乐格式，最大 15 MB（15,000,000 字节，含边界）**，保留原始内容，不解析或转码。文件传输使用 `/admin/file-transfer/` 下的同域外部 rewrite 直接代理至 C++，不经过 Vercel Function 的 4.5 MB 请求体入口；纯文字操作仍使用 `2mb` 的 Server Action。后端仅在上传接口接受 HttpOnly 管理 Cookie，并精确校验 `ADMIN_ORIGIN`，不会把会话或存储密钥交给浏览器脚本。前后端均须配置同一个 `ADMIN_ORIGIN`；`BACKEND_API_URL` 须在前端构建时可用，变更后重新构建。上传即同意公开分发，不修改版权、分发许可或归档状态；普通管理员上传仍须审核。
 
-访客下载通过站内 `GET /api/midis/{slug}/files/{id}/download` 转发到后端 `GET /api/v1/midis/{slug}/files/{id}/download`，不携带管理员会话。成功返回 `audio/midi` 附件及 UTF-8 原文件名，逐次核对数据库中的文件归属、分发确认、长度和 SHA-256；local 与 S3 均适用，最大 1 MiB。没有上传确认的旧记录不开放下载；条目的 `restricted` / `metadata_only` 优先禁止下载，其他状态仍需文件确认。`MIDI_IMPORT_ENABLED=false` 只暂停新增上传，不关闭已获准文件的下载。
+访客下载通过站内 `GET /api/midis/{slug}/files/{id}/download` 的同域外部 rewrite 转发到后端 `GET /api/v1/midis/{slug}/files/{id}/download`，不经过 Next.js 下载函数，不携带管理员会话。成功返回 `application/octet-stream` 附件及 UTF-8 原文件名，禁止内容嗅探；逐次核对数据库中的文件归属、分发确认、长度和 SHA-256，local 与 S3 均适用，最大 15 MB。没有上传确认的旧记录不开放下载；条目的 `restricted` / `metadata_only` 优先禁止下载，其他状态仍需文件确认。`MIDI_IMPORT_ENABLED=false` 只暂停新增上传，不关闭已获准文件的下载。
 
 下载响应与错误均 `no-store`；错误区分 403（不允许分发）、404（文件或档案不存在）、503（存储不可用/服务繁忙），页面保留重试入口。S3 的路径、签名和凭据不传到浏览器。站内分发限制不能撤销桶本身的匿名访问策略；如需彻底撤回已公开对象，须另行在存储服务侧处理权限。
 
@@ -415,7 +415,7 @@ docker compose stop
    ```
 
    脚本支持已有库，以事务和 advisory lock 串行迁移，校验并跳过已应用版本；`DATABASE_URL` 非空时优先于 `PG*`。保留已应用迁移及其校验和，使用该 migration runner 应用全部待执行迁移；不使用要求空库的 `.tools` 临时脚本，不直接执行单个 SQL 绕过迁移账本。
-3. 退出码必须为 0，再只读核对 `schema_migrations` 中已要求的迁移至 015、审核申请表及 013 用户表，同时保留此前结构、`site_installation` 锁及已有资料。失败先排障，不能发布新版绕过检查。
+3. 退出码必须为 0，再只读核对 `schema_migrations` 中已要求的迁移至 016、人物 profile、MIDI 估算日期、寻回人姓名字段、审核申请表及 013 用户表，同时保留此前结构、`site_installation` 锁及已有资料。失败先排障，不能发布新版绕过检查。
 4. 本地检查及迁移确认后，在该次发布授权范围内先发布到**后端独立项目**并显式选择 `vercel.json`，后端就绪后再推送前端更新；不反复触发云构建。核对 `/ready`、已有安装状态与只读页面。真实桶未验证前保持导入关闭；S3 配置与密钥不得复制到前端。
 
 历史交付及本机直连生产健康端点连接超时的限制见 [验证报告](docs/implementation-report.md)。部署 READY 不等同于本机 `/health`、`/ready` 请求验收通过；未在生产试删或运行 cleanup。
@@ -425,7 +425,7 @@ docker compose stop
 1. 记录旧提交、环境配置及镜像信息，按第 8 节备份。
 2. 将部署代码更新到已经测试的目标提交；保留 `.env`、storage 和 Compose 项目标识。旧环境管理员首次升级至含安装功能的版本时，**必须保留完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`**，不要先清空凭据。
 3. 构建新镜像；构建失败时先修复，不继续切换。
-4. 停止应用，执行全部待应用迁移至 015，再启动新应用。保留 005 安装表，不改旧迁移，不 seed 生产库。
+4. 停止应用，执行全部待应用迁移至 016，再启动新应用。保留 005 安装表，不改旧迁移，不 seed 生产库。
 
 ```sh
 docker compose build
@@ -510,7 +510,7 @@ sudo tar -xzf "$backup_dir/storage.tar.gz" -C "$backup_dir/restore-check"
 原生编译命令按平台见 [README 的 Local Development](README.md#local-development)。基本顺序不能省略：
 
 1. 安装 Node 22.13+（22.x）、npm、C++20 编译器、CMake 3.24+、Conan 2、PostgreSQL 17 与 psql。
-2. 创建数据库和用户，设置 libpq 连接变量，执行 `SEED_DEMO=false sh database/migrate.sh`，应用全部迁移至 015；Windows 可用 Git Bash。连接/迁移由部署者准备，不由安装页执行。
+2. 创建数据库和用户，设置 libpq 连接变量，执行 `SEED_DEMO=false sh database/migrate.sh`，应用全部迁移至 016；Windows 可用 Git Bash。连接/迁移由部署者准备，不由安装页执行。
 3. Conan 安装依赖，CMake configure / build / CTest。
 4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH。新站保持 ADMIN_PASSWORD_HASH 为空、仅在后端设置有效 INSTALLATION_TOKEN；旧环境部署首次新版启动保留完整 ADMIN_USERNAME、ADMIN_PASSWORD_HASH。运行后端可执行程序。
 5. 在 frontend 目录配置 BACKEND_API_URL、ADMIN_ORIGIN、ADMIN_COOKIE_SECURE；开发使用 `.env.local`，生产使用 `.env.production.local`，然后构建并运行前端。
@@ -576,7 +576,7 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 
 ## 2026-09-24 界面与原子建档升级验收
 
-**历史阶段记录：** 下述 007/008 升级步骤仅对应先前发布。当前工作区代码要求先备份并应用全部迁移至 015；阶段 4–6 尚未发布。
+**历史阶段记录：** 下述 007/008 升级步骤仅对应先前发布。当前工作区代码要求先备份并应用全部迁移至 016；阶段 4–6 尚未发布。
 
 本地代码新增前台五模块、后台工作台与新建档案同页上传。上线前先备份，使用既有 `database/migrate.sh` 迁移至 007，再同步发布前后端。007 是创建请求回执迁移，不是 hash ID 迁移；现有资料、安装锁和文件记录无需重建。
 

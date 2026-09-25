@@ -10,7 +10,7 @@ const std::string downloadable =
     "f.private_archive_confirmed AND COALESCE(m.distribution_permission,'unknown') "
     "NOT IN ('restricted','metadata_only')";
 const std::string entryColumns =
-    "m.id,m.public_id,m.slug,m.title,m.estimated_year,m.archive_status,"
+    "m.id,m.public_id,m.slug,m.title,m.estimated_year,m.estimated_date,m.archive_status,"
     "to_char(m.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS updated_at";
 const std::string entryWhere =
     " FROM midi_entries m WHERE m.deleted_at IS NULL AND ($1::text='' OR m.archive_status=$1) "
@@ -56,6 +56,7 @@ CatalogEntry entryFrom(const drogon::orm::Row& row) {
     entry.slug = row["slug"].as<std::string>();
     entry.title = row["title"].as<std::string>();
     entry.estimatedYear = nullable<int>(row["estimated_year"]);
+    entry.estimatedDate = nullable<std::string>(row["estimated_date"]);
     entry.archiveStatus = row["archive_status"].as<std::string>();
     entry.updatedAt = row["updated_at"].as<std::string>();
     return entry;
@@ -178,7 +179,7 @@ PageResult<Person> PostgresCatalogRepository::people(const PersonQuery& query) {
     result.page = page;
     result.total = snapshot.exec("SELECT count(*) AS total FROM people p WHERE p.deleted_at IS NULL AND ($1::text='' OR p.display_name ILIKE $1 ESCAPE '!' "
         "OR EXISTS(SELECT 1 FROM person_aliases a WHERE a.person_id=p.id AND a.alias ILIKE $1 ESCAPE '!'))", search)[0]["total"].as<std::int64_t>();
-    for (const auto& row : snapshot.exec("SELECT id,public_id,display_name,biography FROM people p WHERE p.deleted_at IS NULL AND ($1::text='' OR p.display_name ILIKE $1 ESCAPE '!' "
+    for (const auto& row : snapshot.exec("SELECT id,public_id,display_name,biography,summary,updated_at FROM people p WHERE p.deleted_at IS NULL AND ($1::text='' OR p.display_name ILIKE $1 ESCAPE '!' "
         "OR EXISTS(SELECT 1 FROM person_aliases a WHERE a.person_id=p.id AND a.alias ILIKE $1 ESCAPE '!')) "
         "ORDER BY display_name COLLATE \"C\",id LIMIT $2 OFFSET $3",
         search, static_cast<std::int64_t>(page.size), page.offset())) {
@@ -187,6 +188,8 @@ PageResult<Person> PostgresCatalogRepository::people(const PersonQuery& query) {
         person.publicId = row["public_id"].as<std::string>();
         person.displayName = row["display_name"].as<std::string>();
         person.biography = nullable<std::string>(row["biography"]);
+        person.summary = nullable<std::string>(row["summary"]);
+        person.updatedAt = row["updated_at"].as<std::string>();
         result.data.push_back(std::move(person));
     }
     if (!result.data.empty()) {

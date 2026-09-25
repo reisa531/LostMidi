@@ -68,9 +68,9 @@ protected:
         owner_->execSqlSync("CREATE TABLE " + schema_ + ".admin_sessions (LIKE public.admin_sessions INCLUDING ALL)");
         db_ = connect();
         // Minimal surrounding schema for read-only startup/readiness checks, all isolated.
-        db_->execSqlSync("CREATE TABLE midi_entries (id BIGINT PRIMARY KEY, public_id UUID, revision BIGINT, deleted_at TIMESTAMPTZ)");
-        db_->execSqlSync("CREATE TABLE people (public_id UUID, revision BIGINT, deleted_at TIMESTAMPTZ)");
-        db_->execSqlSync("CREATE TABLE recovery_events (recovered_at TIMESTAMPTZ)");
+        db_->execSqlSync("CREATE TABLE midi_entries (id BIGINT PRIMARY KEY, public_id UUID, revision BIGINT, deleted_at TIMESTAMPTZ, estimated_date DATE)");
+        db_->execSqlSync("CREATE TABLE people (public_id UUID, revision BIGINT, deleted_at TIMESTAMPTZ, profile JSONB, summary TEXT)");
+        db_->execSqlSync("CREATE TABLE recovery_events (recovered_at TIMESTAMPTZ, recovered_by_name TEXT)");
         db_->execSqlSync("CREATE TABLE historical_sources (credibility SMALLINT)");
         db_->execSqlSync("CREATE TABLE historical_evidence (id BIGINT)");
         db_->execSqlSync("CREATE TABLE admin_users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), username TEXT UNIQUE, password_hash TEXT, role TEXT, status TEXT)");
@@ -81,7 +81,7 @@ protected:
         db_->execSqlSync("CREATE TABLE midi_files (private_archive_confirmed BOOLEAN)");
         db_->execSqlSync("CREATE TABLE midi_creation_requests (request_id UUID, payload_sha256 TEXT, midi_id BIGINT REFERENCES midi_entries(id) ON DELETE SET NULL)");
         db_->execSqlSync("CREATE TABLE admin_audit_log (id BIGINT)");
-        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql'), ('009_catalog_search.sql'), ('010_recoverable_deletions.sql'), ('011_cleanup_retry_metadata.sql'), ('012_source_evidence.sql'), ('013_admin_users.sql'), ('014_public_ids.sql'), ('015_content_reviews.sql')");
+        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql'), ('009_catalog_search.sql'), ('010_recoverable_deletions.sql'), ('011_cleanup_retry_metadata.sql'), ('012_source_evidence.sql'), ('013_admin_users.sql'), ('014_public_ids.sql'), ('015_content_reviews.sql'), ('016_profile_and_estimated_date.sql')");
     }
     void TearDown() override {
         db_.reset();

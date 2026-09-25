@@ -32,6 +32,7 @@ private:
     void registerInstallationRoutes();
     void registerAdminFileRoutes();
     void registerCatalogRoutes();
+    auth::SessionPrincipal requireFilePrincipal(const drogon::HttpRequestPtr& request);
     midi::MidiService& midis_;
     person::PersonService& people_;
     drogon::orm::DbClientPtr db_;

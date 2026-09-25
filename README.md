@@ -10,7 +10,7 @@
 
 ## 当前界面与建档流程
 
-前台由首页总览、MIDI、搜索、作者、寻回进度、关系图谱六个入口组成，关于项目和更新日志位于页脚。关系图谱按作者或历史来源浏览作品，并分别统计有文件和符合下载权限的作品。后台工作台集中展示待完善记录、最近修改和快捷新增。
+前台由首页总览、MIDI、搜索、作者、寻回进度、关系图谱六个入口组成，“关于我们”和更新日志位于页脚。关系图谱按作者或历史来源浏览作品，并分别统计有文件和符合下载权限的作品。后台工作台集中展示待完善记录、最近修改和快捷新增。
 
 公开更新日志位于 `/changelog`。每次版本推送必须新增对应日志并同步版本号；首次克隆后运行 `node scripts/install-release-hook.mjs` 安装推送检查，详细规则见 [更新发布](RUN.md#72-更新发布)。日志随应用部署，不依赖额外数据库或外部服务。
 
@@ -261,7 +261,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 - 推测年份、来源日期、版权归属与分发许可分别表达，未知使用 NULL / unknown。
 - MIDI 字节不存入 PostgreSQL，公开 JSON 不返回 storage_key。
 
-migrate.sh 在事务内持有 advisory lock，按文件名执行 migration，并记录校验和。重复运行跳过已有版本；修改已应用 SQL 会报错回滚。新增 NNN_description.sql，勿修改旧文件。当前仅支持向前迁移，无自动降级。
+migrate.sh 在事务内持有 advisory lock，按文件名执行 migration，并记录校验和。重复运行跳过已有版本；修改已应用 SQL 会报错回滚。新增 NNN_description.sql，勿修改旧文件。当前仅支持向前迁移，无自动降级。016 为人物 profile/摘要/更新时间、MIDI 估算日期和寻回人姓名快照迁移；旧 estimated_year 和 recovered_by API 输入继续兼容，详见 `docs/person-profile.md`。
 
 seed 独立启用，关闭 SEED_DEMO 不会删除此前的数据。示例 slug 为 example-midi、clockwork-tide、lantern-map，包含人物、来源和寻回叙述；没有假物理文件记录。
 
@@ -275,7 +275,7 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 
 列表目前采用 count、列表和逐条署名查询，最多 100 条。并发写入时计数和行不保证同一快照；数据量增长后，根据真实测量批量读取署名并改进事务边界。
 
-管理员 HTTP 导入使用 `MidiImportService`：校验单文件 SMF 0/1/2、大小与公开分发权利确认，按 SHA-256 去重；同档案同内容幂等，跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`。新文件登记与父 revision 递增原子提交。旧内部 `MidiFileService` 保留，但不用于 HTTP 导入。
+管理员 HTTP 导入使用 `MidiImportService`：接收不限定格式的非空原始文件，校验 15 MB 上限、安全文件名与公开分发权利确认，按 SHA-256 去重；同档案同内容幂等，跨档案返回 `409 FILE_OWNERSHIP_CONFLICT`。新文件登记与父 revision 递增原子提交。旧内部 `MidiFileService` 保留，但不用于 HTTP 导入。
 
 对象与数据库不能共用事务。新导入在写存储前先持久化 journal，以同 digest 的数据库 advisory lock 串行化导入与清理。显式 `lostmidi_api --cleanup-imports` 只处理超过 24 小时且无引用的 journal，每次最多 100 条，不列桶、不扫目录；必须使用相同数据库与存储 backend/bucket/prefix（local 使用相同路径），禁止拿生产清理做测试。操作边界见 [RUN.md](RUN.md)。
 
@@ -304,7 +304,7 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 | GET /api/v1/admin/midis/{id}/files | Bearer 管理员读取文件管理数据 |
 | POST /api/v1/admin/midis/{id}/files | Bearer 管理员单文件上传并确认公开分发，默认关闭；新文件原子递增父 revision |
 
-导入 POST 使用 `application/octet-stream` 原始字节，带 `X-File-Name=encodeURIComponent(文件名)`、`X-Entry-Revision`、`X-Rights-Confirmed=true`。只接受单个 `.mid` / `.midi`、SMF 0/1/2、最大 1 MiB；前端 Server Action 上限 `2mb` 不放宽文件限制。同档案同内容幂等、跨档案 `409 FILE_OWNERSHIP_CONFLICT`；上传需确认有权公开分发，不改变版权、分发许可或归档状态。公开详情页提供无需登录的下载入口，经站内接口返回原文件名及 `audio/midi` 附件，不暴露对象路径或 S3 凭据；不提供试听。只有已记录分发确认且条目未标为 `restricted` / `metadata_only` 的文件可下载，每次校验大小与 SHA-256，存储异常返回 503。
+导入 POST 使用 `application/octet-stream` 原始字节，带 `X-File-Name=encodeURIComponent(文件名)`、`X-Entry-Revision`、`X-Rights-Confirmed=true`。接受单个非空原始文件，不限制扩展名或音乐格式，最大 15 MB（15,000,000 字节）；文件上传和下载通过同域外部 rewrite 直达后端，避开 Vercel Function 请求体上限。前后端须同时配置精确 `ADMIN_ORIGIN`，前端构建时须提供 `BACKEND_API_URL`；普通文字操作仍用 Server Action。同档案同内容幂等、跨档案 `409 FILE_OWNERSHIP_CONFLICT`；上传需确认有权公开分发，不改变版权、分发许可或归档状态。公开详情页提供无需登录的下载入口，经站内接口返回原文件名及 `application/octet-stream` 附件，不暴露对象路径或 S3 凭据；不提供试听。只有已记录分发确认且条目未标为 `restricted` / `metadata_only` 的文件可下载，每次校验大小与 SHA-256，存储异常返回 503。
 
 page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回 400；超出末页返回空 data 和原 total。slug 最多 160 个小写字母、数字和词间连字符；人物 ID 为正数 BIGINT 范围。
 
@@ -330,7 +330,7 @@ npm run lint
 npm run typecheck
 ```
 
-后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期、档案及来源寻回写入冲突、跨作品归属和失败回滚；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。installation 与 import 集成测试创建隔离 schema，测试用户需要 CREATE SCHEMA 权限；仍不可使用生产库。导入测试还覆盖 SMF 0/1/2、1 MiB 边界、独立 SigV4 签名向量、连续并发重试、真实 SQL/提交失败、journal 保留与只清理过期无引用对象。
+后端按上文 Conan / CMake 流程构建并运行 CTest。GoogleTest 覆盖特定 404、分页与输入、署名组合、已知 SHA-256 向量、重命名去重、缺失对象修复、路径拒绝和损坏检测。设置 LOSTMIDI_TEST_DATABASE_URL 后额外执行真实数据库集成测试，覆盖公开查询、管理员会话生命周期、档案及来源寻回写入冲突、跨作品归属和失败回滚；未设置时明确标为 skipped。必须使用已迁移并包含示例的专用测试库：会话测试使用事务临时表隔离，档案测试创建并清理自身记录，identity 序列可能递增。installation 与 import 集成测试创建隔离 schema，测试用户需要 CREATE SCHEMA 权限；仍不可使用生产库。导入测试还覆盖不限格式原始文件、15 MB 边界、独立 SigV4 签名向量、连续并发重试、真实 SQL/提交失败、journal 保留与只清理过期无引用对象。
 
 安装测试另备**两个各自全新、已迁移的专用测试库及对应后端**，保持环境密码哈希为空并配置安装令牌。`python scripts/installation_smoke.py --api <专用测试后端> --allow-install` 要求 `INSTALLATION_TEST_TOKEN` 与后端令牌一致；`python scripts/installation_browser_smoke.py --frontend <另一个专用测试前端> --allow-install` 还要求 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD`，可加 `--channel msedge`、`--screenshots <目录>`（需 Playwright 和相应浏览器）。两个脚本均永久安装，不能顺序指向同库，也不能在已安装或生产站点运行。本地验收结果与尚未执行的部署检查见 [Implementation Report](docs/implementation-report.md)。
 

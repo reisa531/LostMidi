@@ -3,7 +3,7 @@
 #include "common/Pagination.h"
 
 namespace lostmidi::person {
-struct PersonEdit { Person person; std::vector<std::string> aliases; };
+struct PersonEdit { Person person; std::vector<std::string> aliases; bool profileProvided = false; bool summaryProvided = false; };
 struct PersonList { std::vector<Person> data; std::int64_t total; };
 struct CreditEdit { std::int64_t revision; std::vector<Credit> credits; };
 class IPersonWriter {

@@ -54,9 +54,20 @@ void ApiController::dispatchResponse(Callback callback, std::function<drogon::Ht
             response = errorResponse(500, "INTERNAL_ERROR", "An unexpected error occurred.");
         }
         --pending_;
-        response->addHeader("Cache-Control", "no-store");
+        response->addHeader("Cache-Control", "no-store, no-transform");
         callback(response);
     });
+}
+
+auth::SessionPrincipal ApiController::requireFilePrincipal(const drogon::HttpRequestPtr& request) {
+    const auto& authorization = request->getHeader("authorization");
+    if (!authorization.empty()) return auth_.requirePrincipal(authorization);
+    const auto& cookie = request->getCookie("lostmidi_admin");
+    if (request->method() != drogon::Post || cookie.empty()) return auth_.requirePrincipal("");
+    const char* origin = std::getenv("ADMIN_ORIGIN");
+    if (!origin || !*origin || request->getHeader("origin") != origin)
+        throw ApiError(403, "INVALID_ORIGIN", "The upload origin is not allowed.");
+    return auth_.requirePrincipal("Bearer " + cookie);
 }
 
 Json::Value ApiController::submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
@@ -144,9 +155,11 @@ void ApiController::registerRoutes() {
             constexpr char hex[] = "0123456789ABCDEF";
             for (unsigned char c : file.originalFilename) { encoded += '%'; encoded += hex[c >> 4]; encoded += hex[c & 15]; }
             auto response = drogon::HttpResponse::newHttpResponse();
-            response->setContentTypeString("audio/midi");
-            response->addHeader("Content-Disposition", "attachment; filename=\"midi-" + std::to_string(file.id) + ".mid\"; filename*=UTF-8''" + encoded);
+            response->setContentTypeString("application/octet-stream");
+            response->addHeader("Content-Disposition", "attachment; filename=\"file-" + std::to_string(file.id) + ".bin\"; filename*=UTF-8''" + encoded);
             response->addHeader("X-Content-Type-Options", "nosniff");
+            response->addHeader("Content-Encoding", "identity");
+            response->addHeader("Content-Security-Policy", "sandbox");
             response->setBody(std::move(bytes));
             return response;
         });

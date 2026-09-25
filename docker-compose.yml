@@ -59,6 +59,7 @@ services:
       WORKER_THREADS: ${WORKER_THREADS:-2}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:?Set ADMIN_ORIGIN in .env}
       INSTALLATION_TOKEN: ${INSTALLATION_TOKEN:-}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:${BACKEND_PORT:-8080}"
@@ -75,6 +76,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        BACKEND_API_URL: ${BACKEND_API_URL:?Set BACKEND_API_URL in .env}
     depends_on:
       backend:
         condition: service_healthy

@@ -31,14 +31,38 @@ export async function savePersonAction(_previous: { error: string }, form: FormD
     await checkOrigin();
     const id = form.get("id") ? idOf(form.get("id")) : "";
     const aliases = String(form.get("aliases") ?? "").split(/\r?\n/).map(alias => alias.trim()).filter(Boolean);
+    const lines = (name: string) => String(form.get(name) ?? "").split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+    const columns = (name: string) => lines(name).map(line => line.split("|").map(part => part.trim()));
+    const field = (parts: string[], index: number) => parts[index] || null;
+    const aliasDetails = lines("alias_details").map(line => { const [name, note = "", period = "", source = ""] = line.split("|").map(part => part.trim()); return { name, note, period: period || null, source: source || null }; });
+    const active = columns("active_period")[0];
+    const profile = {
+      ...(String(form.get("pronunciation") ?? "").trim() ? { pronunciation: String(form.get("pronunciation")).trim() } : {}),
+      otherNames: lines("other_names"), gender: String(form.get("gender") ?? "").trim() || null,
+      birthText: String(form.get("birth_text") ?? "").trim() || null, birthCertainty: String(form.get("birth_certainty") ?? "unknown").trim() || "unknown",
+      birthplace: String(form.get("birthplace") ?? "").trim() || null, residence: String(form.get("residence") ?? "").trim() || null,
+      education: String(form.get("education") ?? "").trim() || null, activePeriod: active ? { start: field(active,0), end: field(active,1), note: field(active,2), certainty: field(active,3) || "unknown", source: field(active,4) } : null,
+      roles: lines("roles"),
+      sites: columns("sites").map(p => ({ name: p[0] || "", url: field(p,1), role: field(p,2), status: field(p,3) })),
+      timeline: columns("timeline").map(p => ({ time: p[0] || "", event: p[1] || "", source: field(p,2), certainty: p[3] || "unknown" })),
+      sources: columns("sources").map(p => ({ id: field(p,0), title: p[1] || "", url: field(p,2), archiveNote: field(p,3) })),
+      sameAs: lines("same_as"), works: columns("works").map(p => ({ midiId: field(p,0), title: field(p,1), url: field(p,2), role: field(p,3), source: field(p,4) })),
+      collaborators: columns("collaborators").map(p => ({ personId: field(p,0), name: field(p,1), source: field(p,2) })),
+      rights: String(form.get("rights") ?? "").trim() || null, aliasDetails: aliasDetails.filter(item => aliases.includes(item.name)),
+    };
     saved = await adminRequest<PersonEdit>(`/api/v1/admin/people${id ? `/${id}` : ""}`, {
       method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ display_name: String(form.get("display_name") ?? ""), biography: String(form.get("biography") ?? "") || null, aliases,
+      body: JSON.stringify({ display_name: String(form.get("display_name") ?? ""), biography: String(form.get("biography") ?? "") || null, summary: String(form.get("summary") ?? "") || null, profile, aliases,
         ...(id ? { revision: Number(form.get("revision")) } : {}) }),
     });
   } catch (error) { return { error: errorMessage(error) }; }
   if ("request_id" in saved) redirect("/admin/changes?submitted=1");
   redirect(`/admin/people/${saved.person.id}/edit?saved=1`);
+}
+export async function loadPeopleAction(page: number) {
+  await checkOrigin();
+  if (!Number.isInteger(page) || page < 1 || page > 1000000) throw new ApiError(400, "INVALID_INPUT");
+  return getPeople(page);
 }
 export async function saveCreditsAction(_previous: { error: string }, form: FormData) {
   let id: string;
@@ -58,9 +82,4 @@ export async function saveCreditsAction(_previous: { error: string }, form: Form
   } catch (error) { return { error: errorMessage(error) }; }
   if (queued) redirect("/admin/changes?submitted=1");
   redirect(`/admin/midis/${id}/credits?saved=1`);
-}
-export async function loadPeopleAction(page: number) {
-  await checkOrigin();
-  if (!Number.isInteger(page) || page < 1 || page > 1000000) throw new ApiError(400, "INVALID_INPUT");
-  return getPeople(page);
 }

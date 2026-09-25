@@ -3,6 +3,7 @@ project(LostMidiArchive VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Drogon CONFIG REQUIRED)
+find_package(jsoncpp CONFIG REQUIRED)
 find_package(OpenSSL CONFIG REQUIRED)
 
 add_library(lostmidi_options INTERFACE)
@@ -28,7 +29,7 @@ add_library(lostmidi_core
     src/storage/Sha256.cpp
     src/storage/LocalObjectStorage.cpp)
 target_include_directories(lostmidi_core PUBLIC src)
-target_link_libraries(lostmidi_core PUBLIC lostmidi_options PRIVATE OpenSSL::Crypto)
+target_link_libraries(lostmidi_core PUBLIC lostmidi_options PRIVATE OpenSSL::Crypto JsonCpp::JsonCpp)
 
 add_library(lostmidi_postgres
     src/catalog/PostgresCatalogRepository.cpp

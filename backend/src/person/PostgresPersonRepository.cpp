@@ -7,7 +7,8 @@ namespace {
 Person personFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), row["display_name"].as<std::string>(),
         nullable<std::string>(row["biography"]), row["created_at"].as<std::string>(),
-        row["revision"].as<std::int64_t>(), row["public_id"].as<std::string>()};
+        row["revision"].as<std::int64_t>(), row["public_id"].as<std::string>(),
+        nullable<std::string>(row["summary"]), row["profile"].as<std::string>(), row["updated_at"].as<std::string>()};
 }
 }
 std::optional<Person> PostgresPersonRepository::findById(std::int64_t id) {
@@ -34,6 +35,12 @@ std::vector<CreditedMidi> PostgresPersonRepository::midisFor(std::int64_t id) {
         midis.push_back({row["id"].as<std::int64_t>(), row["slug"].as<std::string>(),
             row["title"].as<std::string>(), row["role"].as<std::string>(), row["public_id"].as<std::string>()});
     return midis;
+}
+std::pair<std::optional<Person>, std::optional<Person>> PostgresPersonRepository::neighborsFor(std::int64_t id) {
+    const auto previous = db_->execSqlSync("SELECT * FROM people WHERE deleted_at IS NULL AND id<$1 ORDER BY id DESC LIMIT 1", id);
+    const auto next = db_->execSqlSync("SELECT * FROM people WHERE deleted_at IS NULL AND id>$1 ORDER BY id LIMIT 1", id);
+    return {previous.empty() ? std::nullopt : std::optional<Person>(personFrom(previous[0])),
+        next.empty() ? std::nullopt : std::optional<Person>(personFrom(next[0]))};
 }
 std::vector<Credit> PostgresPersonRepository::creditsFor(std::int64_t midiId) {
     std::vector<Credit> credits;
@@ -73,10 +80,10 @@ PersonEdit PostgresPersonRepository::getEditor(std::int64_t id) {
 PersonEdit PostgresPersonRepository::save(std::int64_t id, const PersonEdit& edit) {
     TransactionScope tx(db_);
     const auto rows = id
-        ? tx.db->execSqlSync("UPDATE people SET display_name=$1, biography=NULLIF($2,'') WHERE id=$3 AND revision=$4 AND deleted_at IS NULL RETURNING *",
-            edit.person.displayName, edit.person.biography.value_or(""), id, edit.person.revision)
-        : tx.db->execSqlSync("INSERT INTO people(display_name,biography) VALUES($1,NULLIF($2,'')) RETURNING *",
-            edit.person.displayName, edit.person.biography.value_or(""));
+        ? tx.db->execSqlSync("UPDATE people SET display_name=$1, biography=NULLIF($2,''),summary=CASE WHEN $3 THEN NULLIF($4,'') ELSE summary END,profile=CASE WHEN $5 THEN $6::jsonb ELSE profile END WHERE id=$7 AND revision=$8 AND deleted_at IS NULL RETURNING *",
+            edit.person.displayName, edit.person.biography.value_or(""), edit.summaryProvided, edit.person.summary.value_or(""), edit.profileProvided, edit.person.profile, id, edit.person.revision)
+        : tx.db->execSqlSync("INSERT INTO people(display_name,biography,summary,profile) VALUES($1,NULLIF($2,''),NULLIF($3,''),$4::jsonb) RETURNING *",
+            edit.person.displayName, edit.person.biography.value_or(""), edit.person.summary.value_or(""), edit.person.profile);
     if (rows.empty()) {
         if (tx.db->execSqlSync("SELECT 1 FROM people WHERE id=$1 AND deleted_at IS NULL", id).empty())
             throw ApiError(404, "PERSON_NOT_FOUND", "Person does not exist.");
@@ -96,10 +103,9 @@ void PostgresPersonRepository::remove(std::int64_t id, std::int64_t revision, co
     if (rows.empty()) throw ApiError(404, "PERSON_NOT_FOUND", "Person does not exist.");
     if (rows[0]["revision"].as<std::int64_t>() != revision)
         throw ApiError(409, "STALE_PERSON", "Person changed elsewhere. Reload before deleting.");
-    const auto references = tx.db->execSqlSync(
-        "SELECT 1 FROM midi_credits WHERE person_id=$1 UNION ALL SELECT 1 FROM recovery_events WHERE recovered_by=$1 LIMIT 1", id);
+    const auto references = tx.db->execSqlSync("SELECT 1 FROM midi_credits WHERE person_id=$1 LIMIT 1", id);
     if (!references.empty())
-        throw ApiError(409, "PERSON_IN_USE", "Remove this person's credits and recovery references before moving them to the trash.");
+        throw ApiError(409, "PERSON_IN_USE", "Remove this person's MIDI credits before moving them to the trash.");
     const auto label = rows[0]["display_name"].as<std::string>();
     tx.db->execSqlSync("UPDATE people SET deleted_at=CURRENT_TIMESTAMP,deleted_by=$2 WHERE id=$1", id, actor);
     tx.db->execSqlSync("INSERT INTO admin_audit_log(actor,action,entity_type,entity_id,entity_label) VALUES($1,'delete','person',$2,$3)", actor, id, label);

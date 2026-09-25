@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MidiEntry } from "@/lib/api/types";
 import { saveMidiAction, type MidiSaveState } from "@/lib/admin/actions";
+import { createMidiWithFile, maxFileSize } from "@/lib/admin/files-actions";
 
 export function MidiForm({ entry, importEnabled = false, reviewRequired = false }: { entry?: MidiEntry; importEnabled?: boolean; reviewRequired?: boolean }) {
   const router = useRouter();
@@ -25,7 +26,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
         form.set("request_id", requestId.current);
       }
       submitted.current = form;
-      const next = await saveMidiAction(previous, form);
+      const next = !entry && form.has("file") ? await createMidiWithFile(form) : await saveMidiAction(previous, form);
       if (next.queued) {
         router.push("/admin/changes?submitted=1");
         return next;
@@ -41,7 +42,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
   }, { error: "" });
   const [values, setValues] = useState({
     title: entry?.title ?? "", slug: entry?.slug ?? "", description: entry?.description ?? "",
-    estimated_year: entry?.estimated_year?.toString() ?? "", archive_status: entry?.archive_status ?? "uncertain",
+    estimated_year: entry?.estimated_year?.toString() ?? "", estimated_date: entry?.estimated_date ?? "", archive_status: entry?.archive_status ?? "uncertain",
     copyright_status: entry?.copyright_status ?? "unknown", distribution_permission: entry?.distribution_permission ?? "unknown",
     license: entry?.license ?? "", rights_holder: entry?.rights_holder ?? "",
   });
@@ -56,8 +57,8 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
   </label>;
   function fileError(file: File | undefined) {
     if (!file) return "";
-    if (!/\.midi?$/i.test(file.name) || file.size === 0) return "请选择一个非空的 .mid 或 .midi 文件。";
-    return file.size > 1048576 ? "文件过大；单个文件最大 1 MiB（1,048,576 字节）。" : "";
+    if (file.size === 0) return "请选择一个非空文件。";
+    return file.size > maxFileSize ? "文件过大；单个文件最大 15 MB（15,000,000 字节）。" : "";
   }
   return <form action={action} onReset={event => event.preventDefault()} onSubmit={event => {
     if (pending || submitting.current) { event.preventDefault(); return; }
@@ -68,13 +69,13 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
     }
     submitting.current = true;
   }} aria-busy={pending} className="min-w-0 space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8">
-    <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，批准后才会发布。管理员新增档案仅支持文字资料。" : entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传 MIDI；没有文件时仍可建立寻回档案。"}</p>
+    <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，批准后才会发布。" : entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传音乐文件；没有文件时仍可建立寻回档案。"}</p>
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
     <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>
       <p className="text-xs leading-6 text-muted">Slug 使用小写字母、数字和词间连字符。更改后旧地址将失效。标题最多 300 UTF-8 字节，中文字符通常占 3 字节。</p>
-      <label className="block text-sm">描述<textarea name="description" rows={7} maxLength={20000} className={inputClass} value={values.description} onChange={event => change("description", event.target.value)} /><span className="mt-2 block text-xs text-muted">最多 20,000 UTF-8 字节。</span></label>
-      <div className="grid gap-6 md:grid-cols-2"><label className="block text-sm">推测年份<input className={inputClass} type="number" min={1} max={9999} step={1} name="estimated_year" value={values.estimated_year} onChange={event => change("estimated_year", event.target.value)} /><span className="mt-2 block text-xs text-muted">未知时留空。</span></label>
+      <label className="block text-sm">描述（支持 Markdown）<textarea name="description" rows={7} maxLength={20000} className={inputClass} value={values.description} onChange={event => change("description", event.target.value)} /><span className="mt-2 block text-xs text-muted">最多 20,000 UTF-8 字节。可用 `## 小节`、列表、链接和表格。</span></label>
+      <div className="grid gap-6 md:grid-cols-2"><div className="space-y-4"><label className="block text-sm">推测时间 · 年份（仅知道年份时填写）<input className={inputClass} type="number" min={1} max={9999} step={1} name="estimated_year" value={values.estimated_year} onChange={event => change("estimated_year", event.target.value)} /></label><label className="block text-sm">推测时间 · 日期（知道具体日期时填写）<input className={inputClass} type="date" name="estimated_date" value={values.estimated_date} onChange={event => { change("estimated_date", event.target.value); if (event.target.value) change("estimated_year", event.target.value.slice(0, 4)); }} /><span className="mt-2 block text-xs text-muted">旧记录中的年份会原样保留，不会补成 1 月 1 日。未知时两项留空。</span></label></div>
       {select("archive_status", "档案状态", [["uncertain","尚待确认"],["lost","待寻回"],["partially_recovered","部分寻回"],["archived","已归档"]])}</div>
       <div className="grid gap-6 md:grid-cols-2">
       {select("copyright_status", "版权状态", [["unknown","未知"],["public_domain","公有领域"],["licensed","已许可"],["copyrighted","受版权保护"]])}
@@ -82,8 +83,8 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       {input("license", "许可证（最多 500 UTF-8 字节）")}{input("rights_holder", "权利人（最多 500 UTF-8 字节）")}</div>
       {!entry && !importEnabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，仍可创建档案资料。</p>}
       {!entry && importEnabled && <section className="min-w-0 space-y-4 rounded-lg border border-line bg-background p-4 sm:p-5">
-        <div><h2 className="font-semibold">MIDI 文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">仅支持单个 .mid / .midi，最大 1 MiB。文件和资料一起保存，失败不会留下半成品档案。</p></div>
-        <label className="block text-sm">选择 MIDI 文件<input ref={fileInput} name="file" type="file" accept=".mid,.midi" aria-describedby="create-file-help" className={`${inputClass} min-w-0`} onChange={event => {
+        <div><h2 className="font-semibold">音乐文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">不限文件格式，单个文件最大 15 MB（15,000,000 字节）。原始文件和资料一起保存，失败不会留下半成品档案。</p></div>
+        <label className="block text-sm">选择音乐文件<input ref={fileInput} name="file" type="file" aria-describedby="create-file-help" className={`${inputClass} min-w-0`} onChange={event => {
           const file = event.target.files?.[0];
           setHasFile(Boolean(file)); setClientError(fileError(file));
         }} /></label>

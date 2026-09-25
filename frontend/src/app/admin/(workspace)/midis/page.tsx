@@ -1,28 +1,37 @@
 import Link from "next/link";
-import { getMidis } from "@/lib/api/midi";
 import { ApiError } from "@/lib/api/client";
+import { CatalogQueryError, catalogHref, getCatalogEntries, readCatalogQuery, type SearchParams } from "@/lib/api/catalog";
+import { archiveStates } from "@/lib/api/catalog";
 import { requireAdmin } from "@/lib/admin/auth";
 import { Status, roleName } from "@/components/archive";
 import { AdminPageHeader, AdminPanel, AdminUnavailable } from "@/components/admin/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "MIDI 档案" };
-
-export default async function AdminMidis({ searchParams }: { searchParams: Promise<{ page?: string | string[]; deleted?: string | string[] }> }) {
+export default async function AdminMidis({ searchParams }: { searchParams: Promise<SearchParams> }) {
   await requireAdmin();
-  const { page: raw = "1", deleted } = await searchParams;
-  const header = <><AdminPageHeader eyebrow="档案 / MIDI" title="MIDI 档案" description="新增和编辑作品基础资料，维护归档状态与权利信息。" />
-    {deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已移入回收站，可随时恢复。关联记录和文件均已保留。</p>}</>;
-  if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || Number(raw) > 1000000) return <>{header}<p>页码无效。<Link className="archive-link" href="/admin/midis">返回第一页</Link></p></>;
-  const page = Number(raw);
+  const raw = await searchParams;
+  const { deleted } = raw;
+  const filters = { ...raw }; delete filters.deleted;
+  if (filters.q === "") delete filters.q;
+  let query;
+  try { query = readCatalogQuery(filters); } catch (error) {
+    if (error instanceof CatalogQueryError) return <><AdminPageHeader eyebrow="档案 / MIDI" title="MIDI 档案" description="按标题、状态和更新时间管理作品资料。" /><p role="alert" className="rounded-lg bg-amber-50 p-4">筛选条件无效，请返回第一页重新选择。<Link className="archive-link ml-2" href="/admin/midis">重置</Link></p></>;
+    throw error;
+  }
   let result;
-  try { result = await getMidis(page); } catch (error) {
+  try { result = await getCatalogEntries({ ...query, pageSize: 20 }); } catch (error) {
+    const header = <AdminPageHeader eyebrow="档案 / MIDI" title="MIDI 档案" description="新增和编辑作品基础资料，维护归档状态与权利信息。" />;
     if (error instanceof ApiError) return <>{header}<AdminUnavailable /></>;
     throw error;
   }
   const pages = Math.max(1, Math.ceil(result.pagination.total / result.pagination.pageSize));
-  return <>{header}<AdminPanel title={`全部档案 · ${result.pagination.total}`} action={<Link className="rounded-lg bg-accent px-4 py-2 text-sm text-white" href="/admin/midis/new">新增档案</Link>}>
-    {result.data.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><caption className="sr-only">MIDI 档案、年代、署名和状态</caption><thead className="border-b border-line text-xs text-muted"><tr>{["档案", "推测年代", "署名", "状态", "操作"].map(label => <th key={label} scope="col" className="px-3 pb-4 font-normal">{label}</th>)}</tr></thead><tbody className="divide-y divide-line">{result.data.map(entry => <tr key={entry.id} className="align-top"><td className="max-w-xs px-3 py-5"><p className="break-words font-medium">{entry.title}</p><p className="mt-2 break-all font-mono text-xs text-muted">{entry.slug}</p></td><td className="px-3 py-5 tabular-nums">{entry.estimated_year ?? "不详"}</td><td className="px-3 py-5 text-xs leading-6 text-muted">{entry.credits.length ? entry.credits.map(c => <p key={`${c.person_id}-${c.role}`}>{c.display_name}<br />{roleName(c.role)}</p>) : "尚待考证"}</td><td className="px-3 py-5"><Status status={entry.archive_status} /></td><td className="whitespace-nowrap px-3 py-5"><Link className="archive-link mr-3 text-xs" href={`/admin/midis/${entry.id}/edit`}>编辑</Link><Link className="archive-link text-xs" href={`/midis/${entry.public_id}`}>公开详情 ↗</Link></td></tr>)}</tbody></table></div> : <p className="py-10 text-center text-sm text-muted">本页暂无档案。{page > 1 && <Link className="archive-link ml-2" href="/admin/midis">返回第一页</Link>}</p>}
-    <nav aria-label="后台档案分页" className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-5 text-xs"><span className="text-muted">第 {page} 页 / 共 {pages} 页</span><div className="flex gap-5">{page > 1 && <Link className="archive-link" href={`/admin/midis?page=${page - 1}`}>上一页</Link>}{page < pages && <Link className="archive-link" href={`/admin/midis?page=${page + 1}`}>下一页</Link>}</div></nav>
-  </AdminPanel></>;
+  const pageHref = (page: number) => catalogHref("/midis", { q: query.q, status: query.status, sort: query.sort, page, pageSize: 20 }).replace(/^\/midis/, "/admin/midis");
+  return <><AdminPageHeader eyebrow="档案 / MIDI" title="MIDI 档案" description="新增和编辑作品基础资料，维护归档状态与权利信息。" />
+    {deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已移入回收站，可随时恢复。关联记录和文件均已保留。</p>}
+    <AdminPanel title={`档案 · ${result.pagination.total}`} action={<Link className="rounded-lg bg-accent px-4 py-2 text-sm text-white" href="/admin/midis/new">新增档案</Link>}>
+      <form action="/admin/midis" method="get" className="mb-5 grid gap-3 rounded-lg border border-line p-4 sm:grid-cols-[minmax(12rem,1fr)_auto_auto_auto]"><input className="min-w-0 rounded-lg border border-line px-3 py-2 text-sm" name="q" defaultValue={query.q ?? ""} maxLength={200} placeholder="搜索标题、slug、人物或来源" aria-label="搜索 MIDI 档案" /><select className="rounded-lg border border-line px-3 py-2 text-sm" name="status" defaultValue={query.status ?? ""} aria-label="归档状态"><option value="">全部状态</option>{archiveStates.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select className="rounded-lg border border-line px-3 py-2 text-sm" name="sort" defaultValue={query.sort} aria-label="排序"><option value="updated">最近更新</option><option value="title">作品名称</option></select><button className="rounded-lg bg-accent px-4 py-2 text-sm text-white">筛选</button></form>
+      {result.data.length ? <div className="space-y-3">{result.data.map(entry => <article key={entry.id} className="grid min-w-0 gap-3 rounded-lg border border-line p-4 md:grid-cols-[minmax(0,1fr)_8rem_10rem_auto] md:items-center"><div className="min-w-0"><Link className="break-words font-medium text-accent hover:underline" href={`/admin/midis/${entry.id}/edit`}>{entry.title}</Link><p className="mt-1 break-all font-mono text-xs text-muted">{entry.slug}</p></div><span className="text-sm">{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "时间不详"}</span><div className="min-w-0 text-xs text-muted">{entry.credits.length ? entry.credits.map(c => <p key={`${c.person_id}-${c.role}`}>{c.display_name} · {roleName(c.role)}</p>) : "署名待考"}<p>{entry.file_count} 个文件 · 更新 {entry.updated_at.slice(0, 10)}</p></div><div className="flex flex-wrap items-center gap-3"><Status status={entry.archive_status} /><Link className="archive-link text-xs" href={`/midis/${entry.public_id}`} target="_blank" rel="noopener noreferrer">公开页 ↗</Link><Link className="archive-link text-xs" href={`/admin/midis/${entry.id}/edit`}>编辑</Link><Link className="archive-link text-xs" href={`/admin/midis/${entry.id}/credits`}>署名</Link><Link className="archive-link text-xs" href={`/admin/midis/${entry.id}/history`}>来源</Link><Link className="archive-link text-xs" href={`/admin/midis/${entry.id}/files`}>文件</Link></div></article>)}</div> : <p className="py-10 text-center text-sm text-muted">{query.q || query.status ? "没有符合筛选条件的档案。" : "尚无档案。"} <Link className="archive-link ml-2" href="/admin/midis">重置筛选</Link></p>}
+      <nav aria-label="后台档案分页" className="mt-6 flex justify-between border-t border-line pt-5 text-sm"><span>第 {query.page} / {pages} 页</span><div className="flex gap-5">{query.page > 1 && <Link className="archive-link" href={pageHref(query.page - 1)}>上一页</Link>}{query.page < pages && <Link className="archive-link" href={pageHref(query.page + 1)}>下一页</Link>}</div></nav>
+    </AdminPanel></>;
 }

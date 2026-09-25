@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { importMidiFileAction, type MidiFileImportState } from "@/lib/admin/files-actions";
+import { importMidiFile, maxFileSize as uploadLimit, type MidiFileImportState } from "@/lib/admin/files-actions";
 
 export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRequired = false }: {
   midiId: string; revision: number; maxFileSize: number; enabled: boolean; reviewRequired?: boolean;
@@ -16,7 +16,8 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
   const [refreshing, startRefresh] = useTransition();
   const [state, action, pending] = useActionState<MidiFileImportState, FormData>(async (previous, form) => {
     try {
-      const next = await importMidiFileAction(previous, form);
+      const next = await importMidiFile(form);
+      if (next.result) startRefresh(() => router.refresh());
       if (next.result || next.queued) {
         if (fileInput.current) fileInput.current.value = "";
         if (rightsInput.current) rightsInput.current.checked = false;
@@ -28,12 +29,12 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
     } finally { submitting.current = false; }
   }, { error: "" });
   const busy = pending || refreshing;
-  const limit = Math.min(maxFileSize, 1048576);
+  const limit = Math.min(maxFileSize, uploadLimit);
   const currentRevision = Math.max(revision, state.result?.revision ?? 0);
 
   function fileError(file: File | undefined) {
-    if (!file || !/\.midi?$/i.test(file.name) || file.size === 0) return "请选择一个非空的 .mid 或 .midi 文件。";
-    if (file.size > limit) return `文件过大；最多 ${limit.toLocaleString("zh-CN")} 字节（不超过 1 MiB）。`;
+    if (!file || file.size === 0) return "请选择一个非空文件。";
+    if (file.size > limit) return `文件过大；最多 ${limit.toLocaleString("zh-CN")} 字节（不超过 15 MB）。`;
     return "";
   }
 
@@ -44,17 +45,17 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
     if (error) { event.preventDefault(); return; }
     submitting.current = true;
   }} className="min-w-0 space-y-6 rounded-xl border border-line bg-white p-5 sm:p-6 [overflow-wrap:anywhere]" aria-busy={busy}>
-    <h2 className="text-lg font-semibold">导入单个 MIDI 文件</h2>
+    <h2 className="text-lg font-semibold">导入单个音乐文件</h2>
     <input type="hidden" name="id" value={midiId} />
     <input type="hidden" name="revision" value={currentRevision} />
     <p className="text-sm leading-7 text-muted">上传即表示确认有权公开分发。{reviewRequired ? "文件会先提交审核，批准后存入公开对象存储。" : "文件会存入对象存储并可被任何人公开读取。"}不会修改作品的归档状态或权利字段。文件、署名、来源与基础资料共用版本，请勿同时在其他页面修改。</p>
     {!enabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，已有文件仍可查看。</p>}
     <fieldset disabled={busy || !enabled} className="min-w-0 space-y-5 disabled:opacity-60">
       <legend className="sr-only">公开分发文件</legend>
-      <label className="block text-sm">MIDI 文件 *
-        <input ref={fileInput} type="file" name="file" accept=".mid,.midi" required aria-describedby="midi-file-help" onChange={event => setClientError(fileError(event.target.files?.[0]))} className="mt-2 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2.5 text-sm" />
+      <label className="block text-sm">音乐文件 *
+        <input ref={fileInput} type="file" name="file" required aria-describedby="midi-file-help" onChange={event => setClientError(fileError(event.target.files?.[0]))} className="mt-2 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2.5 text-sm" />
       </label>
-      <p id="midi-file-help" className="text-xs leading-6 text-muted">单个文件最大 1 MiB（1,048,576 字节），仅支持 .mid / .midi。服务器还会校验 SMF 0 / 1 / 2 结构；不支持批量、ZIP 或远程网址。</p>
+      <p id="midi-file-help" className="text-xs leading-6 text-muted">不限文件格式，单个文件最大 15 MB（15,000,000 字节）。保留原始文件名和内容，不解析或转码；每次上传一个文件。</p>
       <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" required className="mt-2 shrink-0" />我确认有权公开分发此文件；上传后该文件可被任何人公开读取与下载。</label>
     </fieldset>
     {clientError && <p role="alert" className="text-sm text-red-900">{clientError}</p>}

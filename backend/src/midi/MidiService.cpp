@@ -50,7 +50,7 @@ MidiFile MidiService::fileForDownload(const std::string& slug, std::int64_t file
     if (file->fileSize == 0 || file->fileSize > maxImportBytes || file->storageKey != file->sha256 ||
         file->sha256.size() != 64 || file->sha256.find_first_not_of("0123456789abcdef") != std::string::npos)
         throw ApiError(503, "STORAGE_UNAVAILABLE", "The file is temporarily unavailable.");
-    try { validateMidiFilename(file->originalFilename); }
+    try { validateFilename(file->originalFilename); }
     catch (const ApiError&) { throw ApiError(503, "STORAGE_UNAVAILABLE", "The file is temporarily unavailable."); }
     return *file;
 }

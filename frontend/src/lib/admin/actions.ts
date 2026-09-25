@@ -63,25 +63,13 @@ export async function saveMidiAction(_previous: MidiSaveState, form: FormData): 
     const requestId = value("request_id");
     if (!id && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId))
       throw new ApiError(400, "INVALID_INPUT");
-    let upload: { filename: string; content_base64: string; rights_confirmed: true } | undefined;
-    if (!id) {
-      const files = form.getAll("file");
-      if (files.length > 1) throw new ApiError(400, "INVALID_FILE");
-      const file = files[0];
-      if (file !== undefined && !(file instanceof File)) throw new ApiError(400, "INVALID_FILE");
-      if (file instanceof File && (file.name || file.size)) {
-        if (!/\.midi?$/i.test(file.name) || file.size === 0) throw new ApiError(400, "INVALID_FILE");
-        if (file.size > 1048576) throw new ApiError(413, "FILE_TOO_LARGE");
-        if (form.get("rights_confirmed") !== "true") throw new ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED");
-        upload = { filename: file.name, content_base64: Buffer.from(await file.arrayBuffer()).toString("base64"), rights_confirmed: true };
-      }
-    }
+    if (form.has("file")) throw new ApiError(400, "INVALID_FILE");
     const body = {
       title: value("title"), slug: value("slug"), description: value("description") || null,
-      estimated_year: year ? Number(year) : null, archive_status: value("archive_status"),
+      estimated_year: year ? Number(year) : null, estimated_date: value("estimated_date") || null, archive_status: value("archive_status"),
       copyright_status: value("copyright_status"), distribution_permission: value("distribution_permission"),
       license: value("license") || null, rights_holder: value("rights_holder") || null,
-      ...(id ? { revision } : { request_id: requestId, ...(upload ? { file: upload } : {}) }),
+      ...(id ? { revision } : { request_id: requestId }),
     };
     sent = true;
     const saved = await adminRequest<MidiEntry | { request_id: string; status: "pending" }>(`/api/v1/admin/midis${id ? `/${id}` : ""}`, {
@@ -93,9 +81,7 @@ export async function saveMidiAction(_previous: MidiSaveState, form: FormData): 
     const retryOnly = !id && sent && !disabled && (!(error instanceof ApiError) || error.status >= 500);
     if (retryOnly) return { error: "暂时无法确认创建结果，输入和文件已保留。请重试本次提交，系统会核对原请求，不会重复建档。", retryOnly: true };
     const messages: Record<string, string> = {
-      INVALID_FILE: "请选择一个非空的 .mid 或 .midi 文件。",
-      INVALID_MIDI: "文件不是有效的 SMF 0、1 或 2 格式 MIDI，请检查文件内容。",
-      FILE_TOO_LARGE: "文件过大；单个文件最大 1 MiB（1,048,576 字节）。",
+      INVALID_FILE: "请通过文件上传表单提交文件。",
       RIGHTS_CONFIRMATION_REQUIRED: "请先确认你有权公开分发此文件。",
       FILE_OWNERSHIP_CONFLICT: "相同文件已归属于其他档案，未创建新档案。请先在档案列表核对归属。",
       IDEMPOTENCY_CONFLICT: "本次请求已保存过不同内容。请在新页面核对档案列表，不要重复建档。",

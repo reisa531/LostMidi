@@ -9,6 +9,7 @@ public:
     virtual std::optional<Person> findPersonByPublicId(const std::string& id) = 0;
     virtual std::vector<std::string> aliasesFor(std::int64_t id) = 0;
     virtual std::vector<CreditedMidi> midisFor(std::int64_t id) = 0;
+    virtual std::pair<std::optional<Person>, std::optional<Person>> neighborsFor(std::int64_t) { return {}; }
     virtual std::vector<Credit> creditsFor(std::int64_t midiId) = 0;
     virtual std::vector<Person> peopleFor(std::int64_t midiId) = 0;
 };

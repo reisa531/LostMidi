@@ -3,11 +3,12 @@ export interface Credit { person_id: string; display_name: string; role: string 
 export interface MidiEntry {
   revision: number;
   id: string; public_id: string; slug: string; title: string; description: string | null;
-  estimated_year: number | null; archive_status: ArchiveStatus;
+  estimated_year: number | null; estimated_date: string | null; archive_status: ArchiveStatus;
   created_at: string; updated_at: string; copyright_status: string | null;
   license: string | null; rights_holder: string | null; distribution_permission: string | null;
 }
-export interface Person { id: string; public_id: string; display_name: string; biography: string | null; created_at: string; revision: number }
+export interface Person { id: string; public_id: string; display_name: string; biography: string | null; summary: string | null; profile: PersonProfile; created_at: string; updated_at: string; revision: number }
+export type PersonProfile = Record<string, unknown>;
 export interface MidiList {
   data: (MidiEntry & { credits: Credit[] })[];
   pagination: { page: number; pageSize: number; total: number };
@@ -25,11 +26,12 @@ export interface MidiDetail {
 export interface EvidenceFile { id: string; filename: string; media_type: string; sha256: string; file_size: number; created_at: string }
 export interface PersonDetail {
   person: Person; aliases: string[]; midis: { id: string; public_id: string; slug: string; title: string; role: string }[];
+  previous: Person | null; next: Person | null;
 }
 
 export interface CatalogPagination { page: number; pageSize: number; total: number }
 export interface CatalogEntry {
-  id: string; public_id: string; slug: string; title: string; estimated_year: number | null;
+  id: string; public_id: string; slug: string; title: string; estimated_year: number | null; estimated_date: string | null;
   archive_status: ArchiveStatus; updated_at: string; credits: Credit[];
   sources: string[]; file_count: number; downloadable_file_count: number;
 }
@@ -43,7 +45,7 @@ export interface CatalogOverview {
 }
 export interface CatalogEntries { data: CatalogEntry[]; pagination: CatalogPagination }
 export interface CatalogPeople {
-  data: { id: string; public_id: string; display_name: string; biography: string | null; aliases: string[]; midi_count: number }[];
+  data: { id: string; public_id: string; display_name: string; biography: string | null; summary: string | null; updated_at: string; aliases: string[]; midi_count: number }[];
   pagination: CatalogPagination;
 }
 export interface CatalogGroup { key: string; label: string; entries: number; with_files: number; downloadable: number }

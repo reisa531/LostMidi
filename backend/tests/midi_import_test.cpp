@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
 #include "midi/MidiImportService.h"
+#include "midi/MidiFileService.h"
+#include "storage/LocalObjectStorage.h"
 #include "storage/S3ObjectStorage.h"
+#include "auth/Password.h"
 #include "common/Json.h"
+#include <fstream>
 #include <map>
 
 using namespace lostmidi;
@@ -10,71 +14,49 @@ using Bytes = std::vector<std::byte>;
 Bytes bytes(std::initializer_list<unsigned> values) {
     Bytes result; for (auto value : values) result.push_back(static_cast<std::byte>(value)); return result;
 }
-void number(Bytes& out, std::size_t n, unsigned count) {
-    while (count) out.push_back(static_cast<std::byte>((n >> (--count * 8)) & 255));
+Bytes binaryData() {
+    Bytes result; for (unsigned i = 0; i < 256; ++i) result.push_back(static_cast<std::byte>(i)); return result;
 }
-Bytes smf(const Bytes& events = bytes({0, 255, 47, 0}), unsigned format = 0, unsigned tracks = 1, unsigned division = 96) {
-    auto out = bytes({'M','T','h','d',0,0,0,6}); number(out, format, 2); number(out, tracks, 2); number(out, division, 2);
-    for (unsigned i = 0; i < tracks; ++i) {
-        auto tag = bytes({'M','T','r','k'}); out.insert(out.end(), tag.begin(), tag.end()); number(out, events.size(), 4);
-        out.insert(out.end(), events.begin(), events.end());
-    }
-    return out;
-}
+const std::vector<std::string> filenames{"乐曲.mid", "track.mp3", "lossless.flac", "sound.ogg", "sample.wav", "raw.bin", "no-extension"};
+const std::vector<std::string> unsafeFilenames{
+    "", ".", "..", " demo.mid", "demo.mid ", "a/b.mid", "a\\b.mid", "\tdemo", "demo\n", "a\rb",
+    std::string(256,'a'), std::string("a\0.mid",6), "a\x7f.bin", "a\xc2\x85.bin",
+    "\xc0\xaf.mid", "\xed\xa0\x80.mid", "\xf4\x90\x80\x80.mid", "\xe4.mid", "\x80.bin"};
 template<class Work> void apiError(Work work, int status, const std::string& code) {
     try { work(); FAIL() << "Expected " << code; }
     catch (const ApiError& e) { EXPECT_EQ(e.status, status); EXPECT_EQ(e.code, code); }
 }
-TEST(MidiValidation, FormatsTracksTimingAndRunningStatus) {
-    for (unsigned format : {0u, 1u, 2u}) for (unsigned timing : {1u, 96u, 32767u, 0xe801u, 0xe701u, 0xe301u, 0xe201u})
-        EXPECT_NO_THROW(midi::validateMidi(smf(bytes({0,255,47,0}), format, format ? 2 : 1, timing)));
-    auto events = bytes({0,0x90,60,100,0x81,0,61,100,0,0xc0,10,0,11,0,0x80,60,0,0,255,47,0});
-    EXPECT_NO_THROW(midi::validateMidi(smf(events)));
-    EXPECT_NO_THROW(midi::validateMidi(smf(bytes({0,255,1,2,'h','i',0,0xf0,2,1,0xf7,0,0xf7,1,0x7f,0,255,47,0}))));
-}
-TEST(MidiValidation, RejectsHeaderChunkAndTimingErrors) {
-    for (const auto& input : {Bytes{}, bytes({'P','K',3,4}), smf({},0,0), smf({},0,2), smf({},3), smf({},0,1,0), smf({},0,1,0xe000), smf({},0,1,0xe800)})
-        apiError([&] { midi::validateMidi(input); }, 400, "INVALID_MIDI");
-    const auto valid = smf();
-    for (std::size_t n = 0; n < valid.size(); ++n)
-        apiError([&] { midi::validateMidi(std::span(valid).first(n)); }, 400, "INVALID_MIDI");
-    auto input = valid; input.push_back(std::byte{0});
-    apiError([&] { midi::validateMidi(input); }, 400, "INVALID_MIDI");
-    for (std::size_t offset : {0u, 7u, 14u, 21u}) {
-        input = valid; input[offset] = std::byte{0xff};
-        apiError([&] { midi::validateMidi(input); }, 400, "INVALID_MIDI");
+TEST(FileValidation, AcceptsArbitraryNonemptyBytesWithoutParsing) {
+    for (const auto& input : {bytes({0}), bytes({255}), bytes({'P','K',3,4}),
+            bytes({'M','T','h','d'}), bytes({'M','T','h','d',255,0,128}), binaryData()}) {
+        const auto original = input;
+        EXPECT_NO_THROW(midi::validateFileContent(input));
+        EXPECT_EQ(input, original);
     }
+    apiError([] { midi::validateFileContent({}); }, 400, "INVALID_FILE");
 }
-TEST(MidiValidation, RejectsMalformedEventsAndMissingEndOfTrack) {
-    for (const auto& event : {Bytes{}, bytes({0,60,100}), bytes({0,0x90,60,0x80}), bytes({0,0xf1,0}),
-        bytes({0x80,0x80,0x80,0x80,0,255,47,0}), bytes({0,0x90,60,100}), bytes({0,255,47,1,0}),
-        bytes({0,255,47,0,0}), bytes({0,255,51,4,0}), bytes({0,255,0x80,0}),
-        bytes({0,0xf0,10,0}), bytes({0,0x90,60,100,0,255,1,0,0,60,100,0,255,47,0}),
-        bytes({0,0x90,60,100,0,0xf7,0,0,60,100,0,255,47,0})})
-        apiError([&] { midi::validateMidi(smf(event)); }, 400, "INVALID_MIDI");
-    for (const auto& [type, length] : std::map<unsigned,unsigned>{{0,2},{0x20,1},{0x21,1},{0x51,3},{0x54,5},{0x58,4},{0x59,2}}) {
-        auto event = bytes({0,255,type,length}); event.resize(event.size()+length, std::byte{0});
-        auto end = bytes({0,255,47,0}); event.insert(event.end(),end.begin(),end.end());
-        EXPECT_NO_THROW(midi::validateMidi(smf(event)));
-        event[3] = static_cast<std::byte>(length+1);
-        apiError([&] { midi::validateMidi(smf(event)); }, 400, "INVALID_MIDI");
+TEST(FileValidation, InclusiveFifteenMillionByteBoundary) {
+    ASSERT_EQ(midi::maxImportBytes, 15'000'000u);
+    Bytes input(15'000'000, std::byte{0xff});
+    EXPECT_NO_THROW(midi::validateFileContent(input));
+    input.push_back(std::byte{0});
+    apiError([&] { midi::validateFileContent(input); }, 413, "FILE_TOO_LARGE");
+}
+TEST(FileValidation, AllowsAnyExtensionAndPreservesFilenameSafetyRules) {
+    for (const auto& name : filenames) EXPECT_NO_THROW(midi::validateFilename(name));
+    for (const auto& name : {std::string("乐曲.MIDI"), std::string("demo + 1.mid"), std::string("a.zip"),
+            std::string(".hidden"), std::string("..demo"), std::string(255,'a')})
+        EXPECT_NO_THROW(midi::validateFilename(name));
+    std::string utf8;
+    for (int i = 0; i < 85; ++i) utf8 += "曲";
+    ASSERT_EQ(utf8.size(),255u);
+    EXPECT_NO_THROW(midi::validateFilename(utf8));
+    utf8 += 'a';
+    apiError([&] { midi::validateFilename(utf8); }, 400, "INVALID_FILE");
+    for (const auto& name : unsafeFilenames) {
+        SCOPED_TRACE(name);
+        apiError([&] { midi::validateFilename(name); }, 400, "INVALID_FILE");
     }
-}
-TEST(MidiValidation, ExactSizeBoundaryAndFilenameRules) {
-    // A large, length-delimited text event exercises the inclusive 1 MiB boundary.
-    const auto length = midi::maxImportBytes - 32;
-    auto events = bytes({0,255,1,static_cast<unsigned>(0x80 | (length >> 14)),
-        static_cast<unsigned>(0x80 | ((length >> 7) & 127)),static_cast<unsigned>(length & 127)});
-    events.resize(events.size()+length, std::byte{'x'});
-    auto end = bytes({0,255,47,0}); events.insert(events.end(),end.begin(),end.end());
-    auto valid = smf(events); ASSERT_EQ(valid.size(), midi::maxImportBytes); EXPECT_NO_THROW(midi::validateMidi(valid));
-    valid.push_back(std::byte{0}); apiError([&] { midi::validateMidi(valid); }, 413, "FILE_TOO_LARGE");
-    for (const auto& name : {std::string("乐曲.MIDI"),std::string("demo + 1.mid"),std::string(251,'a')+".mid"})
-        EXPECT_NO_THROW(midi::validateMidiFilename(name));
-    for (const auto& name : {std::string{},std::string(" demo.mid"),std::string("demo.mid "),std::string("a/b.mid"),
-        std::string("a\\b.mid"),std::string("a.zip"),std::string(252,'a')+".mid",std::string("a\0.mid",6),
-        std::string("\xc0\xaf.mid"),std::string("\xed\xa0\x80.mid"),std::string("\xf4\x90\x80\x80.mid"),std::string("\xe4.mid")})
-        apiError([&] { midi::validateMidiFilename(name); }, 400, "INVALID_FILE");
 }
 class FakeRepository : public midi::IMidiImportRepository {
 public:
@@ -117,16 +99,23 @@ TEST(MidiCreationBase64, AcceptsOnlyCanonicalAlphabetPaddingAndPadBits) {
         apiError([&] { midi::decodeMidiContentBase64(input); },400,"INVALID_FILE");
     apiError([&] { midi::decodeMidiContentBase64(std::string("AA\0A",4)); },400,"INVALID_FILE");
 }
-TEST(MidiCreationBase64, EnforcesDecodedSizeIncludingEqualEncodedLengthBoundary) {
-    const auto prefix = std::string((midi::maxImportBytes / 3) * 4, 'A');
-    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AA==").size(), midi::maxImportBytes);
-    for (const auto* suffix : {"AAA=", "AAAA", "AAAAAA=="})
+TEST(MidiCreationBase64, EnforcesDecimalSizeBoundaryWithCanonicalPadding) {
+    ASSERT_EQ(midi::maxImportBytes, 15'000'000u);
+    // 15,000,000 is divisible by three: the inclusive boundary has no padding.
+    const auto prefix = std::string(20'000'000 - 4, 'A');
+    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AA==").size(), 14'999'998u);
+    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AAA=").size(), 14'999'999u);
+    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AAAA"), Bytes(15'000'000, std::byte{0}));
+    for (const auto* suffix : {"AAAAAA==", "AAAAAAA=", "AAAAAAAA"})
         apiError([&] { midi::decodeMidiContentBase64(prefix + suffix); },413,"FILE_TOO_LARGE");
+    // Pad bits must remain canonical even at the maximum encoded length.
+    for (const auto* suffix : {"AB==", "AAB="})
+        apiError([&] { midi::decodeMidiContentBase64(prefix + suffix); },400,"INVALID_FILE");
 }
 TEST(MidiCreation, RejectsInvalidRequestsBeforeAnyRepositoryOrStorageAccess) {
     FakeRepository repo; FakeStorage storage;
     midi::MidiImportService service(repo,storage,true), disabled(repo,storage,false);
-    const auto entry = creationEntry(); const midi::MidiCreationFile file{"a.mid",smf(),true};
+    const auto entry = creationEntry(); const midi::MidiCreationFile file{"a.mid",binaryData(),true};
     for (const auto* id : {"", "01234567-89AB-4cde-8fab-0123456789ab", "01234567-89ab-1cde-8fab-0123456789ab",
         "01234567-89ab-4cde-7fab-0123456789ab", "01234567-89ab-4cde-8fab-0123456789abx", "0123456789ab4cde8fab0123456789ab"})
         apiError([&] { service.create(entry,id,file); },400,"INVALID_INPUT");
@@ -138,7 +127,7 @@ TEST(MidiCreation, RejectsInvalidRequestsBeforeAnyRepositoryOrStorageAccess) {
     upload = file; upload.filename = "../a.mid";
     apiError([&] { service.create(entry,creationId,upload); },400,"INVALID_FILE");
     upload = file; upload.bytes.clear();
-    apiError([&] { service.create(entry,creationId,upload); },400,"INVALID_MIDI");
+    apiError([&] { service.create(entry,creationId,upload); },400,"INVALID_FILE");
     upload.bytes.resize(midi::maxImportBytes + 1);
     apiError([&] { service.create(entry,creationId,upload); },413,"FILE_TOO_LARGE");
     EXPECT_EQ(repo.reads,0); EXPECT_EQ(repo.writes,0); EXPECT_EQ(storage.writes,0);
@@ -167,13 +156,13 @@ TEST(MidiCreation, FingerprintCoversEveryEditableFieldAndOptionalFile) {
     for (const auto& change : changes) {
         auto entry = original; change(entry); service.create(entry,creationId); EXPECT_NE(repo.fingerprint,digest);
     }
-    midi::MidiCreationFile file{"乐曲.MID",smf(),true}; service.create(original,creationId,file);
+    midi::MidiCreationFile file{"乐曲.MID",binaryData(),true}; service.create(original,creationId,file);
     const auto withFile = repo.fingerprint; EXPECT_NE(withFile,digest);
     EXPECT_EQ(repo.saved.originalFilename,file.filename); EXPECT_EQ(repo.saved.sha256,storage::sha256(file.bytes));
     EXPECT_EQ(repo.saved.storageKey,repo.saved.sha256); EXPECT_TRUE(repo.saved.publicDistributionConfirmed);
     EXPECT_EQ(storage.stored,file.bytes); EXPECT_EQ(repo.created.distributionPermission,"restricted"); EXPECT_EQ(repo.created.archiveStatus,"lost");
-    file.filename = "renamed.mid"; service.create(original,creationId,file); EXPECT_NE(repo.fingerprint,withFile);
-    file.filename = "乐曲.MID"; file.bytes = smf(bytes({0,0x90,60,100,0,255,47,0}));
+    file.filename = "renamed.mp3"; service.create(original,creationId,file); EXPECT_NE(repo.fingerprint,withFile);
+    file.filename = "乐曲.MID"; file.bytes.push_back(std::byte{0xff});
     service.create(original,creationId,file); EXPECT_NE(repo.fingerprint,withFile);
     // Delimiter-looking text must not move a boundary between adjacent fields.
     auto a = original, b = original; a.license = "a:1:b"; a.rightsHolder = "c"; b.license = "a"; b.rightsHolder = "b:1:c";
@@ -183,22 +172,50 @@ TEST(MidiCreation, FingerprintCoversEveryEditableFieldAndOptionalFile) {
 TEST(MidiImport, RejectsWithoutStorageOrRepositoryWrites) {
     FakeRepository repo; FakeStorage storage;
     midi::MidiImportService disabled(repo,storage,false), service(repo,storage,true);
-    apiError([&] { disabled.import(1,1,"a.mid",smf(),true); },503,"IMPORT_DISABLED");
-    apiError([&] { service.import(1,1,"a.mid",smf(),false); },400,"RIGHTS_CONFIRMATION_REQUIRED");
-    apiError([&] { service.import(0,1,"a.mid",smf(),true); },400,"INVALID_INPUT");
-    apiError([&] { service.import(1,0,"a.mid",smf(),true); },400,"INVALID_INPUT");
-    apiError([&] { service.import(1,1,"a.zip",smf(),true); },400,"INVALID_FILE");
-    apiError([&] { service.import(1,1,"a.mid",{},true); },400,"INVALID_MIDI");
+    apiError([&] { disabled.import(1,1,"a.mid",binaryData(),true); },503,"IMPORT_DISABLED");
+    apiError([&] { service.import(1,1,"a.mid",binaryData(),false); },400,"RIGHTS_CONFIRMATION_REQUIRED");
+    apiError([&] { service.import(0,1,"a.mid",binaryData(),true); },400,"INVALID_INPUT");
+    apiError([&] { service.import(1,0,"a.mid",binaryData(),true); },400,"INVALID_INPUT");
+    for (const auto& name : unsafeFilenames) {
+        SCOPED_TRACE(name);
+        apiError([&] { service.import(1,1,name,binaryData(),true); },400,"INVALID_FILE");
+        apiError([&] { service.create(creationEntry(),creationId,midi::MidiCreationFile{name,binaryData(),true}); },400,"INVALID_FILE");
+    }
+    apiError([&] { service.import(1,1,"a.mid",{},true); },400,"INVALID_FILE");
+    const Bytes oversized(15'000'001);
+    apiError([&] { service.import(1,1,"a.bin",oversized,true); },413,"FILE_TOO_LARGE");
     EXPECT_EQ(repo.reads,0); EXPECT_EQ(repo.writes,0); EXPECT_EQ(storage.writes,0);
     EXPECT_NO_THROW(disabled.get(1));
 }
-TEST(MidiImport, PreservesExactBytesFilenameAndContentIdentity) {
+TEST(MidiImport, PreservesEveryExtensionAndRawBytesForImportAndCreation) {
     FakeRepository repo; FakeStorage storage; midi::MidiImportService service(repo,storage,true);
-    const auto data = smf(); const auto imported = service.import(42,7,"乐曲.MID",data,true);
-    EXPECT_EQ(imported.revision,8); EXPECT_FALSE(imported.duplicate);
-    EXPECT_EQ(repo.saved.midiId,42); EXPECT_EQ(repo.saved.originalFilename,"乐曲.MID");
-    EXPECT_EQ(repo.saved.fileSize,data.size()); EXPECT_EQ(repo.saved.sha256,storage::sha256(data));
-    EXPECT_EQ(storage.storedKey,repo.saved.sha256); EXPECT_EQ(storage.stored,data);
+    const auto data = binaryData();
+    for (const auto& name : filenames) {
+        SCOPED_TRACE(name);
+        const auto imported = service.import(42,7,name,data,true);
+        EXPECT_EQ(imported.revision,8); EXPECT_FALSE(imported.duplicate);
+        EXPECT_EQ(repo.saved.midiId,42); EXPECT_EQ(repo.saved.originalFilename,name);
+        EXPECT_EQ(repo.saved.fileSize,data.size()); EXPECT_EQ(repo.saved.sha256,storage::sha256(data));
+        EXPECT_TRUE(repo.saved.publicDistributionConfirmed);
+        EXPECT_EQ(storage.storedKey,repo.saved.sha256); EXPECT_EQ(storage.stored,data);
+        service.create(creationEntry(),creationId,midi::MidiCreationFile{name,data,true});
+        EXPECT_EQ(repo.saved.originalFilename,name); EXPECT_EQ(repo.saved.fileSize,data.size());
+        EXPECT_EQ(repo.saved.sha256,storage::sha256(data)); EXPECT_EQ(storage.storedKey,repo.saved.sha256);
+        EXPECT_EQ(storage.stored,data); EXPECT_TRUE(repo.saved.publicDistributionConfirmed);
+        EXPECT_EQ(repo.created.distributionPermission,"restricted");
+    }
+}
+TEST(MidiImport, ImportAndCreationPreserveInclusiveLimit) {
+    ASSERT_EQ(midi::maxImportBytes,15'000'000u);
+    FakeRepository repo; FakeStorage storage; midi::MidiImportService service(repo,storage,true);
+    const midi::MidiCreationFile upload{"limit.bin",Bytes(15'000'000,std::byte{0xff}),true};
+    const auto digest = storage::sha256(upload.bytes);
+    service.import(42,7,upload.filename,upload.bytes,true);
+    EXPECT_EQ(repo.saved.fileSize,15'000'000u); EXPECT_EQ(repo.saved.sha256,digest);
+    EXPECT_EQ(storage.stored,upload.bytes);
+    service.create(creationEntry(),creationId,upload);
+    EXPECT_EQ(repo.saved.fileSize,15'000'000u); EXPECT_EQ(repo.saved.sha256,digest);
+    EXPECT_EQ(storage.stored,upload.bytes);
 }
 TEST(MidiDownload, ConsentAndRestrictionsControlPublicAvailability) {
     midi::MidiDetail detail;
@@ -224,6 +241,97 @@ TEST(MidiDownload, ConsentAndRestrictionsControlPublicAvailability) {
     EXPECT_FALSE(json["files"][0].isMember("private_archive_confirmed"));
     detail.entry.distributionPermission = "restricted";
     EXPECT_FALSE(toJson(detail)["files"][0]["download_available"].asBool());
+}
+class FakeFileRepository : public midi::IMidiFileRepository {
+public:
+    int reads = 0, writes = 0;
+    std::optional<midi::MidiFile> saved;
+    std::optional<midi::MidiFile> findBySha256(const std::string& digest) override {
+        ++reads; return saved && saved->sha256 == digest ? saved : std::nullopt;
+    }
+    bool insertIfAbsent(const midi::MidiFile& file) override { ++writes; saved = file; return true; }
+};
+TEST(FileRegistration, PreservesRawFilesAndUsesSharedValidationBeforeRepositoryAccess) {
+    for (const auto& name : filenames) {
+        SCOPED_TRACE(name);
+        FakeFileRepository repo; FakeStorage storage; midi::MidiFileService service(repo,storage);
+        const auto data = binaryData();
+        const auto result = service.registerFile(42,name,data);
+        EXPECT_FALSE(result.duplicate); EXPECT_EQ(result.file.originalFilename,name);
+        EXPECT_EQ(result.file.fileSize,data.size()); EXPECT_EQ(result.file.sha256,storage::sha256(data));
+        EXPECT_EQ(storage.stored,data); EXPECT_EQ(storage.storedKey,result.file.sha256);
+        const auto duplicate = service.registerFile(42,"renamed",data);
+        EXPECT_TRUE(duplicate.duplicate); EXPECT_EQ(duplicate.file.originalFilename,name); EXPECT_EQ(repo.writes,1);
+    }
+    FakeFileRepository repo; FakeStorage storage; midi::MidiFileService service(repo,storage);
+    for (const auto& name : unsafeFilenames)
+        apiError([&] { service.registerFile(42,name,binaryData()); },400,"INVALID_FILE");
+    apiError([&] { service.registerFile(0,"raw",binaryData()); },400,"INVALID_FILE");
+    apiError([&] { service.registerFile(42,"empty",{}); },400,"INVALID_FILE");
+    Bytes data(15'000'001,std::byte{0xff});
+    apiError([&] { service.registerFile(42,"oversized",data); },413,"FILE_TOO_LARGE");
+    EXPECT_EQ(repo.reads,0); EXPECT_EQ(repo.writes,0); EXPECT_EQ(storage.writes,0);
+    data.pop_back();
+    const auto result = service.registerFile(42,"limit",data);
+    EXPECT_EQ(result.file.fileSize,15'000'000u); EXPECT_EQ(result.file.sha256,storage::sha256(data));
+    EXPECT_EQ(storage.stored,data);
+}
+class FileStorageTest : public ::testing::Test {
+protected:
+    std::filesystem::path directory;
+    void SetUp() override { directory = std::filesystem::temp_directory_path()/("lostmidi-file-test-"+auth::randomToken()); }
+    void TearDown() override {
+        std::error_code error; std::filesystem::remove_all(directory,error); EXPECT_FALSE(error);
+    }
+};
+TEST_F(FileStorageTest, InclusiveLimitRoundTripsAndRetriesWithoutOverwriting) {
+    ASSERT_EQ(midi::maxImportBytes,15'000'000u);
+    storage::LocalObjectStorage objects(directory);
+    for (const std::size_t size : {std::size_t{1},std::size_t{15'000'000}}) {
+        std::string content(size,'\0');
+        for (std::size_t i = 0; i < size; ++i) content[i] = static_cast<char>(i % 256);
+        const auto data = std::as_bytes(std::span(content)); const auto key = storage::sha256(data);
+        EXPECT_TRUE(objects.store(key,data));
+        EXPECT_EQ(objects.read(key,size),content);
+        EXPECT_FALSE(objects.store(key,data));
+        EXPECT_EQ(objects.read(key,size),content);
+        auto changed = content; changed[0] = '\x7f';
+        EXPECT_THROW(objects.store(key,std::as_bytes(std::span(changed))),std::invalid_argument);
+        EXPECT_EQ(objects.read(key,size),content);
+    }
+}
+TEST_F(FileStorageTest, RejectsEmptyOversizedAndCorruptObjectsWithoutReplacingThem) {
+    storage::LocalObjectStorage objects(directory);
+    const Bytes empty, oversized(15'000'001);
+    for (const auto* data : {&empty,&oversized}) {
+        const auto key = storage::sha256(*data);
+        EXPECT_THROW(objects.store(key,*data),std::invalid_argument);
+        EXPECT_THROW(objects.read(key,data->size()),std::invalid_argument);
+        EXPECT_FALSE(objects.exists(key));
+    }
+    const auto data = binaryData(); const auto key = storage::sha256(data);
+    ASSERT_TRUE(objects.store(key,data));
+    {
+        std::fstream corrupt(directory/key,std::ios::binary|std::ios::in|std::ios::out);
+        corrupt.put('\x7f'); ASSERT_TRUE(corrupt);
+    }
+    apiError([&] { objects.read(key,data.size()); },503,"STORAGE_UNAVAILABLE");
+    EXPECT_THROW(objects.store(key,data),std::runtime_error);
+    apiError([&] { objects.read(key,data.size()); },503,"STORAGE_UNAVAILABLE");
+    std::filesystem::resize_file(directory/key,data.size()-1);
+    apiError([&] { objects.read(key,data.size()); },503,"STORAGE_UNAVAILABLE");
+    EXPECT_THROW(objects.store(key,data),std::runtime_error);
+}
+TEST(S3Storage, RejectsInvalidContentAndSizesBeforeNetworkAccess) {
+    const storage::S3Config config{"https://storage.invalid","us-east-1","bucket","test-access","test-secret","archive",true};
+    storage::S3ObjectStorage objects(config);
+    const Bytes empty, oversized(15'000'001);
+    for (const auto* data : {&empty,&oversized}) {
+        const auto key = storage::sha256(*data);
+        EXPECT_THROW(objects.store(key,*data),std::invalid_argument);
+        EXPECT_THROW(objects.read(key,data->size()),std::invalid_argument);
+    }
+    EXPECT_THROW(objects.store(std::string(64,'a'),binaryData()),std::invalid_argument);
 }
 TEST(S3Signing, FixedIndependentPythonHmacVectors) {
     // Public synthetic fixture; expected signatures calculated independently with Python hashlib/hmac.

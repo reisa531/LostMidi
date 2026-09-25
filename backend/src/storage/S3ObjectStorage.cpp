@@ -1,6 +1,7 @@
 #include "storage/S3ObjectStorage.h"
 #include "common/Error.h"
 #include "common/Log.h"
+#include "midi/MidiValidator.h"
 #include <openssl/hmac.h>
 #include <array>
 #include <cstdlib>
@@ -101,7 +102,7 @@ drogon::HttpResponsePtr S3ObjectStorage::request(drogon::HttpMethod method, cons
     if (method == drogon::Put) req->setBody(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
     auto client = drogon::HttpClient::newHttpClient(origin_, loop_.getLoop(), false, true);
     // No redirects and no credential-bearing URLs; diagnostics never expose provider responses.
-    const auto [result, response] = client->sendRequest(req, 15.0);
+    const auto [result, response] = client->sendRequest(req, method == drogon::Put ? 60.0 : 15.0);
     if (result != drogon::ReqResult::Ok || !response) {
         logEvent("storage_transport_failed", static_cast<int>(result));
         unavailable();
@@ -116,8 +117,8 @@ bool S3ObjectStorage::exists(const std::string& key) const {
 }
 std::string S3ObjectStorage::read(const std::string& key, std::size_t expectedSize) const {
     checkKey(key);
-    if (expectedSize == 0 || expectedSize > 1024 * 1024)
-        throw std::invalid_argument("Object size must be between 1 byte and 1 MiB.");
+    if (expectedSize == 0 || expectedSize > midi::maxImportBytes)
+        throw std::invalid_argument("Object size must be between 1 and 15,000,000 bytes (15 MB).");
     try {
         const auto metadata = request(drogon::Head, key);
         if (metadata->statusCode() != 200) {
@@ -149,8 +150,8 @@ void S3ObjectStorage::verify(const std::string& key, std::size_t size) const {
 }
 bool S3ObjectStorage::store(const std::string& key, std::span<const std::byte> bytes) {
     checkKey(key);
-    if (bytes.empty() || bytes.size() > 1024 * 1024 || sha256(bytes) != key)
-        throw std::invalid_argument("Object content must match its key and fit within 1 MiB.");
+    if (bytes.empty() || bytes.size() > midi::maxImportBytes || sha256(bytes) != key)
+        throw std::invalid_argument("Object content must match its key and be between 1 and 15,000,000 bytes (15 MB).");
     // PostgreSQL locks coordinate managed writers; conditional PUT also prevents
     // overwriting an object created by another client between HEAD and PUT.
     if (exists(key)) { verify(key, bytes.size()); return false; }
