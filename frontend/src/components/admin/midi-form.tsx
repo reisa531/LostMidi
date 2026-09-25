@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { MidiEntry } from "@/lib/api/types";
 import { saveMidiAction, type MidiSaveState } from "@/lib/admin/actions";
 
-export function MidiForm({ entry, importEnabled = false }: { entry?: MidiEntry; importEnabled?: boolean }) {
+export function MidiForm({ entry, importEnabled = false, reviewRequired = false }: { entry?: MidiEntry; importEnabled?: boolean; reviewRequired?: boolean }) {
   const router = useRouter();
   const requestId = useRef("");
   const submitted = useRef<FormData | null>(null);
@@ -26,6 +26,10 @@ export function MidiForm({ entry, importEnabled = false }: { entry?: MidiEntry; 
       }
       submitted.current = form;
       const next = await saveMidiAction(previous, form);
+      if (next.queued) {
+        router.push("/admin/changes?submitted=1");
+        return next;
+      }
       if (next.savedId) {
         router.push(`/admin/midis/${next.savedId}/edit?saved=1`);
         router.refresh();
@@ -64,7 +68,7 @@ export function MidiForm({ entry, importEnabled = false }: { entry?: MidiEntry; 
     }
     submitting.current = true;
   }} aria-busy={pending} className="min-w-0 space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8">
-    <p className="text-sm leading-6 text-muted">{entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传 MIDI；没有文件时仍可建立寻回档案。"}</p>
+    <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，批准后才会发布。管理员新增档案仅支持文字资料。" : entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传 MIDI；没有文件时仍可建立寻回档案。"}</p>
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
     <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>

@@ -201,10 +201,16 @@ SourceWriteResult RecoveryWriteService::saveSource(std::int64_t midiId, std::int
     writeIds(midiId, sourceId, revision);
     requiredText(source.websiteName, 300);
     optionalText(source.notes, 20000);
+    if (source.sourceType != "original_site" && source.sourceType != "forum" && source.sourceType != "mailing_list" &&
+        source.sourceType != "archive" && source.sourceType != "search_index" &&
+        source.sourceType != "personal_collection" && source.sourceType != "other")
+        invalid("Unknown historical source type.");
+    if (source.credibility < 1 || source.credibility > 5) invalid("Credibility must be between 1 and 5.");
     url(source.originalUrl);
     url(source.waybackUrl);
     utcTimestamp(source.firstSeenAt);
     utcTimestamp(source.lastSeenAt);
+    utcTimestamp(source.checkedAt);
     if (source.firstSeenAt && source.lastSeenAt && *source.firstSeenAt > *source.lastSeenAt)
         invalid("First seen time must not be later than last seen time.");
     return repository_.saveSource(midiId, sourceId, revision, source);

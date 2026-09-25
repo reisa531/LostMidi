@@ -12,7 +12,7 @@ type AuditItem = { actor: string; action: "delete" | "restore"; entity_type: "mi
 type TrashPage = { data: TrashItem[]; audit: AuditItem[]; pagination: { total: number } };
 
 export default async function TrashPage() {
-  await requireAdmin();
+  const admin = await requireAdmin();
   let result: TrashPage;
   try { result = await adminRequest<TrashPage>("/api/v1/admin/trash?page=1&pageSize=100"); }
   catch (error) { if (error instanceof ApiError) return <><AdminPageHeader eyebrow="Collection / Trash" title="回收站" description="已删除记录会保留原始关联和文件，可在此恢复。" /><AdminUnavailable /></>; throw error; }
@@ -20,7 +20,7 @@ export default async function TrashPage() {
     <AdminPanel title={`保留中的记录 · ${result.pagination.total}`}>
       {result.data.length ? <ul className="divide-y divide-line">{result.data.map(item => <li key={`${item.entity_type}-${item.entity_id}`} className="flex flex-wrap items-center justify-between gap-4 py-4">
         <div className="min-w-0"><p className="break-words font-medium">{item.entity_label}</p><p className="mt-1 text-xs text-muted">{item.entity_type === "midi" ? "MIDI 档案" : "人物"} · 编号 {item.entity_id} · {new Date(item.deleted_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · 操作人 {item.deleted_by}</p></div>
-        <RestoreButton type={item.entity_type} id={item.entity_id} />
+        {admin.role === "super_admin" && <RestoreButton type={item.entity_type} id={item.entity_id} />}
       </li>)}</ul> : <p className="py-8 text-center text-sm text-muted">回收站为空。</p>}
     </AdminPanel>
     <AdminPanel title="最近操作 · 最多 50 条">

@@ -68,15 +68,20 @@ protected:
         owner_->execSqlSync("CREATE TABLE " + schema_ + ".admin_sessions (LIKE public.admin_sessions INCLUDING ALL)");
         db_ = connect();
         // Minimal surrounding schema for read-only startup/readiness checks, all isolated.
-        db_->execSqlSync("CREATE TABLE midi_entries (id BIGINT PRIMARY KEY, revision BIGINT, deleted_at TIMESTAMPTZ)");
-        db_->execSqlSync("CREATE TABLE people (revision BIGINT, deleted_at TIMESTAMPTZ)");
+        db_->execSqlSync("CREATE TABLE midi_entries (id BIGINT PRIMARY KEY, public_id UUID, revision BIGINT, deleted_at TIMESTAMPTZ)");
+        db_->execSqlSync("CREATE TABLE people (public_id UUID, revision BIGINT, deleted_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE recovery_events (recovered_at TIMESTAMPTZ)");
+        db_->execSqlSync("CREATE TABLE historical_sources (credibility SMALLINT)");
+        db_->execSqlSync("CREATE TABLE historical_evidence (id BIGINT)");
+        db_->execSqlSync("CREATE TABLE admin_users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), username TEXT UNIQUE, password_hash TEXT, role TEXT, status TEXT)");
+        db_->execSqlSync("CREATE TABLE admin_invitations (token_hash TEXT)");
+        db_->execSqlSync("CREATE TABLE admin_change_requests (id UUID)");
         db_->execSqlSync("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY)");
         db_->execSqlSync("CREATE TABLE midi_import_objects (sha256 TEXT, storage_key TEXT, touched_at TIMESTAMPTZ, cleanup_attempts INTEGER, last_cleanup_attempt_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE midi_files (private_archive_confirmed BOOLEAN)");
         db_->execSqlSync("CREATE TABLE midi_creation_requests (request_id UUID, payload_sha256 TEXT, midi_id BIGINT REFERENCES midi_entries(id) ON DELETE SET NULL)");
         db_->execSqlSync("CREATE TABLE admin_audit_log (id BIGINT)");
-        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql'), ('009_catalog_search.sql'), ('010_recoverable_deletions.sql'), ('011_cleanup_retry_metadata.sql')");
+        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql'), ('009_catalog_search.sql'), ('010_recoverable_deletions.sql'), ('011_cleanup_retry_metadata.sql'), ('012_source_evidence.sql'), ('013_admin_users.sql'), ('014_public_ids.sql'), ('015_content_reviews.sql')");
     }
     void TearDown() override {
         db_.reset();
@@ -253,10 +258,10 @@ TEST_F(InstallationPostgres, EnvironmentOverrideAndDatabaseChangesInvalidateCred
     auth::AuthService partial(authRepository, "unused-environment-user", "");
     const auto restoredToken = partial.login("installed-admin", "installation-only-password");
     EXPECT_EQ(databaseAuth.require("Bearer " + restoredToken), "installed-admin");
-    db_->execSqlSync("UPDATE site_installation SET username='renamed-admin'");
+    db_->execSqlSync("UPDATE admin_users SET username='renamed-admin' WHERE username='installed-admin'");
     expectApiError([&] { databaseAuth.require("Bearer " + restoredToken); }, 401, "UNAUTHORIZED");
     const auto renamedToken = databaseAuth.login("renamed-admin", "installation-only-password");
-    db_->execSqlSync("UPDATE site_installation SET password_hash=$1", legacyHash);
+    db_->execSqlSync("UPDATE admin_users SET password_hash=$1 WHERE username='renamed-admin'", legacyHash);
     expectApiError([&] { databaseAuth.require("Bearer " + renamedToken); }, 401, "UNAUTHORIZED");
     expectApiError([&] { databaseAuth.login("renamed-admin", "installation-only-password"); }, 401, "INVALID_CREDENTIALS");
     EXPECT_NO_THROW(databaseAuth.login("renamed-admin", "integration-only-password"));
@@ -289,6 +294,21 @@ TEST_F(InstallationPostgres, ReadinessRequiresLedgerAndQueryableTableAndStatusPr
     db_->execSqlSync("DELETE FROM schema_migrations WHERE version='011_cleanup_retry_metadata.sql'");
     expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
     db_->execSqlSync("INSERT INTO schema_migrations VALUES('011_cleanup_retry_metadata.sql')");
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='012_source_evidence.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('012_source_evidence.sql')");
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='013_admin_users.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('013_admin_users.sql')");
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='014_public_ids.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('014_public_ids.sql')");
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='015_content_reviews.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('015_content_reviews.sql')");
+    db_->execSqlSync("ALTER TABLE admin_change_requests RENAME TO unavailable_change_requests");
+    EXPECT_THROW(requireDatabaseReady(db_), drogon::orm::DrogonDbException);
+    db_->execSqlSync("ALTER TABLE unavailable_change_requests RENAME TO admin_change_requests");
     db_->execSqlSync("ALTER TABLE midi_creation_requests RENAME TO unavailable_creation_requests");
     EXPECT_THROW(requireDatabaseReady(db_), drogon::orm::DrogonDbException);
     db_->execSqlSync("ALTER TABLE unavailable_creation_requests RENAME TO midi_creation_requests");

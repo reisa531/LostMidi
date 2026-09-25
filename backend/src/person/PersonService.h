@@ -12,6 +12,11 @@ public:
         if (!person) throw ApiError(404, "PERSON_NOT_FOUND", "The requested person does not exist.");
         return {*person, repository_.aliasesFor(id), repository_.midisFor(id)};
     }
+    PersonDetail getByPublicId(const std::string& id) const {
+        auto person = repository_.findPersonByPublicId(id);
+        if (!person) throw ApiError(404, "PERSON_NOT_FOUND", "The requested person does not exist.");
+        return {*person, repository_.aliasesFor(person->id), repository_.midisFor(person->id)};
+    }
 private:
     IPersonRepository& repository_;
 };

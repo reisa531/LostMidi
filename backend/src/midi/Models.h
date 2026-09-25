@@ -17,6 +17,7 @@ struct MidiEntry {
     std::optional<std::string> rightsHolder;
     std::optional<std::string> distributionPermission;
     std::int64_t revision = 1;
+    std::string publicId;
 };
 struct MidiFile {
     std::int64_t id = 0;

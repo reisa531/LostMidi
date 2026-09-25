@@ -26,7 +26,7 @@ function errorMessage(error: unknown) {
   return error instanceof ApiError ? messages[error.code] ?? "服务暂时不可用，请稍后重试。" : "请求失败，请稍后重试。";
 }
 export async function savePersonAction(_previous: { error: string }, form: FormData) {
-  let saved: PersonEdit;
+  let saved: PersonEdit | { request_id: string; status: "pending" };
   try {
     await checkOrigin();
     const id = form.get("id") ? idOf(form.get("id")) : "";
@@ -37,21 +37,26 @@ export async function savePersonAction(_previous: { error: string }, form: FormD
         ...(id ? { revision: Number(form.get("revision")) } : {}) }),
     });
   } catch (error) { return { error: errorMessage(error) }; }
+  if ("request_id" in saved) redirect("/admin/changes?submitted=1");
   redirect(`/admin/people/${saved.person.id}/edit?saved=1`);
 }
 export async function saveCreditsAction(_previous: { error: string }, form: FormData) {
   let id: string;
+  let queued = false;
   try {
     await checkOrigin();
     id = idOf(form.get("midi_id"));
+    const session = await adminRequest<{ role: "admin" | "super_admin" }>("/api/v1/admin/session");
     const people = form.getAll("person_id");
     const roles = form.getAll("role");
     if (people.length !== roles.length) throw new ApiError(400, "INVALID_INPUT");
-    await adminRequest(`/api/v1/admin/midis/${id}/credits`, {
+    const result = await adminRequest<{ request_id?: string }>(`/api/v1/admin/midis/${id}/credits`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ revision: Number(form.get("revision")), credits: people.map((person, index) => ({ person_id: idOf(person), role: String(roles[index]) })) }),
     });
+    queued = session.role === "admin" && "request_id" in result;
   } catch (error) { return { error: errorMessage(error) }; }
+  if (queued) redirect("/admin/changes?submitted=1");
   redirect(`/admin/midis/${id}/credits?saved=1`);
 }
 export async function loadPeopleAction(page: number) {

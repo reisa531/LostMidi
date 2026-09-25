@@ -31,8 +31,10 @@ public:
         for (const auto& entry : entries) if (entry.slug == slug) return entry;
         return std::nullopt;
     }
+    std::optional<midi::MidiEntry> findByPublicId(const std::string&) override { return std::nullopt; }
     std::vector<midi::MidiFile> filesFor(std::int64_t) override { return {}; }
     std::optional<person::Person> findById(std::int64_t) override { return std::nullopt; }
+    std::optional<person::Person> findPersonByPublicId(const std::string&) override { return std::nullopt; }
     std::vector<std::string> aliasesFor(std::int64_t) override { return {}; }
     std::vector<person::CreditedMidi> midisFor(std::int64_t) override { return {}; }
     std::vector<person::Credit> creditsFor(std::int64_t) override { return {{1, "Fictional creator", "composer"}}; }

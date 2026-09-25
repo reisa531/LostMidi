@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { saveHistoryAction } from "@/lib/admin/history-actions";
+import { uploadEvidenceAction } from "@/lib/admin/history-actions";
 import { loadPeopleAction } from "@/lib/admin/people-actions";
 import type { HistoricalSource, HistoryEdit, RecoveryEvent } from "@/lib/admin/history";
 import type { PeopleList } from "@/lib/admin/people";
@@ -47,6 +48,7 @@ function HistoryRecordForm({ midiId, revision, selection, people, onCancel }: {
   const [values, setValues] = useState({
     website_name: source?.website_name ?? "", original_url: source?.original_url ?? "", wayback_url: source?.wayback_url ?? "",
     first_seen_at: localUTC(source?.first_seen_at), last_seen_at: localUTC(source?.last_seen_at), notes: source?.notes ?? "",
+    source_type: source?.source_type ?? "other", credibility: String(source?.credibility ?? 3), checked_at: localUTC(source?.checked_at),
     recovered_at: localUTC(event?.recovered_at), recovered_by: event?.recovered_by ?? "", story: event?.story ?? "", evidence: event?.evidence ?? "",
   });
   const change = (name: keyof typeof values, value: string) => setValues(old => ({ ...old, [name]: value }));
@@ -95,6 +97,16 @@ function HistoryRecordForm({ midiId, revision, selection, people, onCancel }: {
           <label className="block min-w-0 text-sm">原始网址（可留空）<input type="url" name="original_url" className={inputClass} maxLength={4096} value={values.original_url} onChange={event => change("original_url", event.target.value)} /></label>
           <label className="block min-w-0 text-sm">存档网址（可留空）<input type="url" name="wayback_url" className={inputClass} maxLength={4096} value={values.wayback_url} onChange={event => change("wayback_url", event.target.value)} /></label>
         </div>
+        <div className="grid min-w-0 gap-5 lg:grid-cols-2">
+          <label className="block min-w-0 text-sm">来源类型<select name="source_type" className={inputClass} value={values.source_type} onChange={event => change("source_type", event.target.value)}>
+            <option value="original_site">原始网站</option><option value="forum">论坛</option><option value="mailing_list">邮件列表</option><option value="archive">网页档案</option><option value="search_index">搜索索引</option><option value="personal_collection">个人收藏</option><option value="other">其他 / 未知</option>
+          </select></label>
+          <label className="block min-w-0 text-sm">人工可信度（1–5）<select name="credibility" className={inputClass} value={values.credibility} onChange={event => change("credibility", event.target.value)}>
+            <option value="1">1 · 未核实</option><option value="2">2 · 较弱线索</option><option value="3">3 · 有支持资料</option><option value="4">4 · 多项资料吻合</option><option value="5">5 · 一手来源</option>
+          </select></label>
+        </div>
+        <UTCInput name="checked_at" label="最近核验时间" value={values.checked_at} onChange={value => change("checked_at", value)} />
+        <p className="text-xs leading-6 text-muted">可信度是整理者的人工评估，不是系统自动判断的事实分数。保存来源后可上传 PDF、PNG、JPEG 或纯文本证据（每份不超过 1 MiB）。</p>
         <p className="text-xs leading-6 text-muted">网址须为完整的 http/https 地址，不含账户信息或控制符，最多 4,096 UTF-8 字节；未知时留空。</p>
         <div className="grid min-w-0 gap-5 lg:grid-cols-2">
           <UTCInput name="first_seen_at" label="首次记录时间" value={values.first_seen_at} onChange={value => change("first_seen_at", value)} />
@@ -143,9 +155,10 @@ export function HistoryForm({ history, people }: { history: HistoryEdit; people:
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-sources" className="text-lg font-semibold">历史来源</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "source" })} className={buttonClass}>新增历史来源</button></div>
       {history.historical_sources.length ? <ul className="space-y-6">{history.historical_sources.map(source => <li key={source.id} className="min-w-0 space-y-3 border-t border-line pt-5">
         <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="min-w-0 font-semibold">{source.website_name}</h3><button type="button" disabled={busy} className={buttonClass} onClick={() => setSelection({ kind: "source", record: source })} aria-label={`编辑历史来源 ${source.website_name}（编号 ${source.id}）`}>编辑 / 删除</button></div>
-        <p className="text-xs leading-6 text-muted">编号 {source.id} · 首次记录：{utcLabel(source.first_seen_at)}<br />最后记录：{utcLabel(source.last_seen_at)}</p>
+        <p className="text-xs leading-6 text-muted">编号 {source.id} · {sourceTypeLabels[source.source_type] ?? "其他 / 未知"} · 人工可信度 {source.credibility}/5 · 最近核验：{utcLabel(source.checked_at)}<br />首次记录：{utcLabel(source.first_seen_at)} · 最后记录：{utcLabel(source.last_seen_at)}</p>
         <div className="flex flex-wrap gap-4 text-sm">{source.original_url ? <ExternalSource url={source.original_url} label="原始网址" /> : <span className="text-muted">原始网址未登记</span>}{source.wayback_url ? <ExternalSource url={source.wayback_url} label="历史快照" /> : <span className="text-muted">存档网址未登记</span>}</div>
         <p className="whitespace-pre-wrap text-sm leading-7">{source.notes ?? "暂无补充说明。"}</p>
+        <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="source" recordId={source.id} files={source.evidence_files ?? []} />
       </li>)}</ul> : <p className="text-sm text-muted">尚未登记历史来源。可新增网站、原始网址及存档线索。</p>}
     </section>
     <section aria-labelledby="history-events" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
@@ -155,7 +168,29 @@ export function HistoryForm({ history, people }: { history: HistoryEdit; people:
         <p className="text-xs leading-6 text-muted">寻回时间：{utcLabel(event.recovered_at)} · 寻回人：{event.recovered_by ? <Link href={`/people/${event.recovered_by}`} target="_blank" rel="noopener noreferrer" className="underline">{event.recovered_by_name ?? "姓名不详"}（编号 {event.recovered_by}）</Link> : "人物不详"}</p>
         <p className="whitespace-pre-wrap text-sm leading-7">{event.story}</p>
         <p className="whitespace-pre-wrap text-sm leading-7 text-muted">证据说明：{event.evidence ?? "尚未补充"}</p>
+        <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="event" recordId={event.id} files={event.evidence_files ?? []} />
       </li>)}</ul> : <p className="text-sm text-muted">尚无寻回记录。可新增寻回经过、人物及证据说明。</p>}
     </section>
   </div>;
 }
+
+function EvidenceFiles({ midiId, revision, kind, recordId, files }: { midiId: string; revision: number; kind: "source" | "event"; recordId: string; files: { id: string; filename: string; sha256: string; file_size: number; created_at: string }[] }) {
+  return <div className="space-y-3 rounded-lg bg-surface p-4">
+    <h4 className="text-sm font-semibold">证据附件</h4>
+    {files.length ? <ul className="space-y-2 text-sm">{files.map(file => <li key={file.id} className="break-all">
+      <a className="underline" href={`/api/admin/midis/${midiId}/evidence/${file.id}`}>{file.filename}</a>
+      <span className="ml-2 text-xs text-muted">{file.file_size.toLocaleString("zh-CN")} 字节 · SHA-256 {file.sha256}</span>
+    </li>)}</ul> : <p className="text-xs text-muted">尚无附件。附件仅限登录管理员下载。</p>}
+    <form action={uploadEvidenceAction} className="flex flex-wrap items-end gap-3">
+      <input type="hidden" name="midi_id" value={midiId} /><input type="hidden" name="revision" value={revision} />
+      <input type="hidden" name="kind" value={kind} /><input type="hidden" name="record_id" value={recordId} />
+      <label className="text-xs">选择证据文件<input required type="file" name="evidence_file" accept=".pdf,.png,.jpg,.jpeg,.txt,application/pdf,image/png,image/jpeg,text/plain" className="mt-2 block max-w-full text-xs" /></label>
+      <button type="submit" className={buttonClass}>上传并计算 SHA-256</button>
+    </form>
+  </div>;
+}
+
+const sourceTypeLabels: Record<string, string> = {
+  original_site: "原始网站", forum: "论坛", mailing_list: "邮件列表", archive: "网页档案",
+  search_index: "搜索索引", personal_collection: "个人收藏", other: "其他 / 未知",
+};

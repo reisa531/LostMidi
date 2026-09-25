@@ -10,6 +10,7 @@
 #include "midi/MidiWriteService.h"
 #include "recovery/RecoveryWriteService.h"
 #include "person/PersonWriteService.h"
+#include "storage/IObjectStorage.h"
 #include <future>
 
 using namespace lostmidi;
@@ -61,6 +62,47 @@ TEST(PostgresIntegration, AdministratorSessionLifecycle) {
     expectApiError([&] { service.login("test-admin", ""); }, 429, "LOGIN_RATE_LIMITED");
     auth::AuthService disabled(repository, "test-admin", "");
     expectApiError([&] { disabled.login("test-admin", "anything"); }, 503, "ADMIN_DISABLED");
+}
+
+TEST(PostgresIntegration, MultipleAdministratorAccountsCarryLiveRoles) {
+    const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
+    if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a migrated test database.";
+    auto db = drogon::orm::DbClient::newPgClient(url, 2); db->setTimeout(5.0);
+    const auto username = "role-test-" + auth::randomToken().substr(0, 12);
+    const std::string hash = "pbkdf2_sha256:600000:00000000000000000000000000000000:73cce23bed8110946640df7fee25f986fdd0ec35066980f5cfa99f6905bcbeb0";
+    struct Cleanup {
+        drogon::orm::DbClientPtr db; std::string username;
+        ~Cleanup() { try { db->execSqlSync("DELETE FROM admin_users WHERE username=$1", username); } catch (...) {} }
+    } cleanup{db, username};
+    db->execSqlSync("INSERT INTO admin_users(username,password_hash,role,status) VALUES($1,$2,'admin','active')", username, hash);
+    auth::AuthRepository repository(db);
+    auth::AuthService service(repository, "", "");
+    const auto token = service.login(username, "integration-only-password");
+    EXPECT_EQ(service.requirePrincipal("Bearer " + token).role, "admin");
+    db->execSqlSync("UPDATE admin_users SET role='super_admin' WHERE username=$1", username);
+    EXPECT_EQ(service.requirePrincipal("Bearer " + token).role, "super_admin");
+    db->execSqlSync("UPDATE admin_users SET status='disabled' WHERE username=$1", username);
+    expectApiError([&] { service.require("Bearer " + token); }, 401, "UNAUTHORIZED");
+}
+
+TEST(PostgresIntegration, PublicUuidIdentifiersRemainStableAcrossSlugChanges) {
+    const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
+    if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a migrated test database.";
+    auto db = drogon::orm::DbClient::newPgClient(url, 2); db->setTimeout(5.0);
+    const auto slug = "public-id-test-" + auth::randomToken().substr(0, 12);
+    struct Cleanup { drogon::orm::DbClientPtr db; std::string slug; ~Cleanup() { try { db->execSqlSync("DELETE FROM midi_entries WHERE slug=$1 OR slug=$2", slug, slug + "-renamed"); db->execSqlSync("DELETE FROM people WHERE display_name=$1", slug); } catch (...) {} } } cleanup{db,slug};
+    midi::PostgresMidiRepository midis(db); midi::MidiWriteService writer(midis);
+    auto entry = writer.create(midi::MidiEntry{0,slug,"Public ID test",{}, {},"uncertain",{}, {},"unknown",{}, {},"metadata_only"});
+    ASSERT_FALSE(entry.publicId.empty());
+    EXPECT_EQ(midis.findByPublicId(entry.publicId)->slug, slug);
+    entry.slug += "-renamed"; entry.revision = 1;
+    entry = writer.update(entry.id, entry);
+    EXPECT_EQ(entry.publicId, midis.findByPublicId(entry.publicId)->publicId);
+    person::PostgresPersonRepository people(db); person::PersonWriteService peopleWriter(people);
+    person::PersonEdit person; person.person.displayName = slug;
+    const auto saved = peopleWriter.save(0, person);
+    ASSERT_FALSE(saved.person.publicId.empty());
+    EXPECT_EQ(people.findPersonByPublicId(saved.person.publicId)->id, saved.person.id);
 }
 
 TEST(PostgresIntegration, ArchiveWriteConflictsPreserveStoredData) {
@@ -115,6 +157,24 @@ TEST(PostgresIntegration, RecoveryCrudRollbackAndSharedRevision) {
     auto saved = service.saveSource(id, 0, 1, source);
     ASSERT_GT(saved.source.id, 0); EXPECT_EQ(saved.revision, 2);
     EXPECT_EQ(saved.source.firstSeenAt, source.firstSeenAt);
+    const std::string proof = "archival evidence bytes";
+    const auto proofBytes = std::as_bytes(std::span(proof.data(), proof.size()));
+    const auto proofHash = storage::sha256(proofBytes);
+    const std::string proofBase64 = "YXJjaGl2YWwgZXZpZGVuY2UgYnl0ZXM=";
+    db->execSqlSync("INSERT INTO historical_evidence(midi_id,source_id,original_filename,media_type,sha256,file_size,content,uploaded_by) "
+        "VALUES($1,$2,'capture.txt','text/plain',$3,$4,decode($5,'base64'),'integration-admin')",
+        id, saved.source.id, proofHash, static_cast<std::int32_t>(proof.size()), proofBase64);
+    const auto evidenceHistory = service.getHistory(id);
+    ASSERT_EQ(evidenceHistory.history.sources.size(), 1u);
+    ASSERT_EQ(evidenceHistory.history.sources[0].evidenceFiles.size(), 1u);
+    EXPECT_EQ(evidenceHistory.history.sources[0].evidenceFiles[0].sha256, proofHash);
+    EXPECT_EQ(evidenceHistory.history.sources[0].evidenceFiles[0].fileSize, proof.size());
+    try {
+        db->execSqlSync("INSERT INTO historical_evidence(midi_id,source_id,original_filename,media_type,sha256,file_size,content,uploaded_by) "
+            "VALUES($1,$2,'wrong-owner.txt','text/plain',$3,$4,decode($5,'base64'),'integration-admin')",
+            other, saved.source.id, std::string(64, '0'), static_cast<std::int32_t>(proof.size()), proofBase64);
+        FAIL() << "Expected owner foreign-key violation";
+    } catch (const drogon::orm::DrogonDbException&) {}
     source.notes = "Edited";
     auto edited = service.saveSource(id, saved.source.id, 2, source);
     EXPECT_EQ(edited.source.id, saved.source.id); EXPECT_EQ(edited.revision, 3);

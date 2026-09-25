@@ -11,6 +11,7 @@ public:
     std::vector<MidiEntry> list(Page page) override;
     std::int64_t count() override;
     std::optional<MidiEntry> findBySlug(const std::string& slug) override;
+    std::optional<MidiEntry> findByPublicId(const std::string& id) override;
     std::vector<MidiFile> filesFor(std::int64_t midiId) override;
     std::optional<MidiFile> findBySha256(const std::string& digest) override;
     bool insertIfAbsent(const MidiFile& file) override;

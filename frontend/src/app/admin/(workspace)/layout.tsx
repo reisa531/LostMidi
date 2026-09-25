@@ -15,7 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return <div className="min-h-screen bg-background lg:grid lg:grid-cols-[208px_minmax(0,1fr)]">
     <aside className="min-w-0 bg-[#203d31] px-4 py-5 text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:py-7">
       <Link href="/admin" className="mb-5 flex min-w-0 items-center gap-3 px-3 lg:mb-8"><span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/25 font-serif text-2xl">♮</span><span className="min-w-0"><span className="block text-sm font-semibold [overflow-wrap:anywhere]">{site.name}</span><span className="mt-1 block text-[10px] tracking-[0.18em] text-[#bdcec5]">工作台</span></span></Link>
-      <AdminNavigation />
+      <AdminNavigation superAdmin={admin.role === "super_admin"} />
       <div className="mt-auto hidden px-4 pt-10 text-xs leading-6 text-[#bdcec5] lg:block"><Link href="/" className="inline-block text-white underline underline-offset-4">访问公开站点 ↗</Link></div>
     </aside>
     <div className="min-w-0"><header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/70 px-5 py-4 lg:px-8">

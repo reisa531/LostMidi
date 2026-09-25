@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { loadPeopleAction, saveCreditsAction } from "@/lib/admin/people-actions";
 import type { CreditEdit, PeopleList } from "@/lib/admin/people";
 
-export function CreditsForm({ midiId, entry, people }: { midiId: string; entry: CreditEdit; people: PeopleList }) {
+export function CreditsForm({ midiId, entry, people, reviewRequired = false }: { midiId: string; entry: CreditEdit; people: PeopleList; reviewRequired?: boolean }) {
   const [state, action, pending] = useActionState(saveCreditsAction, { error: "" });
   const [rows, setRows] = useState(entry.credits.map(credit => ({ person_id: credit.person_id, role: credit.role })));
   const [choices, setChoices] = useState(people.data.map(person => ({ id: person.id, name: person.display_name })));
@@ -22,7 +22,7 @@ export function CreditsForm({ midiId, entry, people }: { midiId: string; entry: 
   }
   return <form action={action} className="space-y-6 rounded-xl border border-line bg-white p-6">
     <input type="hidden" name="midi_id" value={midiId} /><input type="hidden" name="revision" value={entry.revision} />
-    <p className="text-sm leading-7 text-muted">选择人物和署名角色；同一人物可承担不同角色。移除行后需保存才生效，清空并保存会移除全部署名。资料立即公开。</p>
+    <p className="text-sm leading-7 text-muted">选择人物和署名角色；同一人物可承担不同角色。移除行后需保存才生效，清空并保存会移除全部署名。{reviewRequired ? "提交后由超级管理员审核并发布。" : "资料立即公开。"}</p>
     <fieldset disabled={pending} className="space-y-4 disabled:opacity-60"><legend className="sr-only">作品署名</legend>
       {rows.map((row, index) => <div key={index} className="flex flex-wrap items-end gap-3 border-b border-line pb-4">
         <label className="min-w-48 flex-1 text-sm">人物<select required name="person_id" className="mt-2 block w-full rounded border border-line p-3" value={row.person_id} onChange={e => setRows(old => old.map((item, i) => i === index ? { ...item, person_id: e.target.value } : item))}><option value="">请选择人物</option>{Array.from(options, ([id, name]) => <option key={id} value={id}>{name}（编号 {id}）</option>)}</select></label>

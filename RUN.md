@@ -1,12 +1,12 @@
 # Lost MIDI Archive 部署与运行手册
 
-适用版本：当前仓库的一次性安装、单管理员档案管理、PostgreSQL 搜索、可恢复删除与审计，以及默认关闭的管理员单文件 MIDI 导入（local / S3）。导入已实现并对真实 S3 桶完成联调验证；生产启用需配置 S3 变量并确认公开分发。
+适用版本：当前仓库的一次性安装、PostgreSQL 搜索、可恢复删除与审计、历史来源评级和受保护证据附件，以及默认关闭的管理员单文件 MIDI 导入（local / S3）。导入已实现并对真实 S3 桶完成联调验证；生产启用需配置 S3 变量并确认公开分发。
 
 本文指导 Vercel 前后端独立项目、旧 VPS / Compose 单机方案、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
 
 ## 1. 部署方式与边界
 
-当前生产后端运行于 **Vercel 容器 + Neon Free**，前端是独立 Vercel 项目。生产仍在迁移 008；本次新增的搜索、回收站与清理重试代码要求迁移至 `011_cleanup_retry_metadata.sql`。本次只提交和推送，没有部署或执行验证。更新应用前须按第 7.2 节备份并安全迁移已有库，不能以空库安装流程替代。
+当前生产后端运行于 **Vercel 容器 + Neon Free**，前端是独立 Vercel 项目。用户于 2026-09-25 确认已手动部署阶段 1–3，数据库迁移至 011；本工作区阶段 4–6 增加迁移 012–015，发布前须按第 7.2 节备份并安全迁移已有库，不能以空库安装流程替代。
 
 前后端是同仓库中的独立项目；旧 VPS / Compose 整栈部署和“Vercel 前端 + VPS 后端”仍可用。完整单机部署使用仓库自带的 Docker Compose，一次部署四个服务：
 
@@ -19,7 +19,7 @@
 
 默认只将端口发布到宿主机 `127.0.0.1`，适合本机试运行，或置于服务器的 HTTPS 反向代理后。项目当前没有自带域名、证书、反向代理或高可用部署。
 
-Admin 已接入单管理员登录、退出、8 小时会话和后端授权，可新增、编辑 MIDI 基本信息。管理员来自一次性数据库安装，或优先使用完整有效的环境凭据，无公开注册或多角色管理。保存的档案立即出现在公开站点；归档状态不控制可见性。对外部署需使用 HTTPS 和 Secure Cookie。完整单机模式下 PostgreSQL 与后端不需要直接暴露到公网，`noindex` 仅控制索引。
+后台支持多个超级管理员与管理员账号，账号来自首次安装或超级管理员发出的 48 小时邀请；访问者无需账号，只能浏览公开内容。超级管理员可管理账号并直接发布；管理员提交 MIDI/人物基础资料及作品署名变更后进入审核，获批才会发布。删除、来源/寻回、证据和文件操作目前仅超级管理员可执行。对外部署需使用 HTTPS 和 Secure Cookie。完整单机模式下 PostgreSQL 与后端不需要直接暴露到公网，`noindex` 仅控制索引。
 
 ### 当前生产：Vercel 前后端独立项目 + Neon Free
 
@@ -134,7 +134,7 @@ ADMIN_COOKIE_SECURE=true
 
 **新站一次性安装：**
 
-1. 部署者准备数据库、连接凭据与存储；启动前应用全部迁移至 `011_cleanup_retry_metadata.sql`（Compose 由 migrate 服务执行）。安装页不创建数据库、不自动迁移或 seed。
+1. 部署者准备数据库、连接凭据与存储；启动前应用全部迁移至 `015_content_reviews.sql`（Compose 由 migrate 服务执行）。安装页不创建数据库、不自动迁移或 seed。
 2. 保持后端 `ADMIN_PASSWORD_HASH` 为空，用下列命令生成令牌，安全保存后填入后端 `INSTALLATION_TOKEN`：
 
    ```sh
@@ -179,7 +179,7 @@ ADMIN_COOKIE_SECURE=true
 
 ### 3.3 私有持久存储：local / 已有 S3 桶
 
-`STORAGE_BACKEND=local|s3` 默认 `local`；`MIDI_IMPORT_ENABLED=true|false` 默认 `false`，这两项和全部 S3 变量仅由 backend 接收，不能传给 frontend 或浏览器。关闭导入不免除应用全部迁移至 011 的要求。
+`STORAGE_BACKEND=local|s3` 默认 `local`；`MIDI_IMPORT_ENABLED=true|false` 默认 `false`，这两项和全部 S3 变量仅由 backend 接收，不能传给 frontend 或浏览器。关闭导入不免除应用全部迁移至 015 的要求。
 
 **local：** 使用 `STORAGE_PATH`，Compose 固定把宿主 `./storage` 挂载到 `/app/storage`。保留专用持久目录，不要放在构建目录；Vercel 容器默认 `/tmp/lostmidi-storage` 会丢失，不能用于云导入。后端容器以 UID 10001 运行，Linux 首次建立专用目录可执行：
 
@@ -258,7 +258,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-本分支当前应用需要全部迁移至 `011_cleanup_retry_metadata.sql`。009 增加 PostgreSQL trigram 搜索索引；010 增加回收站标记和审计表；011 增加对象清理重试信息。008 继续保留已删除条目的创建请求身份。已有部署按第 7.2 节先备份迁移再启动，不修改已应用迁移；关闭文件上传也不能跳过后续迁移。
+本分支当前应用需要全部迁移至 `015_content_reviews.sql`。009 增加 PostgreSQL trigram 搜索索引；010 增加回收站和审计；011 增加对象清理重试信息；012 增加来源类型、人工可信度、核验时间和数据库内证据附件；013 增加多管理员及邀请；014 为作品和人物增加稳定公开 UUID；015 增加内容审核队列。证据附件为最多 1 MiB 的 PDF、JPEG、PNG 或纯文本，SHA-256 校验，下载须后台会话。关闭文件上传也不能跳过后续迁移。
 
 ## 5. 部署验收
 
@@ -399,7 +399,7 @@ docker compose stop
 
 ### 7.2 更新发布
 
-**当前 Vercel + Neon 已有库：先迁移，再更新应用。** 生产已于 2026-09-25 迁移至 008；此分支代码启动前需用已有幂等迁移器应用 009–011。先完成隔离恢复演练，再按下列步骤更新应用。即使 `MIDI_IMPORT_ENABLED=false`，新版启动与 `/ready` 也要求所有结构。
+**当前 Vercel + Neon 已有库：先迁移，再更新应用。** 生产已于 2026-09-25 迁移至 008；阶段 4–6 代码启动前需用已有幂等迁移器应用待执行的 009–015。先完成隔离恢复演练，再按下列步骤更新应用。即使 `MIDI_IMPORT_ENABLED=false`，新版启动与 `/ready` 也要求所有结构。
 
 1. 记录当前版本与配置，安排维护窗口、暂停写入，安全备份现有 Neon 数据库及匹配存储；确认备份可恢复。迁移用受控维护连接，核对目标库，不能重新创建或清空数据库。
 2. 在可信维护环境使用已经配置好的 libpq 连接变量（不得打印凭据），保持 `SEED_DEMO=false`，执行仓库现有幂等脚本：
@@ -408,8 +408,8 @@ docker compose stop
    SEED_DEMO=false sh database/migrate.sh
    ```
 
-   脚本支持已有库，以事务和 advisory lock 串行迁移，校验并跳过已应用版本；`DATABASE_URL` 非空时优先于 `PG*`。保留原 001–007 及其校验和，使用该 migration runner 应用包括 008 在内的全部待执行迁移；不使用要求空库的 `.tools` 临时脚本，不直接只跑 008 SQL 绕过迁移账本。
-3. 退出码必须为 0，再只读核对 `schema_migrations` 中的迁移 009–011，创建回执 `midi_id` 可空及 `ON DELETE SET NULL` 外键，回收站列/审计表和清理重试列；同时保留此前结构、`site_installation` 锁及已有资料。失败先排障，不能发布新版绕过检查。
+   脚本支持已有库，以事务和 advisory lock 串行迁移，校验并跳过已应用版本；`DATABASE_URL` 非空时优先于 `PG*`。保留已应用迁移及其校验和，使用该 migration runner 应用全部待执行迁移；不使用要求空库的 `.tools` 临时脚本，不直接执行单个 SQL 绕过迁移账本。
+3. 退出码必须为 0，再只读核对 `schema_migrations` 中已要求的迁移至 015、审核申请表及 013 用户表，同时保留此前结构、`site_installation` 锁及已有资料。失败先排障，不能发布新版绕过检查。
 4. 本地检查及迁移确认后，在该次发布授权范围内先发布到**后端独立项目**并显式选择 `vercel.json`，后端就绪后再推送前端更新；不反复触发云构建。核对 `/ready`、已有安装状态与只读页面。真实桶未验证前保持导入关闭；S3 配置与密钥不得复制到前端。
 
 本次已完成 008 迁移和前后端发布；实际交付与本机直连生产健康端点连接超时的限制见 [验证报告](docs/implementation-report.md)。部署 READY 不等同于本机 `/health`、`/ready` 请求验收通过；未在生产试删或运行 cleanup。
@@ -419,7 +419,7 @@ docker compose stop
 1. 记录旧提交、环境配置及镜像信息，按第 8 节备份。
 2. 将部署代码更新到已经测试的目标提交；保留 `.env`、storage 和 Compose 项目标识。旧环境管理员首次升级至含安装功能的版本时，**必须保留完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`**，不要先清空凭据。
 3. 构建新镜像；构建失败时先修复，不继续切换。
-4. 停止应用，执行全部待应用迁移至 011，再启动新应用。保留 005 安装表，不改旧迁移，不 seed 生产库。
+4. 停止应用，执行全部待应用迁移至 015，再启动新应用。保留 005 安装表，不改旧迁移，不 seed 生产库。
 
 ```sh
 docker compose build
@@ -504,7 +504,7 @@ sudo tar -xzf "$backup_dir/storage.tar.gz" -C "$backup_dir/restore-check"
 原生编译命令按平台见 [README 的 Local Development](README.md#local-development)。基本顺序不能省略：
 
 1. 安装 Node 22.13+（22.x）、npm、C++20 编译器、CMake 3.24+、Conan 2、PostgreSQL 17 与 psql。
-2. 创建数据库和用户，设置 libpq 连接变量，执行 `SEED_DEMO=false sh database/migrate.sh`，应用全部迁移至 011；Windows 可用 Git Bash。连接/迁移由部署者准备，不由安装页执行。
+2. 创建数据库和用户，设置 libpq 连接变量，执行 `SEED_DEMO=false sh database/migrate.sh`，应用全部迁移至 015；Windows 可用 Git Bash。连接/迁移由部署者准备，不由安装页执行。
 3. Conan 安装依赖，CMake configure / build / CTest。
 4. 设置 DATABASE_URL、BACKEND_HOST、BACKEND_PORT、STORAGE_PATH。新站保持 ADMIN_PASSWORD_HASH 为空、仅在后端设置有效 INSTALLATION_TOKEN；旧环境部署首次新版启动保留完整 ADMIN_USERNAME、ADMIN_PASSWORD_HASH。运行后端可执行程序。
 5. 在 frontend 目录配置 BACKEND_API_URL、ADMIN_ORIGIN、ADMIN_COOKIE_SECURE；开发使用 `.env.local`，生产使用 `.env.production.local`，然后构建并运行前端。
@@ -532,7 +532,7 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 | Docker named pipe 不存在 / Cannot connect to daemon | 启动 Docker Engine / Desktop，确认 Linux containers；先让 docker info 成功 |
 | 缺少环境变量 | 确认根目录 .env 存在，运行 config --quiet；不要输出含密码的完整配置 |
 | 端口被占用 | 停止旧的本机服务或调整宿主端口；同步后端 URL，注意数据库内部仍用 5432 |
-| Backend 启动失败或 /ready 503 | 查看 backend、migrate、postgres 日志；核对连接、009–011 账本及搜索索引、回收站/审计列、清理重试列，008 创建回执的 `midi_id` 可空及外键 `ON DELETE SET NULL`，以及 revision、会话表、006 导入结构、005 安装表、004 日期实际可空；不要将数据库故障当作未安装 |
+| Backend 启动失败或 /ready 503 | 查看 backend、migrate、postgres 日志；核对数据库迁移已完整应用至 015，以及审核、用户邀请、公开 UUID、证据和既有搜索、回收站、revision、会话与安装结构；不要将数据库故障当作未安装 |
 | 改密码后仍无法连接 | PostgreSQL 初始化变量只用于首次初始化；已有库需要实际修改数据库角色密码，再同步 URI |
 | migrate Exited (0) | 正常的一次性任务结束，不要手工强制保持运行 |
 | migrate 非零退出 / checksum changed | 找出失败 SQL；恢复被改写的历史 migration，以新文件表达变更，不跳过失败或删迁移历史 |
@@ -563,14 +563,14 @@ PowerShell 对应使用 `Copy-Item` 和 `npm.cmd`。后端不会自动读取根�
 
 当前生产为前后端独立 Vercel 项目、后端容器 + Neon Free；旧 VPS / Compose 整栈模式仍可用。历史上放弃的是把数据库持久卷、迁移和本地存储一起塞入前端一键部署，不限制当前后端容器方案。配置与边界见 [Vercel 部署指引](docs/vercel-assessment.md)。
 
-本手册说明部署契约与维护步骤。生产仍运行 `cd9ea75`，数据库迁移到 008；本次分阶段改动在本分支提交并推送，要求迁移至 011，尚未部署或执行验证。既有数据库备份为 `.tools/production-before-release-cd9ea75.dump`；本轮未运行恢复演练，也未备份 S3 对象。上线前需使用独立空库运行恢复演练脚本，并单独确认文件存储备份。
+本手册说明部署契约与维护步骤。用户已确认阶段 1–3 手动部署完成，数据库迁移到 011；阶段 4–6 在本分支完成，发布前须升级已有数据库至 015。此前数据库备份为 `.tools/production-before-release-cd9ea75.dump`，不包含 S3 对象。上线前需使用独立空库运行恢复演练脚本，并单独确认文件存储备份。
 
 每次修改端口、存储挂载、环境变量、migration 策略、权限模型或构建路径时，同步更新本文件。发布记录至少保存提交号、部署时间、迁移结果、验收结果及备份位置；不记录明文密码。
 
 
 ## 2026-09-24 界面与原子建档升级验收
 
-**历史阶段记录：** 下述 007/008 升级步骤仅对应先前发布。当前工作区代码要求先备份并应用全部迁移至 011；本次只推送代码，不执行发布。
+**历史阶段记录：** 下述 007/008 升级步骤仅对应先前发布。当前工作区代码要求先备份并应用全部迁移至 015；阶段 4–6 尚未发布。
 
 本地代码新增前台五模块、后台工作台与新建档案同页上传。上线前先备份，使用既有 `database/migrate.sh` 迁移至 007，再同步发布前后端。007 是创建请求回执迁移，不是 hash ID 迁移；现有资料、安装锁和文件记录无需重建。
 

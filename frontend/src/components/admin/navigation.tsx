@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { adminNavigation } from "@/lib/admin/modules";
 
-export function AdminNavigation() {
+export function AdminNavigation({ superAdmin = false }: { superAdmin?: boolean }) {
   const pathname = usePathname();
+  const links = [...adminNavigation, { href: "/admin/changes", label: "内容审核" }, ...(superAdmin ? [{ href: "/admin/users", label: "用户管理" }] : [])];
   return <nav aria-label="后台导航" className="flex flex-wrap gap-1 lg:flex-col">
-    {adminNavigation.map(link => {
+    {links.map(link => {
       const active = link.href === "/admin" ? pathname === link.href : pathname.startsWith(`${link.href}/`) || pathname === link.href;
       return <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined}
         className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm ${active ? "bg-white/10 font-medium text-white" : "text-[#bdcec5] hover:bg-white/5 hover:text-white"}`}>

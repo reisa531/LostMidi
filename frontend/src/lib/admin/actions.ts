@@ -45,7 +45,7 @@ export async function logoutAction() {
   } catch (error) { return { error: message(error) }; }
   redirect("/admin/login");
 }
-export type MidiSaveState = { error: string; savedId?: string; retryOnly?: boolean };
+export type MidiSaveState = { error: string; savedId?: string; queued?: boolean; retryOnly?: boolean };
 
 export async function saveMidiAction(_previous: MidiSaveState, form: FormData): Promise<MidiSaveState> {
   const id = String(form.get("id") ?? "");
@@ -84,10 +84,10 @@ export async function saveMidiAction(_previous: MidiSaveState, form: FormData): 
       ...(id ? { revision } : { request_id: requestId, ...(upload ? { file: upload } : {}) }),
     };
     sent = true;
-    const saved = await adminRequest<MidiEntry>(`/api/v1/admin/midis${id ? `/${id}` : ""}`, {
+    const saved = await adminRequest<MidiEntry | { request_id: string; status: "pending" }>(`/api/v1/admin/midis${id ? `/${id}` : ""}`, {
       method: id ? "PUT" : "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     }, 60000);
-    return { error: "", savedId: saved.id };
+    return "request_id" in saved ? { error: "", queued: true } : { error: "", savedId: saved.id };
   } catch (error) {
     const disabled = error instanceof ApiError && error.code === "IMPORT_DISABLED";
     const retryOnly = !id && sent && !disabled && (!(error instanceof ApiError) || error.status >= 500);

@@ -2,6 +2,7 @@
 #include "common/Database.h"
 #include "common/Json.h"
 #include "common/Log.h"
+#include <regex>
 
 namespace lostmidi {
 namespace {
@@ -100,6 +101,13 @@ void ApiController::registerRoutes() {
             return body;
         });
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/midis/by-id/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string id) {
+        dispatch(std::move(callback), [this, id = std::move(id)] {
+            static const std::regex publicId("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
+            if (!std::regex_match(id, publicId)) throw ApiError(400, "INVALID_PUBLIC_ID", "A valid public id is required.");
+            return toJson(midis_.getByPublicId(id));
+        });
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/midis/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string slug) {
         dispatch(std::move(callback), [this, slug = std::move(slug)] { return toJson(midis_.getBySlug(slug)); });
     }, {drogon::Get});
@@ -130,6 +138,8 @@ void ApiController::registerRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/people/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string value) {
         dispatch(std::move(callback), [this, value = std::move(value)] {
+            static const std::regex publicId("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
+            if (std::regex_match(value, publicId)) return toJson(people_.getByPublicId(value));
             std::int64_t id = 0;
             const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), id);
             if (error != std::errc{} || end != value.data() + value.size() || id < 1)

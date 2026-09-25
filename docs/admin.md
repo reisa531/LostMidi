@@ -1,6 +1,6 @@
 # Admin 平台
 
-统一入口为 `/admin`，支持单管理员登录、退出、会话验证，以及 MIDI 和人物的新增、编辑、回收站恢复和操作审计。新站先通过 `/install` 一次性初始化，成功后另行登录。保存立即反映到公开站点，没有草稿或发布审核状态。本分支新增的搜索与回收站尚未部署；数据库需迁移至 011。
+统一入口为 `/admin`，支持登录、退出、会话验证，以及 MIDI 和人物的新增、编辑、回收站恢复和操作审计。新站通过 `/install` 初始化超级管理员，之后可邀请多位后台账号。访问者不创建账号，只能浏览公开内容。管理员的 MIDI/人物基础资料和作品署名修改会进入 `/admin/changes`，由超级管理员批准后发布；拒绝、过期版本和失败申请会保留审核状态。删除、来源/寻回、证据和 MIDI 文件操作目前限制为超级管理员。
 
 ## 当前页面
 
@@ -38,14 +38,14 @@
 
 ## 访问边界
 
-管理员有两个来源，没有预置密码或公开注册：
+超级管理员凭据来自安装账号或完整有效的环境覆盖；其他后台账号由超级管理员邀请，没有公开注册：
 
-- **数据库安装**：新站保持后端 `ADMIN_PASSWORD_HASH` 为空，经 `/install` 创建单管理员；`site_installation` 保存用户名与随机盐 PBKDF2-HMAC-SHA256（600,000 次）哈希，不保存明文密码。
+- **数据库安装**：新站保持后端 `ADMIN_PASSWORD_HASH` 为空，经 `/install` 创建首位超级管理员；`site_installation` 保存兼容账号和站点设置，`admin_users` 保存用户名、角色及随机盐 PBKDF2-HMAC-SHA256（600,000 次）哈希，不保存明文密码。
 - **环境兼容/应急覆盖**：完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` 始终优先；哈希用 `python scripts/admin_password.py` 生成，环境用户名沿用最多 100 UTF-8 字节的旧规则，不套用安装用户名的新规则。非法非空哈希使后端启动失败。没有完整环境覆盖时读取数据库管理员；默认 `ADMIN_USERNAME=admin` 与空哈希不会遮盖数据库账号，没有任一可用来源才禁用登录。
 
 旧环境部署第一次运行新版必须保留完整有效凭据，启动成功写入 `auth_source=environment` 的持久标记，`username` / `password_hash` 两列为 NULL，不复制环境哈希。移除环境凭据后仍为 installed，但登录禁用；必须恢复凭据或由维护者应急覆盖，不能删表重装。升级前先移除凭据时系统无法推断曾安装。环境覆盖数据库账号不修改数据库站点设置或账号。
 
-Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin Cookie，不传给客户端组件或 localStorage。生产 HTTPS 使用 `ADMIN_COOKIE_SECURE=true`；本机 HTTP 才设置 false。后台调用 C++ 时使用 Bearer 头，每次受保护请求均校验会话。公开查询无需登录。`noindex` 仅控制索引。
+后台身份分为 `super_admin`、`admin` 和访问者（不建账号）。两种后台角色都能维护档案；只有超级管理员能邀请、提权、降权或停用账号，且系统阻止停用最后一位有效超级管理员。邀请令牌随机生成、数据库只保存摘要、48 小时过期并且只能使用一次；超级管理员需安全地将令牌交给受邀者。环境管理员始终作为超级管理员。Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin Cookie，不传给客户端组件或 localStorage。生产 HTTPS 使用 `ADMIN_COOKIE_SECURE=true`；本机 HTTP 才设置 false。后台调用 C++ 时使用 Bearer 头，每次受保护请求均校验当前账号状态和角色。公开查询无需登录。`noindex` 仅控制索引。
 
 无完整环境覆盖时，每次登录与鉴权重新读取数据库凭据；当前选用的用户名与哈希决定会话 identity。会话固定有效 8 小时，不自动续期；`admin_sessions` 仅保存令牌 SHA-256 摘要、凭据标识和有效期。切换凭据时不匹配的 session 被拒绝，但恢复旧凭据可能让未过期的旧 session 再次匹配，不能称为永久撤销。退出撤销当前令牌，其他浏览器会话保留；退出失败显示错误并保留 Cookie 以便重试。单后端进程每分钟最多接受 10 次登录尝试（包含成功登录），超限返回 429，计数不跨实例共享，且与安装限流分开。
 
@@ -55,7 +55,7 @@ Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin 
 
 ## 一次性安装 API 与页面
 
-部署者先准备数据库连接并执行全部迁移至 `011_cleanup_retry_metadata.sql`；安装表由 005 引入，但当前应用还要求后续迁移。安装页不创建数据库、不自动迁移或 seed。后端 `INSTALLATION_TOKEN` 为空时禁用新安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，可用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。令牌只配置在后端，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量，也不是管理员会话令牌。
+部署者先准备数据库连接并执行全部迁移至 `015_content_reviews.sql`；安装表由 005 引入，但当前应用还要求后续迁移。安装页不创建数据库、不自动迁移或 seed。后端 `INSTALLATION_TOKEN` 为空时禁用新安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，可用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。令牌只配置在后端，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量，也不是管理员会话令牌。
 
 公开站点 `/(site)` 与 `/admin` 父 layout 在请求时检查安装状态。缺少后端配置或明确 `installed=false` 才跳 `/install`；旧后端 404、非法响应或离线仅显示不可用，不开放安装。构建可不连接后端，运行必须有可用 API。已安装的 `/install` 仅显示锁定；数据库保存的站点名称用于页眉、页脚与标题，简介用于 meta description。
 
@@ -92,7 +92,11 @@ Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin 
 | 方法与路径 | 行为 |
 | --- | --- |
 | `POST /api/v1/admin/login` | JSON username/password；返回 token、username、expires_in |
-| `GET /api/v1/admin/session` | 验证 Bearer 会话，返回 username |
+| `GET /api/v1/admin/session` | 验证 Bearer 会话，返回 username、role、user_id 和 MIDI 导入开关 |
+| `GET /api/v1/admin/users` | 仅超级管理员可读账号清单，不含密码与令牌 |
+| `POST /api/v1/admin/users` | 仅超级管理员可邀请账号，接受 username / role，返回一次性 48 小时邀请令牌 |
+| `PUT /api/v1/admin/users/:id` | 仅超级管理员可调整角色或停用账号；不能停用最后一位有效超级管理员 |
+| `POST /api/v1/admin/invitations/accept` | 公开的一次性邀请接受端点；需要 64 位十六进制令牌和至少 12 字符密码 |
 | `POST /api/v1/admin/logout` | 撤销当前 Bearer 会话 |
 | `POST /api/v1/admin/midis` | 新增；成功返回 201 和档案对象 |
 | `GET /api/v1/admin/midis/:id` | 读取编辑数据和 revision |
@@ -141,7 +145,7 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 重复 slug 返回 `409 SLUG_CONFLICT`；旧 revision 返回 `409 STALE_ENTRY`，避免覆盖其他页面已保存的修改。表单失败后保留输入，可在新页面登录或重新打开编辑页并手动合并。修改 slug 后旧公开 URL 返回 404，目前没有历史地址重定向；归档和权利状态不控制元数据可见性。
 
-其他错误包括 `400 INVALID_INPUT`、`401 INVALID_CREDENTIALS/UNAUTHORIZED`、`404 MIDI_NOT_FOUND`、`429 LOGIN_RATE_LIMITED` 和 `503 ADMIN_DISABLED/DATABASE_UNAVAILABLE`。没有公开注册、多角色或审核功能。管理员可导入 MIDI 并删除档案或无引用人物；访客通过公开详情下载获准文件，不提供试听。历史来源与寻回记录支持逐条删除。
+其他错误包括 `400 INVALID_INPUT`、`401 INVALID_CREDENTIALS/UNAUTHORIZED`、`404 MIDI_NOT_FOUND`、`429 LOGIN_RATE_LIMITED` 和 `503 ADMIN_DISABLED/DATABASE_UNAVAILABLE`。没有公开注册；管理员可提交基础资料与署名审核申请，只有超级管理员能审批、执行删除、导入 MIDI 和维护来源或寻回。访客通过公开详情下载获准文件，不提供试听。历史来源与寻回记录支持逐条删除。
 
 ## 人物与署名规则
 
@@ -149,13 +153,13 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 署名请求为 `{revision, credits: [{person_id: "123", role: "composer"}]}`，最多 100 项；角色为 composer、arranger、sequencer、contributor。人物 ID 使用十进制字符串。同一人物可承担多个角色，但不能重复相同人物与角色。空列表表示移除全部署名。响应为 `{revision, credits}`，每项包含人物名称。未知人物返回 `400 UNKNOWN_PERSON`，所有变更与作品版本一起回滚。
 
-人物编辑在一个事务内保存简介和昵称；署名编辑在一个事务内更新作品版本和完整署名列表。基本信息、署名、来源及寻回共用作品版本，因此另一个页面保存后，旧表单会返回 `409 STALE_ENTRY`。错误时前端保留输入，重新打开页面后核对合并。保存立即在公开人物和作品详情生效。人物选项每次加载 100 条，可继续加载或创建人物后刷新；以编号区分同名人物。
+人物编辑在一个事务内保存简介和昵称；署名编辑在一个事务内更新作品版本和完整署名列表。基本信息、署名、来源及寻回共用作品版本，因此另一个页面保存后，旧表单会返回 `409 STALE_ENTRY`。管理员的基本信息和署名申请在 `/admin/changes` 审批；旧 revision 申请会标记为过期，需重新提交。超级管理员保存立即在公开人物和作品详情生效。人物选项每次加载 100 条，可继续加载或创建人物后刷新；以编号区分同名人物。
 
 ## 历史来源与寻回规则
 
 统一页 `/admin/midis/[id]/history` 每次只编辑一条记录。删除需二次确认，取消删除保留输入；保存后重新读取作品版本。失败保留字段，支持在新页面登录、核对并手动合并。超时不能证明事务未提交，重试新增前须先核对记录，避免重复创建。
 
-管理 GET 返回 `{entry: {id, title, slug, revision}, historical_sources, recovery_events}`。来源的 POST/PUT 使用扁平请求 `{revision, website_name, original_url, first_seen_at, last_seen_at, wayback_url, notes}`；寻回使用 `{revision, recovered_at, recovered_by, story, evidence}`。创建也必须携带当前作品 revision；PUT 的可空字段省略或 null 均清空。DELETE 仅接受 `{revision}`。
+管理 GET 返回 `{entry: {id, title, slug, revision}, historical_sources, recovery_events}`。来源的 POST/PUT 使用扁平请求 `{revision, website_name, original_url, first_seen_at, last_seen_at, wayback_url, notes, source_type, credibility, checked_at}`；寻回使用 `{revision, recovered_at, recovered_by, story, evidence}`。创建也必须携带当前作品 revision；PUT 的可空字段省略或 null 均清空。DELETE 仅接受 `{revision}`。来源可信度为 1–5 的人工整理评估，不是自动真实性评分；`checked_at` 记录完整 UTC 核验时间。
 
 | 字段 | 规则 |
 | --- | --- |
@@ -166,6 +170,8 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 | first_seen_at / last_seen_at / recovered_at | 可空，仅完整 UTC `YYYY-MM-DDTHH:mm:ss[.1–6 位小数]Z`，有效日历，年份 1–9999；读写标准化为六位小数；来源首次时间不晚于最后时间 |
 | recovered_by | 可空；已有的人物编号，JSON 十进制字符串，不是数字 |
 
+来源类型为 `original_site`、`forum`、`mailing_list`、`archive`、`search_index`、`personal_collection` 或 `other`。来源与寻回记录都可上传最多 1 MiB 的 PDF、JPEG、PNG 或纯文本附件；数据库保存文件与 SHA-256。附件需管理员会话才能上传和下载，下载会重新核验摘要，并作为防嗅探附件响应。删除所属来源或寻回记录会级联删除附件。公开 API 不返回附件元数据、内容或摘要。
+
 所有文字拒绝 NUL。未知日期不替换成当前时间，只有年份等不完整信息时将日期留空、在备注或证据中说明。浏览器时间控件按 UTC 使用，无本地时区转换；原有微秒值单独保留，控件显示毫秒，改动毫秒或清空重填会重置更细精度。寻回人支持分页、刷新，已有选中人物不因不在当前页而丢失。
 
 写入响应分别为 `{revision, source}` / `{revision, event}`；删除返回 200 JSON `{revision, deleted_id}`。不接受 id、midi_id、created_at、recovered_by_name 等只读字段。编辑保留子记录编号和寻回创建时间，不更改其他子记录、署名、文件或归档状态；未知日期的寻回记录排列在已知日期之后，以编号稳定排序。
@@ -174,7 +180,7 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 ## 验证
 
-数据库必须应用全部迁移至 `011_cleanup_retry_metadata.sql`，不能只更新前端。启动和 `/ready` 检查创建回执外键、回收站标记、审计表及清理重试列；不修改已应用迁移。
+数据库必须应用全部迁移至 `015_content_reviews.sql`，不能只更新前端。启动和 `/ready` 检查创建回执外键、回收站标记、审计表、清理重试列、历史证据、用户邀请、公开 UUID 和审核队列表；不修改已应用迁移。
 
 安装 API 检查：`python scripts/installation_smoke.py --api <测试后端> --allow-install`，要求环境变量 `INSTALLATION_TEST_TOKEN` 与该后端令牌一致。浏览器检查：`python scripts/installation_browser_smoke.py --frontend <测试前端> --allow-install`，另需 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD` 用于创建及登录新管理员，可加 `--channel msedge`、`--screenshots <目录>`，需 Playwright 及相应浏览器。两个脚本都会永久安装，必须各自使用独立、全新、已迁移的专用测试库，后端保持环境密码哈希为空；不能顺序指向同库，不得用于生产或已安装站点。
 
@@ -184,7 +190,7 @@ CTest 新增 installation 测试使用隔离 schema，测试数据库用户需�
 
 可选浏览器验收：在独立 Python 环境安装 `playwright` 并运行 `python -m playwright install chromium`，再使用相同测试凭据执行 `python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes`。也可传 `--channel msedge` 使用已安装的 Edge；`--screenshots <目录>` 保存验收截图。浏览器地址必须与测试前端的 ADMIN_ORIGIN 一致。脚本会创建人物和作品，只能指向专用测试环境。
 
-当前提交尚未验证。计划发布时，数据库需先应用全部迁移至 011；届时运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。写入 smoke 和回收站恢复操作只允许在隔离测试数据库执行，不能在生产试删。浏览器验收见 [RUN.md](../RUN.md)，历史结果及本次未执行事项见 [验证记录](implementation-report.md)。
+当前工作区阶段 4–6 尚未发布。阶段 4 需要迁移至 012；后续账号与公开 ID 迁移版本以实际实现为准。届时运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。写入 smoke 和回收站恢复操作只允许在隔离测试数据库执行，不能在生产试删。浏览器验收见 [RUN.md](../RUN.md)，历史结果及本次未执行事项见 [验证记录](implementation-report.md)。
 
 
 ## 新建档案同页上传（2026-09-24）

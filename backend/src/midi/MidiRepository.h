@@ -9,6 +9,7 @@ public:
     virtual std::vector<MidiEntry> list(Page page) = 0;
     virtual std::int64_t count() = 0;
     virtual std::optional<MidiEntry> findBySlug(const std::string& slug) = 0;
+    virtual std::optional<MidiEntry> findByPublicId(const std::string& id) = 0;
     virtual std::vector<MidiFile> filesFor(std::int64_t midiId) = 0;
 };
 

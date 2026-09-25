@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getMidiBySlug } from "@/lib/api/midi";
+import { notFound, permanentRedirect } from "next/navigation";
+import { getMidiByPublicId, getMidiBySlug } from "@/lib/api/midi";
 import { ApiError } from "@/lib/api/client";
 import { Credits, Status, Section, Unavailable, ExternalSource, dateLabel, copyrightLabel, distributionLabel } from "@/components/archive";
 import { MidiDownload } from "@/components/midi-download";
@@ -10,26 +10,29 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   try {
-    const detail = await getMidiBySlug(slug);
+    const stableId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(slug);
+    const detail = stableId ? await getMidiByPublicId(slug) : await getMidiBySlug(slug);
     const title = detail.entry.title;
     const description = detail.entry.description?.slice(0, 155) || `查看 ${title} 的 MIDI 作品、署名、历史来源与寻回记录。`;
-    return { title, description, alternates: { canonical: `/midis/${encodeURIComponent(slug)}` }, openGraph: { type: "article", title, description } };
+    return { title, description, alternates: { canonical: `/midis/${detail.entry.public_id}` }, openGraph: { type: "article", title, description } };
   } catch { return { title: "档案详情", robots: { index: false, follow: false } }; }
 }
 export default async function MidiDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) || slug.length > 160) notFound();
+  const stableId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(slug);
+  if (!stableId && (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) || slug.length > 160)) notFound();
   let detail;
-  try { detail = await getMidiBySlug(slug); } catch (error) {
+  try { detail = stableId ? await getMidiByPublicId(slug) : await getMidiBySlug(slug); } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     if (error instanceof ApiError) return <Unavailable />;
     throw error;
   }
+  if (!stableId) permanentRedirect(`/midis/${detail.entry.public_id}`);
   const { entry, credits, historical_sources, recovery_events, files } = detail;
   const structuredData = {
     "@context": "https://schema.org", "@type": "MusicComposition", name: entry.title,
     description: entry.description || undefined, dateCreated: entry.estimated_year ? String(entry.estimated_year) : undefined,
-    url: `${process.env.ADMIN_ORIGIN ?? ""}/midis/${encodeURIComponent(slug)}`,
+    url: `${process.env.ADMIN_ORIGIN ?? ""}/midis/${detail.entry.public_id}`,
     author: credits.map(credit => ({ "@type": "Person", name: credit.display_name })),
   };
   return <article className="mx-auto max-w-3xl">
@@ -59,7 +62,7 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
           <div><dt className="text-muted">SHA-256</dt><dd className="min-w-0 break-all font-mono text-xs">{file.sha256}</dd></div>
           <div><dt className="text-muted">发现时间</dt><dd>{dateLabel(file.discovered_at)}</dd></div>
         </dl>
-        {file.download_available === true ? <MidiDownload slug={slug} id={file.id} filename={file.original_filename} /> : <div className="mt-5 space-y-2">
+        {file.download_available === true ? <MidiDownload slug={entry.slug} id={file.id} filename={file.original_filename} /> : <div className="mt-5 space-y-2">
           <button type="button" disabled className="w-full cursor-not-allowed rounded-sm border border-line px-4 py-2 text-sm text-muted sm:w-auto">暂不可下载</button>
           <p className="text-muted">{entry.distribution_permission === "restricted" ? "此档案限制分发，暂不提供文件下载。"
             : entry.distribution_permission === "metadata_only" ? "此档案仅公开文字资料，不提供文件下载。"

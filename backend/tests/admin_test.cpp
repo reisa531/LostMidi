@@ -128,6 +128,24 @@ TEST(RecoveryWrite, ValidatesUrlsAndTextBeforePersistence) {
     EXPECT_THROW(service.deleteEvent(1, 1, 0), ApiError);
     EXPECT_EQ(writer.writes, 0);
 }
+TEST(RecoveryWrite, ValidatesProvenanceTypeCredibilityAndVerificationTime) {
+    RecoveryWriter writer; recovery::RecoveryWriteService service(writer);
+    recovery::HistoricalSource source; source.websiteName = "Archive";
+    source.sourceType = "not-a-source";
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.sourceType = "archive"; source.credibility = 0;
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.credibility = 6;
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.credibility = 5; source.checkedAt = "2026-02-30T12:00:00Z";
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.checkedAt = "2026-02-28T12:00:00.123Z";
+    const auto saved = service.saveSource(1, 0, 1, source);
+    EXPECT_EQ(saved.source.sourceType, "archive");
+    EXPECT_EQ(saved.source.credibility, 5);
+    EXPECT_EQ(saved.source.checkedAt, "2026-02-28T12:00:00.123000Z");
+    EXPECT_EQ(writer.writes, 1);
+}
 TEST(RecoveryWrite, StrictCalendarAndMicrosecondOrdering) {
     RecoveryWriter writer; recovery::RecoveryWriteService service(writer);
     recovery::HistoricalSource source; source.websiteName = "Archive";

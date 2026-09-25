@@ -32,8 +32,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const urls: MetadataRoute.Sitemap = ["/", "/midis", "/people", "/recovery", "/map", "/about"].map(path => ({ url: `${base}${path}`, lastModified: now, changeFrequency: path === "/" ? "daily" : "weekly", priority: path === "/" ? 1 : 0.7 }));
   try {
     const [entries, people] = await Promise.all([getAllCatalogEntries(), getAllCatalogPeople()]);
-    urls.push(...entries.map(entry => ({ url: `${base}/midis/${encodeURIComponent(entry.slug)}`, lastModified: new Date(entry.updated_at), changeFrequency: "monthly" as const, priority: 0.8 })));
-    urls.push(...people.map(person => ({ url: `${base}/people/${encodeURIComponent(person.id)}`, lastModified: now, changeFrequency: "monthly" as const, priority: 0.6 })));
+    urls.push(...entries.map(entry => ({ url: `${base}/midis/${encodeURIComponent(entry.public_id)}`, lastModified: new Date(entry.updated_at), changeFrequency: "monthly" as const, priority: 0.8 })));
+    urls.push(...people.map(person => ({ url: `${base}/people/${encodeURIComponent(person.public_id)}`, lastModified: now, changeFrequency: "monthly" as const, priority: 0.6 })));
   } catch { /* Keep static URLs available while the API is unavailable. */ }
   return urls.filter(item => item.url.startsWith("http://") || item.url.startsWith("https://"));
 }

@@ -6,11 +6,17 @@ namespace lostmidi::person {
 namespace {
 Person personFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), row["display_name"].as<std::string>(),
-        nullable<std::string>(row["biography"]), row["created_at"].as<std::string>(), row["revision"].as<std::int64_t>()};
+        nullable<std::string>(row["biography"]), row["created_at"].as<std::string>(),
+        row["revision"].as<std::int64_t>(), row["public_id"].as<std::string>()};
 }
 }
 std::optional<Person> PostgresPersonRepository::findById(std::int64_t id) {
     const auto rows = db_->execSqlSync("SELECT * FROM people WHERE id = $1 AND deleted_at IS NULL", id);
+    if (rows.empty()) return std::nullopt;
+    return personFrom(rows[0]);
+}
+std::optional<Person> PostgresPersonRepository::findPersonByPublicId(const std::string& id) {
+    const auto rows = db_->execSqlSync("SELECT * FROM people WHERE public_id=$1::uuid AND deleted_at IS NULL", id);
     if (rows.empty()) return std::nullopt;
     return personFrom(rows[0]);
 }
@@ -23,10 +29,10 @@ std::vector<std::string> PostgresPersonRepository::aliasesFor(std::int64_t id) {
 std::vector<CreditedMidi> PostgresPersonRepository::midisFor(std::int64_t id) {
     std::vector<CreditedMidi> midis;
     for (const auto& row : db_->execSqlSync(
-        "SELECT m.id, m.slug, m.title, c.role FROM midi_entries m "
+        "SELECT m.id, m.slug, m.title, c.role, m.public_id FROM midi_entries m "
         "JOIN midi_credits c ON c.midi_id = m.id WHERE c.person_id = $1 AND m.deleted_at IS NULL ORDER BY m.id, c.role", id))
         midis.push_back({row["id"].as<std::int64_t>(), row["slug"].as<std::string>(),
-            row["title"].as<std::string>(), row["role"].as<std::string>()});
+            row["title"].as<std::string>(), row["role"].as<std::string>(), row["public_id"].as<std::string>()});
     return midis;
 }
 std::vector<Credit> PostgresPersonRepository::creditsFor(std::int64_t midiId) {

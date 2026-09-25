@@ -46,6 +46,30 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
         "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='midi_import_objects'::regclass AND attname='last_cleanup_attempt_at' AND attnum>0 AND NOT attisdropped) AS last_attempt");
     if (!cleanup[0]["applied"].as<bool>() || !cleanup[0]["attempts"].as<bool>() || !cleanup[0]["last_attempt"].as<bool>())
         throw ApiError(503, "DATABASE_NOT_READY", "Required cleanup retry migration is not applied.");
+    const auto evidence = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='012_source_evidence.sql') AS applied, "
+        "to_regclass('historical_evidence') IS NOT NULL AS evidence_table, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='historical_sources'::regclass "
+        "AND attname='credibility' AND attnum>0 AND NOT attisdropped) AS credibility");
+    if (!evidence[0]["applied"].as<bool>() || !evidence[0]["evidence_table"].as<bool>() || !evidence[0]["credibility"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required source evidence migration is not applied.");
+    const auto users = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='013_admin_users.sql') AS applied, "
+        "to_regclass('admin_users') IS NOT NULL AS accounts, to_regclass('admin_invitations') IS NOT NULL AS invitations");
+    if (!users[0]["applied"].as<bool>() || !users[0]["accounts"].as<bool>() || !users[0]["invitations"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required administrator accounts migration is not applied.");
+    const auto publicIds = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='014_public_ids.sql') AS applied, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='midi_entries'::regclass AND attname='public_id' AND attnum>0 AND NOT attisdropped) AS midi_id, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='people'::regclass AND attname='public_id' AND attnum>0 AND NOT attisdropped) AS person_id");
+    if (!publicIds[0]["applied"].as<bool>() || !publicIds[0]["midi_id"].as<bool>() || !publicIds[0]["person_id"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required public identifier migration is not applied.");
+    const auto reviews = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='015_content_reviews.sql') AS applied, "
+        "to_regclass('admin_change_requests') IS NOT NULL AS requests");
+    db->execSqlSync("SELECT id FROM admin_change_requests LIMIT 1");
+    if (!reviews[0]["applied"].as<bool>() || !reviews[0]["requests"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required content review migration is not applied.");
     const auto rows = db->execSqlSync(
         "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='004_optional_recovery_date.sql') AS applied, "
         "EXISTS(SELECT 1 FROM schema_migrations WHERE version='005_site_installation.sql') AS installation_applied, "

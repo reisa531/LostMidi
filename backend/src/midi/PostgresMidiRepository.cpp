@@ -10,7 +10,8 @@ MidiEntry entryFrom(const drogon::orm::Row& row) {
         nullable<int>(row["estimated_year"]), row["archive_status"].as<std::string>(),
         row["created_at"].as<std::string>(), row["updated_at"].as<std::string>(),
         nullable<std::string>(row["copyright_status"]), nullable<std::string>(row["license"]),
-        nullable<std::string>(row["rights_holder"]), nullable<std::string>(row["distribution_permission"]), row["revision"].as<std::int64_t>()};
+        nullable<std::string>(row["rights_holder"]), nullable<std::string>(row["distribution_permission"]),
+        row["revision"].as<std::int64_t>(), row["public_id"].as<std::string>()};
 }
 MidiFile fileFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), row["midi_id"].as<std::int64_t>(),
@@ -31,6 +32,11 @@ std::int64_t PostgresMidiRepository::count() {
 }
 std::optional<MidiEntry> PostgresMidiRepository::findBySlug(const std::string& slug) {
     const auto rows = db_->execSqlSync("SELECT * FROM midi_entries WHERE slug = $1 AND deleted_at IS NULL", slug);
+    if (rows.empty()) return std::nullopt;
+    return entryFrom(rows[0]);
+}
+std::optional<MidiEntry> PostgresMidiRepository::findByPublicId(const std::string& id) {
+    const auto rows = db_->execSqlSync("SELECT * FROM midi_entries WHERE public_id=$1::uuid AND deleted_at IS NULL", id);
     if (rows.empty()) return std::nullopt;
     return entryFrom(rows[0]);
 }

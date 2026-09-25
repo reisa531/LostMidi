@@ -33,6 +33,12 @@ MidiDetail MidiService::getBySlug(const std::string& slug) const {
     return {entry, people_.creditsFor(entry.id), people_.peopleFor(entry.id),
             recovery_.forMidi(entry.id), repository_.filesFor(entry.id)};
 }
+MidiDetail MidiService::getByPublicId(const std::string& id) const {
+    auto entry = repository_.findByPublicId(id);
+    if (!entry) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
+    return {*entry, people_.creditsFor(entry->id), people_.peopleFor(entry->id),
+            recovery_.forMidi(entry->id), repository_.filesFor(entry->id)};
+}
 
 MidiFile MidiService::fileForDownload(const std::string& slug, std::int64_t fileId) const {
     if (fileId < 1) throw ApiError(400, "INVALID_FILE_ID", "File id must be a positive 64-bit integer.");

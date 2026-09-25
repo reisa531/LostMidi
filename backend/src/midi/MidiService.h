@@ -11,6 +11,7 @@ public:
         : repository_(repository), people_(people), recovery_(recovery) {}
     MidiPage list(Page page) const;
     MidiDetail getBySlug(const std::string& slug) const;
+    MidiDetail getByPublicId(const std::string& id) const;
     MidiFile fileForDownload(const std::string& slug, std::int64_t fileId) const;
 private:
     MidiEntry requireEntry(const std::string& slug) const;

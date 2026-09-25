@@ -6,7 +6,8 @@ namespace lostmidi::recovery {
 namespace {
 // Use the same microsecond-preserving UTC representation for public and editor reads.
 const std::string sourceSelect = R"SQL(
-    SELECT id, website_name, original_url, wayback_url, notes,
+    SELECT id, website_name, original_url, wayback_url, notes, source_type, credibility,
+        to_char(checked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS checked_at,
         to_char(first_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS first_seen_at,
         to_char(last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS last_seen_at
     FROM historical_sources
@@ -20,24 +21,49 @@ const std::string eventSelect = R"SQL(
 HistoricalSource sourceFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), row["website_name"].as<std::string>(),
         nullable<std::string>(row["original_url"]), nullable<std::string>(row["first_seen_at"]),
-        nullable<std::string>(row["last_seen_at"]), nullable<std::string>(row["wayback_url"]), nullable<std::string>(row["notes"])};
+        nullable<std::string>(row["last_seen_at"]), nullable<std::string>(row["wayback_url"]), nullable<std::string>(row["notes"]),
+        row["source_type"].as<std::string>(), row["credibility"].as<int>(), nullable<std::string>(row["checked_at"]), {}};
 }
 RecoveryEvent eventFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), nullable<std::string>(row["recovered_at"]),
         nullable<std::int64_t>(row["recovered_by"]), nullable<std::string>(row["recovered_by_name"]),
-        row["story"].as<std::string>(), nullable<std::string>(row["evidence"]), row["created_at"].as<std::string>()};
+        row["story"].as<std::string>(), nullable<std::string>(row["evidence"]), row["created_at"].as<std::string>(), {}};
+}
+EvidenceFile evidenceFrom(const drogon::orm::Row& row) {
+    return {row["id"].as<std::int64_t>(), row["original_filename"].as<std::string>(),
+        row["media_type"].as<std::string>(), row["sha256"].as<std::string>(),
+        row["file_size"].as<std::uint32_t>(), row["created_at"].as<std::string>()};
+}
+std::vector<EvidenceFile> sourceEvidence(const drogon::orm::DbClientPtr& db, std::int64_t midiId, std::int64_t sourceId) {
+    std::vector<EvidenceFile> result;
+    for (const auto& row : db->execSqlSync("SELECT id,original_filename,media_type,sha256,file_size,created_at FROM historical_evidence WHERE midi_id=$1 AND source_id=$2 ORDER BY id", midiId, sourceId))
+        result.push_back(evidenceFrom(row));
+    return result;
+}
+std::vector<EvidenceFile> eventEvidence(const drogon::orm::DbClientPtr& db, std::int64_t midiId, std::int64_t eventId) {
+    std::vector<EvidenceFile> result;
+    for (const auto& row : db->execSqlSync("SELECT id,original_filename,media_type,sha256,file_size,created_at FROM historical_evidence WHERE midi_id=$1 AND recovery_event_id=$2 ORDER BY id", midiId, eventId))
+        result.push_back(evidenceFrom(row));
+    return result;
 }
 std::vector<HistoricalSource> readSources(const drogon::orm::DbClientPtr& db, std::int64_t midiId) {
     std::vector<HistoricalSource> sources;
-    for (const auto& row : db->execSqlSync(sourceSelect + " WHERE midi_id=$1 ORDER BY id", midiId))
-        sources.push_back(sourceFrom(row));
+    for (const auto& row : db->execSqlSync(sourceSelect + " WHERE midi_id=$1 ORDER BY id", midiId)) {
+        auto source = sourceFrom(row);
+        source.evidenceFiles = sourceEvidence(db, midiId, source.id);
+        sources.push_back(std::move(source));
+    }
     return sources;
 }
 std::vector<RecoveryEvent> readEvents(const drogon::orm::DbClientPtr& db, std::int64_t midiId) {
     std::vector<RecoveryEvent> events;
     for (const auto& row : db->execSqlSync(eventSelect +
         " WHERE r.midi_id=$1 ORDER BY r.recovered_at NULLS LAST, r.id", midiId))
-        events.push_back(eventFrom(row));
+    {
+        auto event = eventFrom(row);
+        event.evidenceFiles = eventEvidence(db, midiId, event.id);
+        events.push_back(std::move(event));
+    }
     return events;
 }
 std::int64_t advanceRevision(const drogon::orm::DbClientPtr& db, std::int64_t midiId, std::int64_t revision) {
@@ -82,18 +108,22 @@ SourceWriteResult PostgresRecoveryRepository::saveSource(std::int64_t midiId, st
         ? tx.db->execSqlSync(
             "UPDATE historical_sources SET website_name=$1,original_url=NULLIF($2,''),"
             "first_seen_at=NULLIF($3,'')::timestamptz,last_seen_at=NULLIF($4,'')::timestamptz,"
-            "wayback_url=NULLIF($5,''),notes=NULLIF($6,'') WHERE midi_id=$7 AND id=$8 RETURNING id",
+            "wayback_url=NULLIF($5,''),notes=NULLIF($6,''),source_type=$7,credibility=$8,checked_at=NULLIF($9,'')::timestamptz WHERE midi_id=$10 AND id=$11 RETURNING id",
             source.websiteName, source.originalUrl.value_or(""), source.firstSeenAt.value_or(""),
-            source.lastSeenAt.value_or(""), source.waybackUrl.value_or(""), source.notes.value_or(""), midiId, sourceId)
+            source.lastSeenAt.value_or(""), source.waybackUrl.value_or(""), source.notes.value_or(""), source.sourceType,
+            static_cast<std::int16_t>(source.credibility), source.checkedAt.value_or(""), midiId, sourceId)
         : tx.db->execSqlSync(
-            "INSERT INTO historical_sources(website_name,original_url,first_seen_at,last_seen_at,wayback_url,notes,midi_id) "
-            "VALUES($1,NULLIF($2,''),NULLIF($3,'')::timestamptz,NULLIF($4,'')::timestamptz,NULLIF($5,''),NULLIF($6,''),$7) RETURNING id",
+            "INSERT INTO historical_sources(website_name,original_url,first_seen_at,last_seen_at,wayback_url,notes,midi_id,source_type,credibility,checked_at) "
+            "VALUES($1,NULLIF($2,''),NULLIF($3,'')::timestamptz,NULLIF($4,'')::timestamptz,NULLIF($5,''),NULLIF($6,''),$7,$8,$9,NULLIF($10,'')::timestamptz) RETURNING id",
             source.websiteName, source.originalUrl.value_or(""), source.firstSeenAt.value_or(""),
-            source.lastSeenAt.value_or(""), source.waybackUrl.value_or(""), source.notes.value_or(""), midiId);
+            source.lastSeenAt.value_or(""), source.waybackUrl.value_or(""), source.notes.value_or(""), midiId,
+            source.sourceType, static_cast<std::int16_t>(source.credibility), source.checkedAt.value_or(""));
     requireSource(rows);
     const auto saved = tx.db->execSqlSync(sourceSelect + " WHERE midi_id=$1 AND id=$2", midiId, rows[0]["id"].as<std::int64_t>());
     requireSource(saved);
-    SourceWriteResult result{nextRevision, sourceFrom(saved[0])};
+    auto savedSource = sourceFrom(saved[0]);
+    savedSource.evidenceFiles = sourceEvidence(tx.db, midiId, savedSource.id);
+    SourceWriteResult result{nextRevision, std::move(savedSource)};
     tx.commit();
     return result;
 }
@@ -117,7 +147,9 @@ EventWriteResult PostgresRecoveryRepository::saveEvent(std::int64_t midiId, std:
     requireEvent(rows);
     const auto saved = tx.db->execSqlSync(eventSelect + " WHERE r.midi_id=$1 AND r.id=$2", midiId, rows[0]["id"].as<std::int64_t>());
     requireEvent(saved);
-    EventWriteResult result{nextRevision, eventFrom(saved[0])};
+    auto savedEvent = eventFrom(saved[0]);
+    savedEvent.evidenceFiles = eventEvidence(tx.db, midiId, savedEvent.id);
+    EventWriteResult result{nextRevision, std::move(savedEvent)};
     tx.commit();
     return result;
 }

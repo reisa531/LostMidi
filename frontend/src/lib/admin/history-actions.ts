@@ -101,6 +101,9 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
         wayback_url: urlOf(form, "wayback_url", "存档网址"),
         first_seen_at: first, last_seen_at: last,
         notes: boundedText(form, "notes", "备注", 20000),
+        source_type: text(form, "source_type"),
+        credibility: Number(text(form, "credibility")),
+        checked_at: utcOf(form, "checked_at", "最近核验时间"),
       };
     } else if (operation === "save") {
       const person = text(form, "recovered_by");
@@ -118,4 +121,34 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
     });
   } catch (error) { return { error: errorMessage(error) }; }
   redirect(`/admin/midis/${midiId}/history?${operation === "delete" ? "deleted" : "saved"}=1`);
+}
+
+export async function uploadEvidenceAction(form: FormData): Promise<never> {
+  if (!process.env.ADMIN_ORIGIN || (await headers()).get("origin") !== process.env.ADMIN_ORIGIN)
+    throw new ApiError(403, "INVALID_ORIGIN");
+  const midiId = idOf(text(form, "midi_id"));
+  const recordId = idOf(text(form, "record_id"));
+  const versionText = text(form, "revision");
+  const revision = Number(versionText);
+  if (!/^[1-9]\d*$/.test(versionText) || !Number.isSafeInteger(revision)) throw new InputError("作品版本不正确，请重新打开记录后上传。");
+  const kind = text(form, "kind");
+  if (kind !== "source" && kind !== "event") throw new InputError("附件关联类型无效。");
+  const file = form.get("evidence_file");
+  if (!(file instanceof File) || !file.size) throw new InputError("请选择一个非空证据文件。");
+  if (file.size > 1048576) throw new InputError("证据文件最大为 1 MiB。");
+  const extension = file.name.toLowerCase().split(".").at(-1);
+  const mediaTypes: Record<string, string> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", txt: "text/plain" };
+  const mediaType = mediaTypes[extension ?? ""];
+  if (!mediaType || (file.type && file.type !== mediaType && file.type !== "application/octet-stream"))
+    throw new InputError("仅支持 PDF、PNG、JPEG 和纯文本文件，且扩展名与文件类型必须相符。");
+  const collection = kind === "source" ? "sources" : "recovery-events";
+  const encodedName = encodeURIComponent(file.name);
+  try {
+    await adminRequest(`/api/v1/admin/midis/${midiId}/${collection}/${recordId}/evidence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodedName, "X-Evidence-Media-Type": mediaType, "X-Entry-Revision": String(revision) },
+      body: Buffer.from(await file.arrayBuffer()),
+    }, 60000);
+  } catch (error) { throw errorMessage(error); }
+  redirect(`/admin/midis/${midiId}/history?evidence=uploaded`);
 }

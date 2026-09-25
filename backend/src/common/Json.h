@@ -12,6 +12,7 @@ Json::Value jsonOptional(const std::optional<T>& value) {
 inline Json::Value toJson(const person::Person& p) {
     Json::Value j;
     j["id"] = std::to_string(p.id);
+    j["public_id"] = p.publicId;
     j["display_name"] = p.displayName;
     j["biography"] = jsonOptional(p.biography);
     j["created_at"] = p.createdAt;
@@ -28,6 +29,7 @@ inline Json::Value toJson(const person::Credit& c) {
 inline Json::Value toJson(const midi::MidiEntry& e) {
     Json::Value j;
     j["id"] = std::to_string(e.id);
+    j["public_id"] = e.publicId;
     j["slug"] = e.slug;
     j["title"] = e.title;
     j["description"] = jsonOptional(e.description);
@@ -52,6 +54,8 @@ inline Json::Value toJson(const midi::MidiFile& f) {
     j["created_at"] = f.createdAt;
     return j;
 }
+template <typename T>
+Json::Value jsonArray(const std::vector<T>& values);
 inline Json::Value toJson(const recovery::HistoricalSource& s) {
     Json::Value j;
     j["id"] = std::to_string(s.id);
@@ -61,6 +65,9 @@ inline Json::Value toJson(const recovery::HistoricalSource& s) {
     j["last_seen_at"] = jsonOptional(s.lastSeenAt);
     j["wayback_url"] = jsonOptional(s.waybackUrl);
     j["notes"] = jsonOptional(s.notes);
+    j["source_type"] = s.sourceType;
+    j["credibility"] = s.credibility;
+    j["checked_at"] = jsonOptional(s.checkedAt);
     return j;
 }
 inline Json::Value toJson(const recovery::RecoveryEvent& e) {
@@ -72,6 +79,16 @@ inline Json::Value toJson(const recovery::RecoveryEvent& e) {
     j["story"] = e.story;
     j["evidence"] = jsonOptional(e.evidence);
     j["created_at"] = e.createdAt;
+    return j;
+}
+inline Json::Value toJson(const recovery::EvidenceFile& f) {
+    Json::Value j;
+    j["id"] = std::to_string(f.id);
+    j["filename"] = f.filename;
+    j["media_type"] = f.mediaType;
+    j["sha256"] = f.sha256;
+    j["file_size"] = f.fileSize;
+    j["created_at"] = f.createdAt;
     return j;
 }
 template <typename T>
@@ -86,8 +103,16 @@ inline Json::Value toJson(const recovery::HistoryEditor& editor) {
     j["entry"]["title"] = editor.title;
     j["entry"]["slug"] = editor.slug;
     j["entry"]["revision"] = Json::Int64(editor.revision);
-    j["historical_sources"] = jsonArray(editor.history.sources);
-    j["recovery_events"] = jsonArray(editor.history.events);
+    j["historical_sources"] = Json::Value(Json::arrayValue);
+    for (const auto& source : editor.history.sources) {
+        auto item = toJson(source); item["evidence_files"] = jsonArray(source.evidenceFiles);
+        j["historical_sources"].append(item);
+    }
+    j["recovery_events"] = Json::Value(Json::arrayValue);
+    for (const auto& event : editor.history.events) {
+        auto item = toJson(event); item["evidence_files"] = jsonArray(event.evidenceFiles);
+        j["recovery_events"].append(item);
+    }
     return j;
 }
 inline Json::Value toJson(const recovery::SourceWriteResult& result) {
@@ -132,6 +157,7 @@ inline Json::Value toJson(const person::PersonDetail& d) {
     for (const auto& m : d.midis) {
         Json::Value item;
         item["id"] = std::to_string(m.id);
+        item["public_id"] = m.publicId;
         item["slug"] = m.slug;
         item["title"] = m.title;
         item["role"] = m.role;

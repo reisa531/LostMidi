@@ -9,6 +9,7 @@ import { MidiFilesForm } from "@/components/admin/midi-files-form";
 export const metadata = { title: "MIDI 文件归档" };
 
 export default async function MidiFilesPage({ params }: { params: Promise<{ id: string }> }) {
+  const session = await adminRequest<{ role: "admin" | "super_admin" }>("/api/v1/admin/session");
   const { id } = await params;
   if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > BigInt("9223372036854775807")) notFound();
   let data: { entry: MidiEntry; files: MidiDetail["files"]; max_file_size: number; enabled: boolean };
@@ -20,14 +21,14 @@ export default async function MidiFilesPage({ params }: { params: Promise<{ id: 
     throw error;
   }
   return <>
-    <AdminPageHeader eyebrow={`Collection / ${id} / Files`} title={`MIDI 文件 · ${data.entry.title}`} description="为当前作品上传单个 MIDI 文件（上传即同意公开分发），核对已有文件与去重结果。本页仅展示文件元数据，不在此处提供下载链接或对象地址。" />
+    <AdminPageHeader eyebrow={`Collection / ${id} / Files`} title={`MIDI 文件 · ${data.entry.title}`} description={session.role === "admin" ? "查看已归档文件的元数据；文件上传由超级管理员执行。" : "为当前作品上传单个 MIDI 文件（上传即同意公开分发），核对已有文件与去重结果。本页仅展示文件元数据，不在此处提供下载链接或对象地址。"} />
     <nav aria-label="作品资料管理" className="mb-6 flex flex-wrap gap-5 text-sm">
       <Link className="underline" href={`/admin/midis/${id}/edit`}>返回基础资料</Link>
       <Link className="underline" href={`/admin/midis/${id}/credits`}>管理作品署名</Link>
       <Link className="underline" href={`/admin/midis/${id}/history`}>管理来源与寻回</Link>
     </nav>
     <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
-      <MidiFilesForm key={id} midiId={id} revision={data.entry.revision} maxFileSize={data.max_file_size} enabled={data.enabled} />
+      {session.role === "super_admin" && <MidiFilesForm key={id} midiId={id} revision={data.entry.revision} maxFileSize={data.max_file_size} enabled={data.enabled} />}
       <section aria-labelledby="midi-files-heading" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
         <h2 id="midi-files-heading" className="mb-5 text-lg font-semibold">已存文件（{data.files.length}）</h2>
         {data.files.length ? <ul className="space-y-5">{data.files.map(file => <li key={file.id} className="min-w-0 space-y-2 border-t border-line pt-5">

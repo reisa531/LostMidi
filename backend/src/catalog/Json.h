@@ -6,6 +6,7 @@ namespace lostmidi::catalog {
 inline Json::Value toJson(const CatalogEntry& entry) {
     Json::Value json;
     json["id"] = std::to_string(entry.id);
+    json["public_id"] = entry.publicId;
     json["slug"] = entry.slug;
     json["title"] = entry.title;
     json["estimated_year"] = entry.estimatedYear ? Json::Value(*entry.estimatedYear) : Json::Value(Json::nullValue);
@@ -28,6 +29,7 @@ inline Json::Value toJson(const CatalogEntry& entry) {
 inline Json::Value toJson(const Person& person) {
     Json::Value json;
     json["id"] = std::to_string(person.id);
+    json["public_id"] = person.publicId;
     json["display_name"] = person.displayName;
     json["biography"] = person.biography ? Json::Value(*person.biography) : Json::Value(Json::nullValue);
     json["aliases"] = Json::Value(Json::arrayValue);

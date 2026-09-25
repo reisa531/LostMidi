@@ -35,7 +35,8 @@ void ApiController::registerAdminFileRoutes() {
             slot = std::shared_ptr<int>(new int(0), [this](int* p) { delete p; --importsPending_; });
         }
         dispatch(std::move(callback), [this, request, id = std::move(id), slot] {
-            auth_.require(request->getHeader("authorization"));
+            if (request->method() == drogon::Get) auth_.require(request->getHeader("authorization"));
+            else auth_.requireSuperAdmin(request->getHeader("authorization"));
             const auto midiId = positiveId(id);
             Json::Value json;
             if (request->method() == drogon::Get) {

@@ -1,12 +1,12 @@
 # Lost MIDI Archive
 
-一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前代码包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、单管理员后台、档案管理，以及默认关闭的管理员单文件 MIDI 导入（local / S3，上传即同意公开分发）。导入已实现并对真实 S3 桶完成联调验证。
+一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前代码包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、管理员后台、档案管理，以及默认关闭的管理员单文件 MIDI 导入（local / S3，上传即同意公开分发）。历史来源可标注类型、人工可信度和核验时间，并管理受鉴权保护的证据附件。
 
 这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
 
 部署与运维请从 [RUN.md](RUN.md) 开始：包含环境配置、启动验收、服务器访问、更新、备份恢复与故障排查。
 
-前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。本分支增加 PostgreSQL 站内搜索、回收站、操作记录和清理重试信息，启动前须备份并执行全部迁移至 `011_cleanup_retry_metadata.sql`；当前生产仍停留在 008，代码与数据库升级尚未部署。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
+前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。阶段 1–3 已由用户确认手动部署到迁移 011；当前工作区要求备份后执行全部迁移至 `015_content_reviews.sql`：012 增加来源与证据、013 增加多管理员角色账号、014 增加稳定公开 UUID、015 增加审核申请。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
 ## 当前界面与建档流程
 
@@ -142,7 +142,7 @@ export PGPASSWORD=lostmidi_dev_only
 SEED_DEMO=false sh database/migrate.sh
 ```
 
-仅专用演示/测试库可将 `SEED_DEMO` 显式改为 true。不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库；应用全部迁移至 011 后再启动后端。从根目录构建后端：
+仅专用演示/测试库可将 `SEED_DEMO` 显式改为 true。不用 Docker 时，通过本机 PostgreSQL 工具创建数据库和用户。迁移脚本不会创建数据库；应用全部迁移至 015 后再启动后端。从根目录构建后端：
 
 ```sh
 python3 -m venv .venv
@@ -203,7 +203,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
 
-原生新站在可信终端安全保存生成的安装令牌，在 `frontend/.env.local` 配置 `BACKEND_API_URL`、`ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`，启动后访问 `/install`；成功后单独登录，可移除后端令牌并重启。更新已有数据库时先执行全部待应用迁移至 `011_cleanup_retry_metadata.sql`，第一次启动新版仍保留完整环境管理员凭据，确认 legacy 标记写入后再改配置。不要用清空旧站凭据的方式进入安装页。
+原生新站在可信终端安全保存生成的安装令牌，在 `frontend/.env.local` 配置 `BACKEND_API_URL`、`ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`，启动后访问 `/install`；成功后单独登录，可移除后端令牌并重启。更新已有数据库时先执行全部待应用迁移至 `015_content_reviews.sql`，第一次启动新版仍保留完整环境管理员凭据，确认 legacy 标记写入后再改配置。不要用清空旧站凭据的方式进入安装页。
 
 ## Environment Variables
 
@@ -247,7 +247,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events；另有 admin_sessions、site_installation 与 midi_import_objects（导入 journal）。
 
-迁移 004–008 的历史用途见下文。009 提供目录文本搜索索引，010 增加 MIDI/人物回收站和管理员操作审计，011 为导入对象清理记录重试状态。启动及 `/ready` 检查最新结构，即使关闭文件上传也必须先迁移至 011。升级前备份并先做独立恢复演练，使用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 执行待应用迁移，不修改旧迁移、不使用要求空库的 `.tools` 临时脚本。
+迁移 004–008 的历史用途见下文。009 提供目录文本搜索索引，010 增加 MIDI/人物回收站和管理员操作审计，011 为导入对象清理记录重试状态；012 增加来源证据，013 增加多用户角色，014 增加公开 UUID，015 增加内容审核。启动及 `/ready` 检查最新结构，即使关闭文件上传也必须先迁移至 015。升级前备份并先做独立恢复演练，使用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 执行待应用迁移，不修改旧迁移、不使用要求空库的 `.tools` 临时脚本。
 
 `site_installation` 至多一行 `id=1`，保存 `site_name`、`site_description` 和 `auth_source`（database 或 environment）。database 时保存用户名及随机盐 PBKDF2-HMAC-SHA256、600,000 次哈希；environment 时 username/password_hash 均为 NULL。事务和主键保证安装并发只有一个成功，提交确认后返回；移除令牌或重启不清除锁，无重装/reset 接口。
 
@@ -316,7 +316,7 @@ page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回
 {"error": {"code": "MIDI_NOT_FOUND", "message": "The requested MIDI entry does not exist."}}
 ```
 
-异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志不记录连接串或异常原文。公开查询和获准文件下载无需登录；后台接口在 C++ 验证会话，基本资料写入立即反映到公开站点，文件上传仍仅限管理员。无公开上传或试听接口；导入、下载及清理契约见 [RUN.md](RUN.md)，其他后台合约见 [后台平台说明](docs/admin.md)。
+异常响应不含 SQL、文件路径或调用栈。应用单行 JSON 日志不记录连接串或异常原文。公开查询和获准文件下载无需登录；后台接口在 C++ 验证角色。管理员的 MIDI/人物基础资料及作品署名修改先经超级管理员审核，其他内容修改限超级管理员。无公开上传或试听接口；导入、下载及清理契约见 [RUN.md](RUN.md)，其他后台合约见 [后台平台说明](docs/admin.md)。
 
 ## Testing
 
@@ -373,7 +373,7 @@ python scripts/smoke.py --api-only
 
 以下内容均未实现：
 
-- **User System**：面向用户的注册、多账号与角色权限；当前仅有数据库安装或环境覆盖的单管理员登录，人物档案与登录账号分离。
+- **User System**：后台支持超级管理员和多个管理员账号；超级管理员可邀请、调整或停用账号。访问者无需注册，只能浏览公开内容。人物档案与登录账号分离。
 - **Contribution System**：面向贡献者的 MIDI / 历史资料提交；当前仅实现管理员私有单文件导入，不是公开投稿。
 - **Moderation**：审核贡献、署名和权利信息。
 - **Community**：帖子、评论、讨论，有需求后加入内部模块。
@@ -384,7 +384,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。包含工作台、档案与人物列表、新增与编辑表单及独立删除确认区。单管理员通过一次性数据库安装建立，完整有效的环境凭据可优先覆盖；浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证权限。当前可维护标题、slug、简介、推测年份、归档与版权状态、许可、权利人和分发许可，以及人物资料、历史昵称和作品署名。作品编辑页的「管理来源与寻回」支持逐条新增、编辑、删除历史网站和寻回经过，保存后立即公开。未知日期和人物可留空，来源与寻回共用作品 revision，不会自动调整归档状态。管理员单文件 MIDI 导入已实现，默认关闭，已对真实 S3 桶联调验证；上传即同意公开分发，本后台页仅展示元数据、不开放下载试听或对象 URL。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
+统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。支持多位超级管理员和管理员：管理员提交的 MIDI/人物资料及作品署名修改需超级管理员审核发布；删除、来源/寻回、证据和 MIDI 文件操作当前由超级管理员执行。访问者匿名只读。浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证角色。稳定 UUID 是作品和人物的公开 canonical ID，旧链接兼容跳转。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 

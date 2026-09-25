@@ -11,6 +11,7 @@ struct Person {
     std::optional<std::string> biography;
     std::string createdAt;
     std::int64_t revision = 1;
+    std::string publicId;
 };
 struct Credit {
     std::int64_t personId = 0;
@@ -22,6 +23,7 @@ struct CreditedMidi {
     std::string slug;
     std::string title;
     std::string role;
+    std::string publicId;
 };
 struct PersonDetail {
     Person person;

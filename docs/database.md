@@ -6,8 +6,8 @@ PostgreSQL 保存档案元数据，文件二进制由 Backend 的 storage abstra
 
 | 表 | 用途与关系 |
 | --- | --- |
-| `midi_entries` | 作品 / 档案，`slug` 是唯一公开定位符；年代可空，描述可空。 |
-| `people` | 作者、编曲者、网站维护者或贡献者，不等同于未来的登录账户。 |
+| `midi_entries` | 作品 / 档案，`public_id` 为稳定公开 UUID，`slug` 用于历史兼容；年代可空，描述可空。 |
+| `people` | 作者、编曲者、网站维护者或贡献者，拥有独立稳定公开 UUID，不等同于后台登录账户。 |
 | `person_aliases` | 人物历史昵称；同一人物的同名昵称唯一，保留大小写。不同人物可以使用同一昵称。 |
 | `midi_credits` | 作品与人物的多对多署名；主键为 `(midi_id, person_id, role)`，允许一个人有多个角色。 |
 | `midi_files` | 一个作品的多个二进制版本；全局唯一的小写十六进制 `sha256`、唯一 `storage_key`、正数 `file_size`。 |
@@ -18,8 +18,12 @@ PostgreSQL 保存档案元数据，文件二进制由 Backend 的 storage abstra
 | `midi_import_objects` | 006 新增对象 journal；跟踪待清理对象摘要、存储 key 和触碰时间，不通过列桶发现孤立对象。 |
 | `midi_creation_requests` | 007 新增创建请求身份与提交摘要；008 将唯一作品关联改为可空，删除作品后保留回执。 |
 | `admin_audit_log` | 010 保存管理员删除与恢复操作；作品和人物通过 `deleted_at` / `deleted_by` 进入回收站。 |
+| `historical_evidence` | 012 保存来源或寻回记录的小型证据附件、SHA-256 摘要与二进制内容；复合外键保证附件与所属作品一致。 |
+| `admin_users` / `admin_invitations` | 013 保存后台用户名、角色、账号状态与一次性邀请摘要；访问者匿名只读，不建账号。 |
+| `admin_user_audit` | 013 记录邀请、接受邀请、角色修改与停用操作。 |
+| `admin_change_requests` | 015 保存管理员提交的待审内容、审核结论、审核人和执行结果。 |
 
-当前生产应用到 008；本分支新代码要求迁移至 `011_cleanup_retry_metadata.sql`。009 提供 `pg_trgm` 搜索索引，010 提供可恢复删除与审计，011 提供外部对象清理重试信息。本次没有部署或验证；生产迁移前须执行独立恢复演练。
+阶段 1–3 已手动部署；本工作区后续迁移依次为 012 来源证据、013 多管理员账号、014 稳定公开 UUID、015 内容审核申请。009 提供 `pg_trgm` 搜索索引，010 提供可恢复删除与审计，011 提供外部对象清理重试信息。当前应用启动与 `/ready` 要求全部迁移及对应结构存在。生产升级前须执行独立备份与恢复演练。
 
 迁移 `002_admin_sessions_and_revision.sql` 增加 `admin_sessions`，以 64 位小写十六进制 `token_hash` 为主键，不存原始令牌。会话有效 8 小时，凭据标识由当前选用的用户名与哈希决定；不匹配的会话被拒绝，但恢复旧凭据可能让未过期的旧会话再次匹配，并非永久撤销。
 
@@ -138,3 +142,5 @@ CTest 的 installation 集成测试会创建隔离 schema，连接用户需具�
 010 增加 `midi_entries.deleted_at/deleted_by`、`people.deleted_at/deleted_by` 和 `admin_audit_log`。移入回收站先 `FOR UPDATE` 锁定记录并核对 revision，然后在同一事务写软删除标记和审计记录。人物仍被署名或寻回事件引用时返回 `409 PERSON_IN_USE`。MIDI 文件及所属来源、署名和寻回记录保留，恢复只清除删除标记并由触发器增加 revision；恢复操作也写入审计记录。
 
 公开目录、详情、人物和下载查询排除软删除行。删除 MIDI 不再加入对象清理 journal，因为文件仍被回收站记录引用；因此对象继续可恢复。011 为现有导入孤儿 journal 添加尝试次数、最近尝试时间和通用失败代码；对象删除失败后事务保留 journal，之后显式 `--cleanup-imports` 可重试。清理仍要求超过 24 小时、没有引用、每次最多 100 条，必须匹配原数据库和存储配置，禁止在生产试运行。
+
+012 为 `historical_sources` 增加 `source_type`、`credibility` 和 `checked_at`。可信度是整理者对来源质量的人工评估（1–5），不是系统判断真伪的分数。附件只接受 PDF、JPEG、PNG 和纯文本，单个文件不超过 1 MiB；数据库保存内容与小写 SHA-256，下载前重新校验摘要。附件只能关联同一作品的一条来源或寻回记录；删除所属记录会级联删除附件。上传及下载都要求管理员会话，公开目录不会返回附件元数据或摘要。

@@ -22,6 +22,7 @@ struct CatalogEntry {
     std::vector<std::string> sources;
     std::int64_t fileCount = 0;
     std::int64_t downloadableFileCount = 0;
+    std::string publicId;
 };
 struct Person {
     std::int64_t id = 0;
@@ -29,6 +30,7 @@ struct Person {
     std::optional<std::string> biography;
     std::vector<std::string> aliases;
     std::int64_t midiCount = 0;
+    std::string publicId;
 };
 struct Group {
     std::string key;

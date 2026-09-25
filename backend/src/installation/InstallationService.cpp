@@ -101,6 +101,9 @@ void InstallationRepository::create(const Site& site, const std::string& usernam
         "VALUES(1,$1,$2,'database',$3,$4) ON CONFLICT(id) DO NOTHING RETURNING id",
         site.name, site.description, username, passwordHash);
     if (rows.empty()) alreadyInstalled();
+    transaction.db->execSqlSync(
+        "INSERT INTO admin_users(username,password_hash,role,status) VALUES($1,$2,'super_admin','active') "
+        "ON CONFLICT(username) DO NOTHING", username, passwordHash);
     transaction.commit();
 }
 void AttemptLimiter::acquire() {

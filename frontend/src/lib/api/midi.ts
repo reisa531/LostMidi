@@ -7,3 +7,6 @@ export function getMidis(page = 1, pageSize = 20) {
 export function getMidiBySlug(slug: string) {
   return apiGet<MidiDetail>(`/api/v1/midis/${encodeURIComponent(slug)}`);
 }
+export function getMidiByPublicId(id: string) {
+  return apiGet<MidiDetail>(`/api/v1/midis/by-id/${encodeURIComponent(id)}`);
+}
