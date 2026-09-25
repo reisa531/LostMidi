@@ -4,5 +4,5 @@ import { AdminPageHeader } from "@/components/admin/ui";
 export const metadata = { title: "新增人物" };
 export default async function NewPerson() {
   const admin = await requireAdmin();
-  return <><AdminPageHeader eyebrow="People / New" title="新增人物" description="记录创作者、编曲者或历史贡献者。人物档案不创建登录账号。" /><PersonForm reviewRequired={admin.role === "admin"} /></>;
+  return <><AdminPageHeader eyebrow="人物 / 新建" title="新增人物" description="记录创作者、编曲者或历史贡献者。人物档案不创建登录账号。" /><PersonForm reviewRequired={admin.role === "admin"} /></>;
 }

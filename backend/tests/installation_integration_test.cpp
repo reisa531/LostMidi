@@ -244,8 +244,8 @@ TEST_F(InstallationPostgres, EnvironmentOverrideAndDatabaseChangesInvalidateCred
     auth::AuthService databaseAuth(authRepository, "", "");
     const auto token = databaseAuth.login("installed-admin", "installation-only-password");
     auth::AuthService overrideAuth(authRepository, "emergency-admin", legacyHash);
-    expectApiError([&] { overrideAuth.require("Bearer " + token); }, 401, "UNAUTHORIZED");
-    expectApiError([&] { overrideAuth.login("installed-admin", "installation-only-password"); }, 401, "INVALID_CREDENTIALS");
+    EXPECT_EQ(overrideAuth.require("Bearer " + token), "installed-admin");
+    EXPECT_NO_THROW(overrideAuth.login("installed-admin", "installation-only-password"));
     installation::InstallationService overrideInstallation(repository, installationToken, true, limiter_);
     const auto before = service.status();
     overrideInstallation.initializeLegacy();
@@ -254,6 +254,10 @@ TEST_F(InstallationPostgres, EnvironmentOverrideAndDatabaseChangesInvalidateCred
     const auto overrideToken = overrideAuth.login("emergency-admin", "integration-only-password");
     EXPECT_EQ(overrideAuth.require("Bearer " + overrideToken), "emergency-admin");
     expectApiError([&] { databaseAuth.require("Bearer " + overrideToken); }, 401, "UNAUTHORIZED");
+    db_->execSqlSync("UPDATE admin_users SET username='emergency-admin' WHERE username='installed-admin'");
+    expectApiError([&] { overrideAuth.require("Bearer " + token); }, 401, "UNAUTHORIZED");
+    expectApiError([&] { overrideAuth.login("emergency-admin", "installation-only-password"); }, 401, "INVALID_CREDENTIALS");
+    db_->execSqlSync("UPDATE admin_users SET username='installed-admin' WHERE username='emergency-admin'");
     // Partial env credentials must not mask the installed DB account.
     auth::AuthService partial(authRepository, "unused-environment-user", "");
     const auto restoredToken = partial.login("installed-admin", "installation-only-password");

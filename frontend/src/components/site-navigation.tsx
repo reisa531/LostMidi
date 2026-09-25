@@ -9,7 +9,7 @@ const links = [
   { href: "/search", label: "搜索" },
   { href: "/people", label: "作者" },
   { href: "/recovery", label: "寻回进度" },
-  { href: "/map", label: "Map" },
+  { href: "/map", label: "关系图谱" },
 ];
 export function SiteNavigation() {
   const pathname = usePathname();

@@ -21,7 +21,7 @@ export default async function MidiFilesPage({ params }: { params: Promise<{ id: 
     throw error;
   }
   return <>
-    <AdminPageHeader eyebrow={`Collection / ${id} / Files`} title={`MIDI 文件 · ${data.entry.title}`} description={session.role === "admin" ? "管理员上传会提交给超级管理员审核；批准后才会公开分发。" : "为当前作品上传单个 MIDI 文件（上传即同意公开分发），核对已有文件与去重结果。本页仅展示文件元数据，不在此处提供下载链接或对象地址。"} />
+    <AdminPageHeader eyebrow={`档案 / ${id} / 文件`} title={`MIDI 文件 · ${data.entry.title}`} description={session.role === "admin" ? "管理员上传会提交给超级管理员审核；批准后才会公开分发。" : "为当前作品上传单个 MIDI 文件（上传即同意公开分发），核对已有文件与去重结果。本页仅展示文件元数据，不在此处提供下载链接或对象地址。"} />
     <nav aria-label="作品资料管理" className="mb-6 flex flex-wrap gap-5 text-sm">
       <Link className="underline" href={`/admin/midis/${id}/edit`}>返回基础资料</Link>
       <Link className="underline" href={`/admin/midis/${id}/credits`}>管理作品署名</Link>

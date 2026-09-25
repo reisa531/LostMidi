@@ -33,8 +33,9 @@ TEST(PostgresIntegration, AdministratorSessionLifecycle) {
     db->setTimeout(5.0);
     auto transaction = db->newTransaction();
     Rollback cleanup{transaction};
-    // Shadow both tables: disabled-auth checks must not pick up a real installed administrator.
+    // Shadow credentials and sessions so disabled-auth checks are independent of other tests.
     transaction->execSqlSync("CREATE TEMP TABLE admin_sessions (LIKE public.admin_sessions INCLUDING ALL) ON COMMIT DROP");
+    transaction->execSqlSync("CREATE TEMP TABLE admin_users (LIKE public.admin_users INCLUDING ALL) ON COMMIT DROP");
     transaction->execSqlSync("CREATE TEMP TABLE site_installation (LIKE public.site_installation INCLUDING ALL) ON COMMIT DROP");
     auth::AuthRepository repository(transaction);
     // Public test fixture only; never used as a deployment default.

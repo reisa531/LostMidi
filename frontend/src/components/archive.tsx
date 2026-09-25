@@ -23,7 +23,7 @@ export function Section({ title, children }: { title: string; children: React.Re
   return <section className="border-t border-line py-8"><h2 className="mb-5 font-serif text-2xl">{title}</h2><div className="space-y-5 text-sm leading-7">{children}</div></section>;
 }
 export function Unavailable() {
-  return <section><p className="eyebrow">Archive temporarily unavailable</p><h1 className="my-6 font-serif text-3xl">档案暂时无法读取</h1>
+  return <section><p className="eyebrow">档案服务</p><h1 className="my-6 font-serif text-3xl">档案暂时无法读取</h1>
     <p className="text-muted">请稍后刷新页面重试。</p><Link className="archive-link mt-6 inline-block" href="/">返回首页</Link></section>;
 }
 export function ExternalSource({ url, label }: { url: string | null; label: string }) {

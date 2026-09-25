@@ -110,7 +110,7 @@ PowerShell 第一步使用 `Copy-Item .env.example .env`。示例数据库密码
 
 `ADMIN_ORIGIN` 必须与浏览器访问地址完全一致且没有末尾斜杠，默认 `http://localhost:3000`；使用 `127.0.0.1`、其他端口或域名访问时同步修改。正式部署使用 HTTPS 并设 `ADMIN_COOKIE_SECURE=true`。前端配置表单仅生成 `BACKEND_API_URL` / `ADMIN_ORIGIN` / `ADMIN_COOKIE_SECURE` 变量文本，不写环境文件、不调用 Vercel API；Vercel 用户需自行保存项目变量后重新部署。
 
-已有环境管理员部署继续支持完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`，并优先于数据库账号。升级第一次运行新版时必须保留这两项，待后端成功写入持久 environment 标记后才能改配置；提前移除会使系统无法推断曾安装。默认 `ADMIN_USERNAME=admin` 加空哈希不会遮盖新安装的数据库管理员。凭据恢复与会话注意事项见 [RUN.md](RUN.md)。
+已有环境管理员部署继续支持完整有效的 `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`；环境凭据仅覆盖同名数据库账号，其他受邀管理员仍可登录。升级第一次运行新版时必须保留这两项，待后端成功写入持久 environment 标记后才能改配置；提前移除会使系统无法推断曾安装。默认 `ADMIN_USERNAME=admin` 加空哈希不会遮盖新安装的数据库管理员。凭据恢复与会话注意事项见 [RUN.md](RUN.md)。
 
 - 页面：<http://localhost:3000>；未安装时跳转 `/install`
 - 一次性安装：<http://localhost:3000/install>；已安装时仅显示锁定状态
@@ -384,7 +384,7 @@ python scripts/smoke.py --api-only
 
 ## Admin Platform
 
-统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。支持多位超级管理员和管理员：管理员提交的所有内容修改、删除、恢复、来源/寻回、证据和 MIDI 文件导入申请均由超级管理员审核执行。访问者匿名只读。浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证角色。稳定 UUID 是作品和人物的公开 canonical ID，旧链接兼容跳转。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
+统一后台入口为 `/admin`，未安装时转到 `/install`，已安装且未登录时转到 `/admin/login`。支持多位超级管理员和管理员：管理员提交的所有内容修改、删除、恢复、来源/寻回、证据和 MIDI 文件导入申请均由超级管理员审核执行。访问者匿名只读。浏览器使用 HttpOnly Cookie，Next.js 服务端向 C++ 传递 Bearer 会话，后端逐次验证角色。稳定 UUID 是作品和人物的公开 canonical ID，旧链接兼容跳转。界面采用简体中文、史料保留原语言，见 [语言策略](docs/language-policy.md)。导入契约见 [RUN.md](RUN.md)，其他后台边界见 [后台平台说明](docs/admin.md)，验证计划见 [开发路线](docs/roadmap.md)。
 
 ## Architecture Decisions
 

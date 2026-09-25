@@ -10,6 +10,10 @@ const labels: Record<string, string> = {
   "history.event.create": "新增寻回记录", "history.event.update": "修改寻回记录", "history.event.delete": "删除寻回记录",
   "evidence.upload": "上传历史证据附件", "file.import": "导入 MIDI 文件",
 };
+const statusLabels: Record<string, string> = {
+  pending: "待审核", reviewing: "审核执行中", approved: "已批准", rejected: "已拒绝",
+  stale: "版本已过期", failed: "执行失败",
+};
 
 function reviewPayload(raw: unknown) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
@@ -32,7 +36,7 @@ export default async function ChangeReviewPage({ searchParams }: { searchParams:
   const { submitted } = await searchParams;
   const requests = await getChangeRequests();
   return <>
-    <AdminPageHeader eyebrow="Review" title="内容审核" description={admin.role === "super_admin" ? "审核管理员提交的内容申请。批准后会执行申请并按对应权限公开。" : "查看自己提交的内容申请及审核结果。"} />
+    <AdminPageHeader eyebrow="审核" title="内容审核" description={admin.role === "super_admin" ? "审核管理员提交的内容申请。批准后会执行申请并按对应权限公开。" : "查看自己提交的内容申请及审核结果。"} />
     {submitted === "1" && <p role="status" className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">申请已提交，超级管理员审核通过后才会执行。</p>}
     <div className="space-y-4">
       {requests.length === 0 ? <AdminPanel title="审核队列"><p className="text-sm text-muted">目前没有变更申请。</p></AdminPanel> : requests.map(request => {
@@ -40,7 +44,7 @@ export default async function ChangeReviewPage({ searchParams }: { searchParams:
         try { payload = reviewPayload(JSON.parse(request.payload)); } catch { /* preserve the stored text for diagnosis */ }
         return <AdminPanel key={request.id} title={labels[request.type] ?? request.type}>
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><p className="text-xs text-muted">提交者 {request.proposed_by} · {new Date(request.created_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · {request.status}</p></div>
+            <div><p className="text-xs text-muted">提交者 {request.proposed_by} · {new Date(request.created_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · {statusLabels[request.status] ?? request.status}</p></div>
             {admin.role === "super_admin" && request.status === "pending" && <form action={reviewChangeAction} className="flex flex-wrap items-center gap-2">
               <input type="hidden" name="id" value={request.id} />
               <input name="note" maxLength={2000} placeholder="审核备注（可选）" className="rounded border border-line px-3 py-2 text-sm" />

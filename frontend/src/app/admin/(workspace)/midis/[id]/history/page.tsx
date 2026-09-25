@@ -31,7 +31,7 @@ export default async function HistoryPage({ params, searchParams }: {
   const { saved, deleted, evidence } = await searchParams;
   const reviewRequired = session.role === "admin";
   return <>
-    <AdminPageHeader eyebrow={`Collection / ${id} / History`} title={`来源与寻回 · ${history.entry.title}`} description={reviewRequired ? "新增、修改、删除和证据附件会提交给超级管理员审核，通过后才公开。" : "按作品整理历史网站、存档线索、寻回经过与证据。每次只维护一条记录，保存或删除后立即反映到公开详情。"} />
+    <AdminPageHeader eyebrow={`档案 / ${id} / 历史`} title={`来源与寻回 · ${history.entry.title}`} description={reviewRequired ? "新增、修改、删除和证据附件会提交给超级管理员审核，通过后才公开。" : "按作品整理历史网站、存档线索、寻回经过与证据。每次只维护一条记录，保存或删除后立即反映到公开详情。"} />
     <nav aria-label="作品相关页面" className="mb-6 flex flex-wrap gap-5 text-sm">
       <Link href={`/admin/midis/${id}/edit`} className="underline">返回作品编辑</Link>
       <Link href={`/midis/${history.entry.slug}`} target="_blank" rel="noopener noreferrer" className="underline">在新页面查看公开详情</Link>

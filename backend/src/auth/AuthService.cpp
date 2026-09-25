@@ -53,9 +53,8 @@ bool AuthService::hasEnvironmentCredentials() const {
     return !environment_.username.empty() && !environment_.passwordHash.empty();
 }
 std::optional<Credentials> AuthService::credentials(const std::string& username) {
-    if (hasEnvironmentCredentials()) return username == environment_.username
-        ? std::optional<Credentials>(Credentials{environment_.username, environment_.passwordHash, "", "super_admin"})
-        : std::nullopt;
+    if (hasEnvironmentCredentials() && username == environment_.username)
+        return Credentials{environment_.username, environment_.passwordHash, "", "super_admin"};
     // Do not cache: another instance may just have completed installation or changed a user.
     return repository_.credentials(username);
 }
@@ -92,10 +91,9 @@ SessionPrincipal AuthService::requirePrincipal(const std::string& authorization)
     const auto session = repository_.session(digest(token));
     if (!session) throw ApiError(401, "UNAUTHORIZED", "Administrator session is invalid or expired.");
     if (!session->userId.empty()) {
-        if (hasEnvironmentCredentials())
-            throw ApiError(401, "UNAUTHORIZED", "Administrator session is invalid or expired.");
         const auto current = repository_.credentialsById(session->userId);
-        if (!current || session->credentialId != digest(current->username + ":" + current->passwordHash))
+        if (!current || (hasEnvironmentCredentials() && current->username == environment_.username) ||
+            session->credentialId != digest(current->username + ":" + current->passwordHash))
             throw ApiError(401, "UNAUTHORIZED", "Administrator session is invalid or expired.");
         return {current->username, current->role, current->userId, session->credentialId};
     }

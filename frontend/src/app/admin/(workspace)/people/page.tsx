@@ -18,7 +18,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
     throw error;
   }
   const pages = Math.max(1, Math.ceil(result.pagination.total / result.pagination.pageSize));
-  return <><AdminPageHeader eyebrow="Collection / People" title="人物管理" description="维护人物名称、简介和历史昵称。在作品编辑页维护人物与作品的署名关系。" />
+  return <><AdminPageHeader eyebrow="档案 / 人物" title="人物管理" description="维护人物名称、简介和历史昵称。在作品编辑页维护人物与作品的署名关系。" />
     {notice}
     <AdminPanel title={`人物 · ${result.pagination.total}`} action={<Link href="/admin/people/new" className="rounded bg-accent px-4 py-2 text-sm text-white">新增人物</Link>}>
       {result.data.length ? <ul className="divide-y divide-line">{result.data.map(person => <li key={person.id} className="flex flex-wrap items-center justify-between gap-4 py-5"><div><h2 className="font-medium">{person.display_name}</h2><p className="mt-2 text-xs text-muted">人物编号 {person.id}</p></div><div className="flex gap-4 text-sm"><Link href={`/admin/people/${person.id}/edit`} className="underline">编辑</Link><Link href={`/people/${person.id}`} className="underline">公开资料</Link></div></li>)}</ul> : <p className="py-8 text-sm text-muted">本页暂无人物资料。</p>}

@@ -28,7 +28,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   }
   if (!stableId) permanentRedirect(`/people/${detail.person.public_id}`);
   const structuredData = { "@context": "https://schema.org", "@type": "Person", name: detail.person.display_name, description: detail.person.biography || undefined, url: `${process.env.ADMIN_ORIGIN ?? ""}/people/${detail.person.public_id}` };
-  return <article className="mx-auto max-w-3xl"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} /><p className="eyebrow">People of the archive</p>
+  return <article className="mx-auto max-w-3xl"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} /><p className="eyebrow">档案人物</p>
     <h1 className="my-6 font-serif text-4xl">{detail.person.display_name}</h1>
     <p className="mb-10 whitespace-pre-wrap leading-8 text-muted">{detail.person.biography ?? "人物生平尚待补充。"}</p>
     <Section title="历史昵称"><p>{detail.aliases.join(" / ") || "尚未登记昵称。"}</p></Section>

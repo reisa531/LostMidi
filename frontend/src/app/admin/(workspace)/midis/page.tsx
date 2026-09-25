@@ -11,7 +11,7 @@ export const metadata = { title: "MIDI 档案" };
 export default async function AdminMidis({ searchParams }: { searchParams: Promise<{ page?: string | string[]; deleted?: string | string[] }> }) {
   await requireAdmin();
   const { page: raw = "1", deleted } = await searchParams;
-  const header = <><AdminPageHeader eyebrow="Collection / MIDI" title="MIDI 档案" description="新增和编辑作品基础资料，维护归档状态与权利信息。" />
+  const header = <><AdminPageHeader eyebrow="档案 / MIDI" title="MIDI 档案" description="新增和编辑作品基础资料，维护归档状态与权利信息。" />
     {deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已移入回收站，可随时恢复。关联记录和文件均已保留。</p>}</>;
   if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || Number(raw) > 1000000) return <>{header}<p>页码无效。<Link className="archive-link" href="/admin/midis">返回第一页</Link></p></>;
   const page = Number(raw);

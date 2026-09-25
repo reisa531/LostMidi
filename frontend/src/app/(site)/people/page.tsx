@@ -19,7 +19,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
     throw error;
   }
   return <>
-    <PageHeader eyebrow="Archive / People" title="作者与参与者" description="从历史昵称找到作品背后的人。这里收录作曲者、编曲者、音序制作者及其他贡献者；相关作品数按作品去重。" />
+    <PageHeader eyebrow="档案 / 人物" title="作者与参与者" description="从历史昵称找到作品背后的人。这里收录作曲者、编曲者、音序制作者及其他贡献者；相关作品数按作品去重。" />
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-medium">人物索引</h2><span className="text-xs text-muted">共 {result.pagination.total.toLocaleString("zh-CN")} 位</span></div>
     {result.data.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{result.data.map(person => <article key={person.id} className="flex min-w-0 flex-col rounded-xl border border-line bg-white/70 p-5 [overflow-wrap:anywhere]">
       <div className="mb-4 flex items-center justify-between gap-3"><span className="text-[10px] tracking-wider text-muted">人物档案 / {person.id}</span><span className="shrink-0 rounded-full bg-[#e8eee2] px-2.5 py-1 text-xs text-accent tabular-nums">{person.midi_count} 部作品</span></div>

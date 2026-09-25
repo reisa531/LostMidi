@@ -32,7 +32,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const pages = Math.max(1, Math.ceil(Math.max(entries?.pagination.total ?? 0, people?.pagination.total ?? 0) / 10));
   const href = (nextPage: number) => `/search?${new URLSearchParams({ q: q ?? "", page: String(nextPage) })}`;
   return <>
-    <PageHeader eyebrow="Archive / Search" title="搜索档案" description="按作品名称、slug、人物姓名、历史昵称或来源名称查找。" />
+    <PageHeader eyebrow="档案 / 搜索" title="搜索档案" description="按作品名称、slug、人物姓名、历史昵称或来源名称查找。" />
     <form action="/search" method="get" className="mb-8 flex flex-wrap gap-3 rounded-xl border border-line bg-white/70 p-4">
       <label className="min-w-0 flex-1"><span className="sr-only">搜索关键词</span><input name="q" defaultValue={q ?? ""} maxLength={200} required placeholder="作品、人物、历史昵称或来源" className="w-full rounded-lg border border-line bg-white px-4 py-3 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-accent" /></label>
       <button className="rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white" type="submit">搜索</button>

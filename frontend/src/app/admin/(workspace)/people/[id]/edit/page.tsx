@@ -19,7 +19,7 @@ export default async function EditPerson({ params, searchParams }: { params: Pro
     throw error;
   }
   const { saved } = await searchParams;
-  return <><AdminPageHeader eyebrow={`People / ${id}`} title="编辑人物" description="核对人物身份，维护公开资料和历史昵称。" />
+  return <><AdminPageHeader eyebrow={`人物 / ${id}`} title="编辑人物" description="核对人物身份，维护公开资料和历史昵称。" />
     {saved === "1" && <p role="status" className="mb-6 rounded bg-green-50 p-4 text-sm text-green-900">人物资料已保存。<Link href={`/people/${id}`} className="ml-4 underline">查看公开资料</Link></p>}
     <PersonForm key={`${id}-${entry.person.revision}`} entry={entry} reviewRequired={session.role === "admin"} />
     <DeleteConfirmation key={`delete-${id}-${entry.person.revision}`} resource="people" id={entry.person.id} revision={entry.person.revision} name={entry.person.display_name} reviewRequired={session.role === "admin"} />

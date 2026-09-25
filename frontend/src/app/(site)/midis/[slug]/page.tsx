@@ -38,7 +38,7 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
   return <article className="mx-auto max-w-3xl">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
     <Link href="/midis" className="archive-link text-sm">← 全部 MIDI 档案</Link>
-    <p className="eyebrow mt-10">Archive record / {entry.id}</p>
+    <p className="eyebrow mt-10">档案编号 / {entry.id}</p>
     <h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1>
     <div className="mb-7 flex items-center gap-4"><Status status={entry.archive_status} /><span className="text-sm text-muted">推测年代：{entry.estimated_year ?? "不详"}</span></div>
     <p className="mb-9 whitespace-pre-wrap leading-8 text-muted">{entry.description ?? "尚无描述。"}</p>

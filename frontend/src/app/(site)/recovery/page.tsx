@@ -20,7 +20,7 @@ export default async function RecoveryPage({ searchParams }: { searchParams: Pro
   }
   const [overview, entries] = data;
   return <>
-    <PageHeader eyebrow="Archive / Recovery" title="寻回进度" description="哪些作品已经归档，哪些仍在寻找？以人工记录的归档状态为线索，查看每一份档案当前的整理情况。" />
+    <PageHeader eyebrow="档案 / 寻回" title="寻回进度" description="哪些作品已经归档，哪些仍在寻找？以人工记录的归档状态为线索，查看每一份档案当前的整理情况。" />
     <section aria-label="全库归档状态统计"><StatusSummary stats={overview.stats} active={query.status} query={query} /></section>
     <aside className="mb-7 mt-4 rounded-xl border border-line bg-[#edf0e5] px-5 py-4 text-xs leading-6 text-muted"><p className="mb-1 font-medium text-foreground">状态不等于文件可用性</p><p>上方为全库统计，不随下方筛选改变。归档状态由维护者手动记录，与是否有文件、是否允许下载分别管理；有文件不一定已归档，已归档也不保证可以下载。</p><DataNote /></aside>
     <section aria-labelledby="recovery-list"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 id="recovery-list" className="font-serif text-xl">状态明细</h2><span className="text-xs text-muted">{entries.pagination.total.toLocaleString("zh-CN")} 条匹配档案</span></div>

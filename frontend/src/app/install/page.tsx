@@ -12,7 +12,7 @@ export default async function InstallPage() {
   const canInstall = state.kind === "reachable" && !state.status.installed && state.status.installation_enabled && config.ready;
   return <main id="main" className="mx-auto max-w-4xl px-5 py-10 sm:px-8 sm:py-16 [overflow-wrap:anywhere]">
     <header className="rounded-t-2xl bg-[#203d31] px-6 py-9 text-white sm:px-10 sm:py-12">
-      <p className="text-[10px] tracking-[0.25em] text-[#bdcec5]">LOST MIDI ARCHIVE / FIRST STEPS</p>
+      <p className="text-[10px] tracking-[0.25em] text-[#bdcec5]">LOST MIDI ARCHIVE / 初始化向导</p>
       <h1 className="mt-5 font-serif text-3xl leading-snug sm:text-4xl">{installed ? "站点已安装" : "为声音留下来处，从这里开始。"}</h1>
       <p className="mt-4 max-w-2xl text-sm leading-8 text-[#d6e0d7]">{installed ? "初始化入口已锁定，已有配置与档案不会被覆盖。" : "连接后端、设置站点、创建管理员。安装只需完成一次，配置将持久保存在你的后端数据库中。"}</p>
     </header>
