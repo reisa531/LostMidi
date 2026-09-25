@@ -482,7 +482,8 @@ void ApiController::registerAdminRoutes() {
                 throw ApiError(400, "CANNOT_DISABLE_SELF", "You cannot remove your own super administrator access.");
             if (oldRole == "super_admin" && oldStatus == "active" && (role != "super_admin" || status != "active")) {
                 const auto count = tx.db->execSqlSync("SELECT count(*) AS n FROM admin_users WHERE role='super_admin' AND status='active'")[0]["n"].as<std::int64_t>();
-                if (count <= 1) throw ApiError(409, "LAST_SUPER_ADMIN", "At least one active super administrator must remain.");
+                if (count <= 1 && !auth_.hasEnvironmentCredentials())
+                    throw ApiError(409, "LAST_SUPER_ADMIN", "At least one active super administrator must remain.");
             }
             if (status == "invited") throw ApiError(400, "INVALID_INPUT", "Use the invitation flow to create an invited account.");
             tx.db->execSqlSync("UPDATE admin_users SET role=$2,status=$3,invitation_hash=NULL,invitation_expires_at=NULL "

@@ -11,8 +11,9 @@ import uuid
 from urllib.parse import urlsplit
 
 
-def midi_file():
-    events = bytes([0, 0x90, 60, 100, 0, 0xFF, 0x2F, 0])
+def midi_file(marker):
+    marker_bytes = marker.encode("ascii")
+    events = bytes([0, 0xFF, 0x01, len(marker_bytes)]) + marker_bytes + bytes([0, 0x90, 60, 100, 0, 0xFF, 0x2F, 0])
     return b"MThd" + struct.pack(">IHHH", 6, 0, 1, 96) + b"MTrk" + struct.pack(">I", len(events)) + events
 
 
@@ -113,7 +114,7 @@ def main():
     assert request(base + "/evidence/" + evidence["id"], token=admin_token, binary=True) == pdf
     assert request(base + "/evidence/" + evidence["id"], expected=401)["error"]["code"] == "UNAUTHORIZED"
 
-    midi_bytes = midi_file()
+    midi_bytes = midi_file(marker)
     change = propose(base + "/files", "POST", midi_bytes, "file.import", 200,
                      {"Content-Type": "application/octet-stream", "X-File-Name": "proof.mid",
                       "X-Entry-Revision": str(history["entry"]["revision"]), "X-Rights-Confirmed": "true"})
@@ -130,7 +131,26 @@ def main():
     assert request("/api/v1/midis/by-id/" + entry["public_id"], expected=404)["error"]["code"] == "MIDI_NOT_FOUND"
     approve(propose("/api/v1/admin/trash/midi/" + midi_id + "/restore", "POST", None, "midi.restore"))
     assert request("/api/v1/midis/by-id/" + entry["public_id"])["entry"]["id"] == midi_id
-    print("PASS: visitor read-only; roles; review publication, evidence, file import, deletion and restore")
+
+    rejected_name = "被驳回的人物 " + marker
+    rejected = propose("/api/v1/admin/people", "POST",
+                       {"display_name": rejected_name, "biography": None, "aliases": []}, "person.create", 201)
+    assert request("/api/v1/admin/changes/" + rejected + "/review", "POST",
+                   {"decision": "reject", "note": "isolated smoke"}, super_token)["status"] == "rejected"
+    assert not any(row["display_name"] == rejected_name for row in request(
+        "/api/v1/admin/people?page=1&pageSize=100", token=admin_token)["data"])
+
+    user_path = "/api/v1/admin/users/" + invitation["id"]
+    request(user_path, "PUT", {"role": "super_admin", "status": "active"}, super_token)
+    assert request("/api/v1/admin/session", token=admin_token)["role"] == "super_admin"
+    assert isinstance(request("/api/v1/admin/users", token=admin_token), list)
+    request(user_path, "PUT", {"role": "admin", "status": "active"}, super_token)
+    assert request("/api/v1/admin/session", token=admin_token)["role"] == "admin"
+    assert request("/api/v1/admin/users", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
+    request(user_path, "PUT", {"role": "admin", "status": "disabled"}, super_token)
+    assert request("/api/v1/admin/session", token=admin_token, expected=401)["error"]["code"] == "UNAUTHORIZED"
+    assert request("/api/v1/admin/login", "POST", {"username": username, "password": password}, expected=401)["error"]["code"] == "INVALID_CREDENTIALS"
+    print("PASS: visitor read-only; roles and revocation; approval and rejection; evidence, file import, deletion and restore")
 
 
 if __name__ == "__main__":
