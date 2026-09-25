@@ -6,6 +6,7 @@ import { saveHistoryAction } from "@/lib/admin/history-actions";
 import { uploadEvidenceAction } from "@/lib/admin/history-actions";
 import type { HistoricalSource, HistoryEdit, RecoveryEvent } from "@/lib/admin/history";
 import { ExternalSource } from "@/components/archive";
+import { MarkdownField } from "@/components/admin/markdown-field";
 
 type Selection = { kind: "source"; record?: HistoricalSource } | { kind: "event"; record?: RecoveryEvent };
 const inputClass = "mt-2 block w-full min-w-0 max-w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm";
@@ -50,10 +51,8 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
     recovered_at: localUTC(event?.recovered_at), recovered_by_name: event?.recovered_by_name ?? "", story: event?.story ?? "", evidence: event?.evidence ?? "",
   });
   const change = (name: keyof typeof values, value: string) => setValues(old => ({ ...old, [name]: value }));
-  const textarea = (name: "notes" | "story" | "evidence", title: string, required = false) => <label className="block text-sm">{title}（支持 Markdown）{required ? " *" : "（可留空）"}
-    <textarea className={inputClass} name={name} value={values[name]} onChange={event => change(name, event.target.value)} rows={name === "story" ? 7 : 5} required={required} maxLength={20000} />
-    <span className="mt-2 block text-xs text-muted">最多 20,000 UTF-8 字节，中文字符通常占 3 字节。</span>
-  </label>;
+  const textarea = (name: "notes" | "story" | "evidence", title: string, required = false) =>
+    <MarkdownField name={name} label={`${title}（支持 Markdown）${required ? " *" : ""}`} value={values[name]} onChange={value => change(name, value)} rows={name === "story" ? 7 : 5} required={required} disabled={pending || confirming} />;
 
   // React resets native controls even when an action returns a handled error.
   // Keep the selected person intact; successful saves redirect and remount this form.

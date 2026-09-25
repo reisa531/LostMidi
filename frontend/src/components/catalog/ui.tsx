@@ -18,7 +18,7 @@ export function PageHeader({ eyebrow, title, description, action }: { eyebrow: s
   return <header className="mb-7 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 max-w-2xl"><p className="eyebrow">{eyebrow}</p><h1 className="mb-3 mt-3 font-serif text-3xl tracking-tight sm:text-4xl">{title}</h1><p className="text-sm leading-7 text-muted">{description}</p></div>{action}</header>;
 }
 export function MetricGrid({ items }: { items: { label: string; value: number; note: string; href?: string }[] }) {
-  return <dl className={`grid grid-cols-2 gap-3 ${items.length > 4 ? "lg:grid-cols-6 sm:grid-cols-3" : "lg:grid-cols-4"}`}>
+  return <dl className={`grid grid-cols-2 gap-3 ${items.length > 4 ? "lg:grid-cols-6 sm:grid-cols-3" : items.length === 3 ? "sm:grid-cols-3" : "lg:grid-cols-4"}`}>
     {items.map(item => <div key={item.label} className="min-w-0 rounded-xl border border-line bg-white/70 px-4 py-4 sm:px-5"><dt className="text-xs text-muted">{item.label}</dt><dd className="my-2 text-3xl font-semibold tracking-tight text-accent tabular-nums [overflow-wrap:anywhere]">{item.href ? <Link href={item.href} className="hover:underline" aria-label={`${item.label} ${item.value}，查看详情`}>{item.value.toLocaleString("zh-CN")}</Link> : item.value.toLocaleString("zh-CN")}</dd><dd className="text-[11px] leading-5 text-muted">{item.note}</dd></div>)}
   </dl>;
 }
@@ -27,9 +27,6 @@ export function OverviewMetrics({ stats }: { stats: CatalogOverview["stats"] }) 
     { label: "MIDI 档案", value: stats.entries, note: "已收录的作品", href: "/midis" },
     { label: "人物", value: stats.people, note: "作者及参与者", href: "/people" },
     { label: "文件记录", value: stats.files, note: "所有关联文件" },
-    { label: "有文件的作品", value: stats.with_files, note: "按作品去重" },
-    { label: "可下载的作品", value: stats.downloadable, note: "按分发权限判定" },
-    { label: "历史来源", value: stats.sources, note: "不同的网站名称", href: "/map?by=source" },
   ]} />;
 }
 export function DataNote() {

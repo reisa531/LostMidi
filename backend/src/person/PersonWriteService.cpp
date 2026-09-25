@@ -46,7 +46,7 @@ PersonEdit PersonWriteService::save(std::int64_t id, PersonEdit edit) {
         if (edit.person.profile.size() > 50000) invalid();
         Json::Value profile; Json::CharReaderBuilder reader; std::string errors; std::istringstream input(edit.person.profile);
         if (!Json::parseFromStream(reader, input, &profile, &errors) || !profile.isObject()) invalid();
-        const std::set<std::string> allowedProfile{"pronunciation","otherNames","gender","birthText","birthCertainty","birthplace","residence","education","activePeriod","roles","aliasDetails","sites","timeline","sources","sameAs","works","collaborators","rights"};
+        const std::set<std::string> allowedProfile{"pronunciation","otherNames","gender","birthText","birthCertainty","birthplace","residence","education","activePeriod","activeTime","country","roles","aliasDetails","sites","timeline","sources","sameAs","works","collaborators","rights"};
         for (const auto& key : profile.getMemberNames()) {
             const auto& value = profile[key];
             if (!allowedProfile.contains(key)) invalid();

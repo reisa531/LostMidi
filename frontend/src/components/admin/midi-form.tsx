@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { MidiEntry } from "@/lib/api/types";
 import { saveMidiAction, type MidiSaveState } from "@/lib/admin/actions";
 import { createMidiWithFile, maxFileSize } from "@/lib/admin/files-actions";
+import { MarkdownField } from "@/components/admin/markdown-field";
 
 export function MidiForm({ entry, importEnabled = false, reviewRequired = false }: { entry?: MidiEntry; importEnabled?: boolean; reviewRequired?: boolean }) {
   const router = useRouter();
@@ -42,7 +43,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
   }, { error: "" });
   const [values, setValues] = useState({
     title: entry?.title ?? "", slug: entry?.slug ?? "", description: entry?.description ?? "",
-    estimated_year: entry?.estimated_year?.toString() ?? "", estimated_date: entry?.estimated_date ?? "", archive_status: entry?.archive_status ?? "uncertain",
+    estimated_date: entry?.estimated_date ?? "", archive_status: entry?.archive_status ?? "uncertain",
     copyright_status: entry?.copyright_status ?? "unknown", distribution_permission: entry?.distribution_permission ?? "unknown",
     license: entry?.license ?? "", rights_holder: entry?.rights_holder ?? "",
   });
@@ -74,8 +75,9 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
     <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>
       <p className="text-xs leading-6 text-muted">Slug 使用小写字母、数字和词间连字符。更改后旧地址将失效。标题最多 300 UTF-8 字节，中文字符通常占 3 字节。</p>
-      <label className="block text-sm">描述（支持 Markdown）<textarea name="description" rows={7} maxLength={20000} className={inputClass} value={values.description} onChange={event => change("description", event.target.value)} /><span className="mt-2 block text-xs text-muted">最多 20,000 UTF-8 字节。可用 `## 小节`、列表、链接和表格。</span></label>
-      <div className="grid gap-6 md:grid-cols-2"><div className="space-y-4"><label className="block text-sm">推测时间 · 年份（仅知道年份时填写）<input className={inputClass} type="number" min={1} max={9999} step={1} name="estimated_year" value={values.estimated_year} onChange={event => change("estimated_year", event.target.value)} /></label><label className="block text-sm">推测时间 · 日期（知道具体日期时填写）<input className={inputClass} type="date" name="estimated_date" value={values.estimated_date} onChange={event => { change("estimated_date", event.target.value); if (event.target.value) change("estimated_year", event.target.value.slice(0, 4)); }} /><span className="mt-2 block text-xs text-muted">旧记录中的年份会原样保留，不会补成 1 月 1 日。未知时两项留空。</span></label></div>
+      <MarkdownField name="description" label="描述（支持 Markdown）" rows={7} value={values.description} onChange={value => change("description", value)} disabled={pending || state.retryOnly} />
+      <input type="hidden" name="estimated_year" value={values.estimated_date ? values.estimated_date.slice(0, 4) : !entry?.estimated_date ? entry?.estimated_year?.toString() ?? "" : ""} />
+      <div className="grid gap-6 md:grid-cols-2"><label className="block text-sm">推测时间 · 日期<input className={inputClass} type="date" name="estimated_date" value={values.estimated_date} onChange={event => change("estimated_date", event.target.value)} /></label>
       {select("archive_status", "档案状态", [["uncertain","尚待确认"],["lost","待寻回"],["partially_recovered","部分寻回"],["archived","已归档"]])}</div>
       <div className="grid gap-6 md:grid-cols-2">
       {select("copyright_status", "版权状态", [["unknown","未知"],["public_domain","公有领域"],["licensed","已许可"],["copyrighted","受版权保护"]])}
