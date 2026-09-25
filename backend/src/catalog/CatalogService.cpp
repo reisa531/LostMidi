@@ -6,7 +6,7 @@ namespace {
     throw ApiError(400, "INVALID_INPUT", message);
 }
 bool validStatus(const std::string& status) {
-    return status == "archived" || status == "partially_recovered" || status == "lost" || status == "uncertain";
+    return status == "archived" || status == "verifying" || status == "lost";
 }
 bool validUtf8(const std::string& text) {
     for (std::size_t i = 0; i < text.size();) {

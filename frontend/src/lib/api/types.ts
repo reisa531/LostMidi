@@ -1,4 +1,4 @@
-export type ArchiveStatus = "archived" | "partially_recovered" | "lost" | "uncertain";
+export type ArchiveStatus = "archived" | "verifying" | "lost";
 export interface Credit { person_id: string; display_name: string; role: string }
 export interface MidiEntry {
   revision: number;

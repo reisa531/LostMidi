@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api/client";
 import { CatalogQueryError, catalogHref, getCatalogEntries, getCatalogGroups, mapEntryQuery, readMapQuery, type SearchParams } from "@/lib/api/catalog";
 import { Unavailable } from "@/components/archive";
 import { CatalogFilters, CatalogPagination, CatalogTable, DataNote, EmptyState, InvalidQuery, PageHeader } from "@/components/catalog/ui";
+import { getPersonById } from "@/lib/api/person";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "关系图谱 · 档案分组", alternates: { canonical: "/map" } };
@@ -27,7 +28,12 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   const [groups, entries] = data;
   const selectedGroup = groups.data.find(group => query.missing ? group.key === "" : group.key === query.group);
   const personName = entries?.data.flatMap(entry => entry.credits).find(credit => credit.person_id === query.group)?.display_name;
-  const selectedLabel = query.missing ? (query.by === "author" ? "未署名" : "来源待补") : selectedGroup?.label ?? (query.by === "source" ? query.group : personName ?? `人物 ID ${query.group}`);
+  let selectedPersonName = personName;
+  if (query.by === "author" && query.group && !selectedGroup && !selectedPersonName) {
+    try { selectedPersonName = (await getPersonById(query.group)).person.display_name; }
+    catch { /* Retain the ID label if this person was removed between queries. */ }
+  }
+  const selectedLabel = query.missing ? (query.by === "author" ? "未署名" : "来源待补") : selectedGroup?.label ?? (query.by === "source" ? query.group : selectedPersonName ?? `人物 ID ${query.group}`);
   const clearSelection = { ...query, group: undefined, missing: undefined, page: undefined };
   return <>
     <PageHeader eyebrow="档案 / 关系图谱" title="关系图谱 · 档案分组" description="这是一份作品与来处的索引。按作者或历史网站归拢记录，查看各组的文件留存与下载权限情况。" />

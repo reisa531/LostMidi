@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <set>
+#include <sstream>
 #include <string_view>
 
 namespace lostmidi::recovery {
@@ -201,10 +203,19 @@ SourceWriteResult RecoveryWriteService::saveSource(std::int64_t midiId, std::int
     writeIds(midiId, sourceId, revision);
     requiredText(source.websiteName, 300);
     optionalText(source.notes, 20000);
-    if (source.sourceType != "original_site" && source.sourceType != "forum" && source.sourceType != "mailing_list" &&
-        source.sourceType != "archive" && source.sourceType != "search_index" &&
-        source.sourceType != "personal_collection" && source.sourceType != "other")
-        invalid("Unknown historical source type.");
+    requiredText(source.sourceType, 2000);
+    std::set<std::string> selectedSourceTypes;
+    std::istringstream sourceTypes(source.sourceType);
+    std::string sourceType;
+    while (std::getline(sourceTypes, sourceType, ',')) {
+        if (sourceType.empty() || sourceType.size() > 100 ||
+            sourceType.find_first_of("\r\n\t\0", 0, 4) != std::string::npos ||
+            sourceType.front() == ' ' || sourceType.back() == ' ' ||
+            !selectedSourceTypes.insert(sourceType).second)
+            invalid("Invalid or repeated historical source type label.");
+    }
+    if (selectedSourceTypes.empty() || selectedSourceTypes.size() > 20 || source.sourceType.back() == ',')
+        invalid("Select one to twenty historical source type labels.");
     if (source.credibility < 1 || source.credibility > 5) invalid("Credibility must be between 1 and 5.");
     url(source.originalUrl);
     url(source.waybackUrl);

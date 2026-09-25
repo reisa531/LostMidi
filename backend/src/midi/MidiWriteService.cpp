@@ -44,7 +44,7 @@ void MidiWriteService::validate(MidiEntry& entry) {
             throw ApiError(400, "INVALID_INPUT", "Estimated year and date must agree.");
         entry.estimatedYear = year;
     }
-    if (!oneOf(entry.archiveStatus, {"archived", "partially_recovered", "lost", "uncertain"}) ||
+    if (!oneOf(entry.archiveStatus, {"archived", "verifying", "lost"}) ||
         !entry.copyrightStatus || !oneOf(*entry.copyrightStatus, {"unknown", "public_domain", "licensed", "copyrighted"}) ||
         !entry.distributionPermission || !oneOf(*entry.distributionPermission, {"unknown", "permission_granted", "metadata_only", "restricted"}))
         throw ApiError(400, "INVALID_INPUT", "Invalid archive or rights status.");

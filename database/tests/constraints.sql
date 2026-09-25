@@ -6,6 +6,7 @@ DECLARE
     entry_id BIGINT;
     contributor_id BIGINT;
     recovery_id BIGINT;
+    article_id UUID;
 BEGIN
     INSERT INTO midi_entries (slug, title) VALUES ('schema-constraint-test', 'Constraint test')
         RETURNING id INTO entry_id;
@@ -94,6 +95,20 @@ BEGIN
     IF (SELECT recovered_by FROM recovery_events WHERE id = recovery_id) IS NOT NULL THEN
         RAISE EXCEPTION 'Recovery event must survive contributor removal without dangling attribution';
     END IF;
+
+    INSERT INTO articles(title,body_markdown,status,author_username)
+        VALUES ('Test article','# Markdown body','published','constraint-test') RETURNING public_id INTO article_id;
+    INSERT INTO article_midis(article_id,midi_id) VALUES(article_id,entry_id);
+    UPDATE articles SET title='Updated article' WHERE public_id=article_id;
+    IF (SELECT revision FROM articles WHERE public_id=article_id) <> 2 THEN
+        RAISE EXCEPTION 'Article update must increment its revision';
+    END IF;
+    BEGIN
+        DELETE FROM midi_entries WHERE id=entry_id;
+        RAISE EXCEPTION 'Related MIDI cannot be purged while an article references it';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+    DELETE FROM articles WHERE public_id=article_id;
 
     DELETE FROM midi_entries WHERE id = entry_id;
     IF EXISTS (SELECT 1 FROM midi_files WHERE midi_id = entry_id)

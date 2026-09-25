@@ -43,7 +43,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
   }, { error: "" });
   const [values, setValues] = useState({
     title: entry?.title ?? "", slug: entry?.slug ?? "", description: entry?.description ?? "",
-    estimated_date: entry?.estimated_date ?? "", archive_status: entry?.archive_status ?? "uncertain",
+    estimated_date: entry?.estimated_date ?? "", archive_status: entry?.archive_status ?? "lost",
     copyright_status: entry?.copyright_status ?? "unknown", distribution_permission: entry?.distribution_permission ?? "unknown",
     license: entry?.license ?? "", rights_holder: entry?.rights_holder ?? "",
   });
@@ -78,7 +78,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       <MarkdownField name="description" label="描述（支持 Markdown）" rows={7} value={values.description} onChange={value => change("description", value)} disabled={pending || state.retryOnly} />
       <input type="hidden" name="estimated_year" value={values.estimated_date ? values.estimated_date.slice(0, 4) : !entry?.estimated_date ? entry?.estimated_year?.toString() ?? "" : ""} />
       <div className="grid gap-6 md:grid-cols-2"><label className="block text-sm">推测时间 · 日期<input className={inputClass} type="date" name="estimated_date" value={values.estimated_date} onChange={event => change("estimated_date", event.target.value)} /></label>
-      {select("archive_status", "档案状态", [["uncertain","尚待确认"],["lost","待寻回"],["partially_recovered","部分寻回"],["archived","已归档"]])}</div>
+      {select("archive_status", "档案状态", [["lost","待寻回"],["verifying","验证中"],...(!reviewRequired ? [["archived","已归档"]] as [string,string][] : [])])}</div>
       <div className="grid gap-6 md:grid-cols-2">
       {select("copyright_status", "版权状态", [["unknown","未知"],["public_domain","公有领域"],["licensed","已许可"],["copyrighted","受版权保护"]])}
       {select("distribution_permission", "分发许可", [["unknown","未知"],["permission_granted","已获授权"],["metadata_only","仅元数据"],["restricted","受限"]])}

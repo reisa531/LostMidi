@@ -6,6 +6,8 @@ import { Credits, Status, Section, Unavailable, ExternalSource, dateLabel, copyr
 import { MidiDownload } from "@/components/midi-download";
 import type { Metadata } from "next";
 import { Markdown, markdownSummary } from "@/components/markdown";
+import { getMidiArticles } from "@/lib/api/articles";
+import { RelatedArticles } from "@/components/related-articles";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -15,7 +17,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     const detail = stableId ? await getMidiByPublicId(slug) : await getMidiBySlug(slug);
     const title = detail.entry.title;
     const description = markdownSummary(detail.entry.description || `查看 ${title} 的 MIDI 作品、署名、历史来源与寻回记录。`, 155);
-    return { title, description, alternates: { canonical: `/midis/${detail.entry.public_id}` }, openGraph: { type: "article", title, description }, twitter: { card: "summary", title, description } };
+    return { title, description, alternates: { canonical: `/midis/${detail.entry.slug}` }, openGraph: { type: "article", title, description }, twitter: { card: "summary", title, description } };
   } catch { return { title: "档案详情", robots: { index: false, follow: false } }; }
 }
 export default async function MidiDetailPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -28,12 +30,13 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     if (error instanceof ApiError) return <Unavailable />;
     throw error;
   }
-  if (!stableId) permanentRedirect(`/midis/${detail.entry.public_id}`);
+  if (stableId) permanentRedirect(`/midis/${detail.entry.slug}`);
+  const relatedArticles = await getMidiArticles(detail.entry.public_id);
   const { entry, credits, historical_sources, recovery_events, files } = detail;
   const structuredData = {
     "@context": "https://schema.org", "@type": "MusicComposition", name: entry.title,
     description: entry.description ? markdownSummary(entry.description, 155) : undefined, dateCreated: entry.estimated_date ?? (entry.estimated_year ? String(entry.estimated_year) : undefined),
-    url: `${process.env.ADMIN_ORIGIN ?? ""}/midis/${detail.entry.public_id}`,
+    url: `${process.env.ADMIN_ORIGIN ?? ""}/midis/${detail.entry.slug}`,
     author: credits.map(credit => ({ "@type": "Person", name: credit.display_name })),
   };
   return <article className="mx-auto max-w-3xl">
@@ -77,5 +80,6 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
       <div><dt className="text-muted">许可证</dt><dd>{entry.license ?? "尚未确认"}</dd></div>
       <div><dt className="text-muted">权利人</dt><dd>{entry.rights_holder ?? "尚未确认"}</dd></div>
     </dl></Section>
+    <RelatedArticles articles={relatedArticles} />
   </article>;
 }

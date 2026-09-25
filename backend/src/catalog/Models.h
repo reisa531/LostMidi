@@ -45,7 +45,7 @@ struct Group {
 };
 struct Stats {
     std::int64_t entries = 0, people = 0, files = 0, withFiles = 0, downloadable = 0, sources = 0;
-    std::int64_t archived = 0, partiallyRecovered = 0, lost = 0, uncertain = 0;
+    std::int64_t archived = 0, verifying = 0, lost = 0;
 };
 struct Overview {
     Stats stats;

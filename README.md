@@ -4,17 +4,17 @@
 
 这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
 
-部署与运维请从 [RUN.md](RUN.md) 开始：包含环境配置、启动验收、服务器访问、更新、备份恢复与故障排查。
+部署与运维请从 [RUN.md](RUN.md) 开始；本批改动的部署顺序与验收项见 [发布验收清单](docs/release-checklist.md)。
 
-前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。阶段 1–3 已由用户确认手动部署到迁移 011；当前工作区要求备份后执行全部迁移至 `015_content_reviews.sql`：012 增加来源与证据、013 增加多管理员角色账号、014 增加稳定公开 UUID、015 增加审核申请。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
+前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。部署当前工作区前须备份并运行 `database/migrate.sh` 应用全部迁移至 `020_articles.sql`；其中 016 增加人物资料与推测日期，017–018 支持历史来源的多选及自定义文本标签，019 调整档案状态、账号注册与编号分配。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
 ## 当前界面与建档流程
 
-前台由首页总览、MIDI、搜索、作者、寻回进度、关系图谱六个入口组成，“关于我们”和更新日志位于页脚。关系图谱按作者或历史来源浏览作品，并分别统计有文件和符合下载权限的作品。后台工作台集中展示待完善记录、最近修改和快捷新增。
+前台由首页总览、MIDI、搜索、作者、寻回进度、关系图谱和关于我们七个页首入口组成，更新日志位于页脚。关系图谱按作者或历史来源浏览作品，并分别统计有文件和符合下载权限的作品。后台工作台集中展示待完善记录、最近修改和快捷新增。
 
 公开更新日志位于 `/changelog`。每次版本推送必须新增对应日志并同步版本号；首次克隆后运行 `node scripts/install-release-hook.mjs` 安装推送检查，详细规则见 [更新发布](RUN.md#72-更新发布)。日志随应用部署，不依赖额外数据库或外部服务。
 
-新增 MIDI 档案时可直接选择文件并确认公开分发，一次保存资料与文件；也可仅建资料。校验失败保留输入，网络中断可安全重试同一请求。关闭导入时隐藏文件输入，资料建档仍可用。编辑页可将档案或人物移入回收站，并在后台恢复；关联作品、历史记录和 MIDI 对象会保留。站内搜索支持作品、slug、人物、别名与历史来源；Sitemap 按分页列出目录详情。实施范围见 [路线图](docs/roadmap.md)。
+新增 MIDI 档案时可直接选择文件并确认公开分发，一次保存资料与文件；也可仅建资料。单个文件上限为 15 MB，不限制音乐文件格式。校验失败保留输入，网络中断可安全重试同一请求。关闭导入时隐藏文件输入，资料建档仍可用。编辑页可将档案或人物移入回收站，并在后台恢复；关联作品、历史记录和文件对象会保留。站内搜索支持作品、slug、人物、别名与历史来源，作品和人物结果分别分页；Sitemap 按分页列出目录详情。实施范围见 [路线图](docs/roadmap.md)。
 
 ## 历史交付：删除功能（2026-09-25）
 
@@ -205,7 +205,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 迁移使用 Git Bash 执行上述 sh 命令，确保 PostgreSQL bin 在 PATH。后端不自动读取 .env：Compose 注入环境，原生运行显式设置。Next.js 原生开发读取 frontend/.env.local。
 
-原生新站在可信终端安全保存生成的安装令牌，在 `frontend/.env.local` 配置 `BACKEND_API_URL`、`ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`，启动后访问 `/install`；成功后单独登录，可移除后端令牌并重启。更新已有数据库时先执行全部待应用迁移至 `015_content_reviews.sql`，第一次启动新版仍保留完整环境管理员凭据，确认 legacy 标记写入后再改配置。不要用清空旧站凭据的方式进入安装页。
+原生新站在可信终端安全保存生成的安装令牌，在 `frontend/.env.local` 配置 `BACKEND_API_URL`、`ADMIN_ORIGIN` 与 `ADMIN_COOKIE_SECURE`，启动后访问 `/install`；成功后单独登录，可移除后端令牌并重启。更新已有数据库时先执行全部待应用迁移至 `020_articles.sql`，第一次启动新版仍保留完整环境管理员凭据，确认 legacy 标记写入后再改配置。不要用清空旧站凭据的方式进入安装页。
 
 ## Environment Variables
 
@@ -249,7 +249,7 @@ $env:INSTALLATION_TOKEN=(python -c "import secrets; print(secrets.token_urlsafe(
 
 详见 [数据库设计说明](docs/database.md)。七张领域表：midi_entries、people、person_aliases、midi_credits、midi_files、historical_sources、recovery_events；另有 admin_sessions、site_installation 与 midi_import_objects（导入 journal）。
 
-迁移 004–008 的历史用途见下文。009 提供目录文本搜索索引，010 增加 MIDI/人物回收站和管理员操作审计，011 为导入对象清理记录重试状态；012 增加来源证据，013 增加多用户角色，014 增加公开 UUID，015 增加内容审核。启动及 `/ready` 检查最新结构，即使关闭文件上传也必须先迁移至 015。升级前备份并先做独立恢复演练，使用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 执行待应用迁移，不修改旧迁移、不使用要求空库的 `.tools` 临时脚本。
+迁移 004–008 的历史用途见下文。009 提供目录文本搜索索引，010 增加 MIDI/人物回收站和管理员操作审计，011 为导入对象清理记录重试状态；012 增加来源证据，013 增加多用户角色，014 增加公开 UUID，015 增加内容审核，016 增加人物资料与推测日期，017–018 允许来源类型多选及自定义文本标签。更新当前应用前应迁移至 018。升级前备份并先做独立恢复演练，使用现有幂等 `database/migrate.sh`、`SEED_DEMO=false` 执行待应用迁移，不修改旧迁移、不使用要求空库的 `.tools` 临时脚本。
 
 `site_installation` 至多一行 `id=1`，保存 `site_name`、`site_description` 和 `auth_source`（database 或 environment）。database 时保存用户名及随机盐 PBKDF2-HMAC-SHA256、600,000 次哈希；environment 时 username/password_hash 均为 NULL。事务和主键保证安装并发只有一个成功，提交确认后返回；移除令牌或重启不清除锁，无重装/reset 接口。
 

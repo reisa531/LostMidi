@@ -84,5 +84,26 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
         "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='recovery_events'::regclass AND attname='recovered_by_name' AND attnum>0 AND NOT attisdropped) AS recovered_by_name");
     if (!profile[0]["applied"].as<bool>() || !profile[0]["estimated_date"].as<bool>() || !profile[0]["profile"].as<bool>() || !profile[0]["recovered_by_name"].as<bool>())
         throw ApiError(503, "DATABASE_NOT_READY", "Required profile and date migration is not applied.");
+    const auto sourceTypes = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='017_multiple_source_types.sql') AS multiple, "
+        "EXISTS(SELECT 1 FROM schema_migrations WHERE version='018_freeform_source_type_labels.sql') AS freeform");
+    if (!sourceTypes[0]["multiple"].as<bool>() || !sourceTypes[0]["freeform"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required source type migrations are not applied.");
+    const auto accountAndStatus = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='019_archive_status_and_registration.sql') AS applied, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='admin_users'::regclass AND attname='email' AND NOT attisdropped) AS email, "
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='admin_change_requests'::regclass AND attname='entity_public_id' AND NOT attisdropped) AS stable_review, "
+        "to_regprocedure('allocate_archive_id(text)') IS NOT NULL AS allocator");
+    if (!accountAndStatus[0]["applied"].as<bool>() || !accountAndStatus[0]["email"].as<bool>() ||
+        !accountAndStatus[0]["stable_review"].as<bool>() || !accountAndStatus[0]["allocator"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required archive and account migration is not applied.");
+    const auto articles = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='020_articles.sql') AS applied, "
+        "to_regclass('articles') IS NOT NULL AS articles, "
+        "to_regclass('article_midis') IS NOT NULL AS midis, "
+        "to_regclass('article_people') IS NOT NULL AS people");
+    if (!articles[0]["applied"].as<bool>() || !articles[0]["articles"].as<bool>() ||
+        !articles[0]["midis"].as<bool>() || !articles[0]["people"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required articles migration is not applied.");
 }
 }  // namespace lostmidi

@@ -23,6 +23,7 @@ public:
     bool valid(const std::string& hash, const std::string& identity);
     void remove(const std::string& hash);
     std::optional<Credentials> credentials(const std::string& username);
+    std::optional<Credentials> disabledCredentials(const std::string& username);
     std::optional<Credentials> credentialsById(const std::string& userId);
     std::optional<SessionPrincipal> session(const std::string& hash);
     bool hasDatabaseCredentials();
@@ -38,6 +39,7 @@ public:
     SessionPrincipal requireSuperAdmin(const std::string& authorization);
     void logout(const std::string& authorization);
     bool hasEnvironmentCredentials() const;
+    bool isEnvironmentUsername(const std::string& username) const;
 private:
     std::optional<Credentials> credentials(const std::string& username);
     std::string tokenFrom(const std::string& authorization) const;

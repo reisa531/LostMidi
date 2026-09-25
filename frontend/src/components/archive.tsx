@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ArchiveStatus, Credit } from "@/lib/api/types";
 
 const statuses: Record<ArchiveStatus, string> = {
-  archived: "已归档", partially_recovered: "部分寻回", lost: "待寻回", uncertain: "尚待确认",
+  archived: "已归档", verifying: "验证中", lost: "待寻回",
 };
 const roles: Record<string, string> = { composer: "作曲", arranger: "编曲", sequencer: "音序制作", contributor: "贡献者" };
 export function roleName(role: string) { return roles[role] ?? role; }

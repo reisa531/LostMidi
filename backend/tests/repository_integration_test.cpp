@@ -84,6 +84,8 @@ TEST(PostgresIntegration, MultipleAdministratorAccountsCarryLiveRoles) {
     EXPECT_EQ(service.requirePrincipal("Bearer " + token).role, "super_admin");
     db->execSqlSync("UPDATE admin_users SET status='disabled' WHERE username=$1", username);
     expectApiError([&] { service.require("Bearer " + token); }, 401, "UNAUTHORIZED");
+    expectApiError([&] { service.login(username, "integration-only-password"); }, 403, "ACCOUNT_DISABLED");
+    expectApiError([&] { service.login(username, "wrong-password"); }, 401, "INVALID_CREDENTIALS");
 }
 
 TEST(PostgresIntegration, PublicUuidIdentifiersRemainStableAcrossSlugChanges) {
@@ -93,7 +95,7 @@ TEST(PostgresIntegration, PublicUuidIdentifiersRemainStableAcrossSlugChanges) {
     const auto slug = "public-id-test-" + auth::randomToken().substr(0, 12);
     struct Cleanup { drogon::orm::DbClientPtr db; std::string slug; ~Cleanup() { try { db->execSqlSync("DELETE FROM midi_entries WHERE slug=$1 OR slug=$2", slug, slug + "-renamed"); db->execSqlSync("DELETE FROM people WHERE display_name=$1", slug); } catch (...) {} } } cleanup{db,slug};
     midi::PostgresMidiRepository midis(db); midi::MidiWriteService writer(midis);
-    auto entry = writer.create(midi::MidiEntry{0,slug,"Public ID test",{}, {},"uncertain",{}, {},"unknown",{}, {},"metadata_only"});
+    auto entry = writer.create(midi::MidiEntry{0,slug,"Public ID test",{}, {},"lost",{}, {},"unknown",{}, {},"metadata_only"});
     ASSERT_FALSE(entry.publicId.empty());
     EXPECT_EQ(midis.findByPublicId(entry.publicId)->slug, slug);
     entry.slug += "-renamed"; entry.revision = 1;
@@ -104,6 +106,30 @@ TEST(PostgresIntegration, PublicUuidIdentifiersRemainStableAcrossSlugChanges) {
     const auto saved = peopleWriter.save(0, person);
     ASSERT_FALSE(saved.person.publicId.empty());
     EXPECT_EQ(people.findPersonByPublicId(saved.person.publicId)->id, saved.person.id);
+}
+
+TEST(PostgresIntegration, PersonProfilePreservesLegacyFieldsAndRejectsStaleRevision) {
+    const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
+    if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a migrated disposable test database.";
+    auto db = drogon::orm::DbClient::newPgClient(url, 1);
+    db->setTimeout(5.0);
+    const auto name = "person-profile-test-" + auth::randomToken();
+    struct Cleanup { drogon::orm::DbClientPtr db; std::string name; ~Cleanup() { try { db->execSqlSync("DELETE FROM people WHERE display_name=$1", name); } catch (...) {} } } cleanup{db, name};
+    person::PostgresPersonRepository repository(db);
+    person::PersonWriteService service(repository);
+    person::PersonEdit draft; draft.person.displayName = name;
+    draft.person.profile = R"({"pronunciation":"legacy","country":null})";
+    draft.profileProvided = true;
+    const auto created = service.save(0, draft);
+    auto edit = service.get(created.person.id);
+    edit.person.profile = R"({"pronunciation":"legacy","country":"日本","activeTime":"1998—2005"})";
+    edit.profileProvided = true;
+    const auto saved = service.save(created.person.id, edit);
+    EXPECT_NE(saved.person.profile.find("legacy"), std::string::npos);
+    EXPECT_NE(saved.person.profile.find("日本"), std::string::npos);
+    edit.person.profile = R"({"country":"changed"})";
+    expectApiError([&] { service.save(created.person.id, edit); }, 409, "STALE_PERSON");
+    EXPECT_EQ(service.get(created.person.id).person.profile, saved.person.profile);
 }
 
 TEST(PostgresIntegration, ArchiveWriteConflictsPreserveStoredData) {
@@ -119,7 +145,7 @@ TEST(PostgresIntegration, ArchiveWriteConflictsPreserveStoredData) {
     midi::PostgresMidiRepository repository(db);
     midi::MidiWriteService service(repository);
     midi::MidiEntry draft;
-    draft.title = "Integration archive"; draft.slug = slug; draft.archiveStatus = "uncertain";
+    draft.title = "Integration archive"; draft.slug = slug; draft.archiveStatus = "lost";
     draft.copyrightStatus = "unknown"; draft.distributionPermission = "metadata_only";
     const auto created = service.create(draft);
     EXPECT_EQ(created.revision, 1);
@@ -199,7 +225,7 @@ TEST(PostgresIntegration, RecoveryCrudRollbackAndSharedRevision) {
     expectApiError([&] { service.saveEvent(other, recovered.event.id, 1, event); }, 404, "RECOVERY_EVENT_NOT_FOUND");
     expectApiError([&] { service.deleteEvent(other, recovered.event.id, 1); }, 404, "RECOVERY_EVENT_NOT_FOUND");
     EXPECT_EQ(service.getHistory(other).revision, 1);
-    EXPECT_EQ(midis.findById(id)->archiveStatus, "uncertain");
+    EXPECT_EQ(midis.findById(id)->archiveStatus, "lost");
     EXPECT_TRUE(people.creditsFor(id).empty());
     auto creditResult = credits.saveCredits(id, {5, {}});
     EXPECT_EQ(creditResult.revision, 6);

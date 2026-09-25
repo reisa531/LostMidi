@@ -15,10 +15,9 @@ export type MapQuery = {
   page: number; pageSize: number; status?: ArchiveStatus; sort: "updated" | "title";
 };
 export const archiveStates: { value: ArchiveStatus; label: string; description: string }[] = [
-  { value: "archived", label: "已归档", description: "已标记为完成归档" },
-  { value: "partially_recovered", label: "部分寻回", description: "已找回部分资料，仍待补全" },
-  { value: "lost", label: "待寻回", description: "已有线索，作品仍待寻回" },
-  { value: "uncertain", label: "尚待确认", description: "现有资料还不足以判断" },
+  { value: "lost", label: "待寻回", description: "等待寻回作品与线索" },
+  { value: "verifying", label: "验证中", description: "正在核实作品资料" },
+  { value: "archived", label: "已归档", description: "资料已经核实归档" },
 ];
 export class CatalogQueryError extends Error {
   constructor() { super("筛选参数无效，请检查页码或重新选择筛选条件。"); }

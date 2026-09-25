@@ -82,7 +82,7 @@ PersonEdit PostgresPersonRepository::save(std::int64_t id, const PersonEdit& edi
     const auto rows = id
         ? tx.db->execSqlSync("UPDATE people SET display_name=$1, biography=NULLIF($2,''),summary=CASE WHEN $3 THEN NULLIF($4,'') ELSE summary END,profile=CASE WHEN $5 THEN $6::jsonb ELSE profile END WHERE id=$7 AND revision=$8 AND deleted_at IS NULL RETURNING *",
             edit.person.displayName, edit.person.biography.value_or(""), edit.summaryProvided, edit.person.summary.value_or(""), edit.profileProvided, edit.person.profile, id, edit.person.revision)
-        : tx.db->execSqlSync("INSERT INTO people(display_name,biography,summary,profile) VALUES($1,NULLIF($2,''),NULLIF($3,''),$4::jsonb) RETURNING *",
+        : tx.db->execSqlSync("INSERT INTO people(id,display_name,biography,summary,profile) VALUES(public.allocate_archive_id('person'),$1,NULLIF($2,''),NULLIF($3,''),$4::jsonb) RETURNING *",
             edit.person.displayName, edit.person.biography.value_or(""), edit.person.summary.value_or(""), edit.person.profile);
     if (rows.empty()) {
         if (tx.db->execSqlSync("SELECT 1 FROM people WHERE id=$1 AND deleted_at IS NULL", id).empty())

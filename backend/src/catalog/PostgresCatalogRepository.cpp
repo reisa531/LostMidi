@@ -153,14 +153,14 @@ Overview PostgresCatalogRepository::overview() {
         "count(*) FILTER(WHERE EXISTS(SELECT 1 FROM midi_files f WHERE f.midi_id=m.id)) AS with_files,"
         "count(*) FILTER(WHERE EXISTS(SELECT 1 FROM midi_files f WHERE f.midi_id=m.id AND " + downloadable + ")) AS downloadable,"
         "count(*) FILTER(WHERE m.archive_status='archived') AS archived,"
-        "count(*) FILTER(WHERE m.archive_status='partially_recovered') AS partially_recovered,"
-        "count(*) FILTER(WHERE m.archive_status='lost') AS lost,"
-        "count(*) FILTER(WHERE m.archive_status='uncertain') AS uncertain FROM midi_entries m WHERE m.deleted_at IS NULL");
+        "count(*) FILTER(WHERE m.archive_status='verifying') AS verifying,"
+        "count(*) FILTER(WHERE m.archive_status='lost') AS lost "
+        "FROM midi_entries m WHERE m.deleted_at IS NULL");
     const auto& row = rows[0];
     result.stats = {row["entries"].as<std::int64_t>(), row["people"].as<std::int64_t>(), row["files"].as<std::int64_t>(),
         row["with_files"].as<std::int64_t>(), row["downloadable"].as<std::int64_t>(), row["sources"].as<std::int64_t>(),
-        row["archived"].as<std::int64_t>(), row["partially_recovered"].as<std::int64_t>(),
-        row["lost"].as<std::int64_t>(), row["uncertain"].as<std::int64_t>()};
+        row["archived"].as<std::int64_t>(), row["verifying"].as<std::int64_t>(),
+        row["lost"].as<std::int64_t>()};
     for (const auto& recent : snapshot.exec("SELECT " + entryColumns + " FROM midi_entries m WHERE m.deleted_at IS NULL ORDER BY m.updated_at DESC,m.id DESC LIMIT 6"))
         result.recent.push_back(entryFrom(recent));
     for (const auto& attention : snapshot.exec("SELECT " + entryColumns + " FROM midi_entries m "

@@ -17,7 +17,7 @@ public:
 };
 midi::MidiEntry draft() {
     midi::MidiEntry e;
-    e.title = "  Example  "; e.slug = "example"; e.archiveStatus = "uncertain";
+    e.title = "  Example  "; e.slug = "example"; e.archiveStatus = "lost";
     e.copyrightStatus = "unknown"; e.distributionPermission = "metadata_only";
     return e;
 }
@@ -131,7 +131,7 @@ TEST(RecoveryWrite, ValidatesUrlsAndTextBeforePersistence) {
 TEST(RecoveryWrite, ValidatesProvenanceTypeCredibilityAndVerificationTime) {
     RecoveryWriter writer; recovery::RecoveryWriteService service(writer);
     recovery::HistoricalSource source; source.websiteName = "Archive";
-    source.sourceType = "not-a-source";
+    source.sourceType = "";
     EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
     source.sourceType = "archive"; source.credibility = 0;
     EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
@@ -145,6 +145,14 @@ TEST(RecoveryWrite, ValidatesProvenanceTypeCredibilityAndVerificationTime) {
     EXPECT_EQ(saved.source.credibility, 5);
     EXPECT_EQ(saved.source.checkedAt, "2026-02-28T12:00:00.123000Z");
     EXPECT_EQ(writer.writes, 1);
+    source.sourceType = "forum,archive";
+    EXPECT_EQ(service.saveSource(1, 0, 1, source).source.sourceType, "forum,archive");
+    source.sourceType = "forum,forum";
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
+    source.sourceType = "视觉小说,archive.org";
+    EXPECT_EQ(service.saveSource(1, 0, 1, source).source.sourceType, "视觉小说,archive.org");
+    source.sourceType = "forum,";
+    EXPECT_THROW(service.saveSource(1, 0, 1, source), ApiError);
 }
 TEST(RecoveryWrite, StrictCalendarAndMicrosecondOrdering) {
     RecoveryWriter writer; recovery::RecoveryWriteService service(writer);

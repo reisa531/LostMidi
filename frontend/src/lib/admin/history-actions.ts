@@ -92,6 +92,10 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
     // Only these flat writable fields reach the API; deletion sends revision alone.
     let body: Record<string, string | number | null> = { revision };
     if (operation === "save" && kind === "source") {
+      const sourceTypes = text(form, "source_type").split(",");
+      if (sourceTypes.length > 20 || sourceTypes.some(type => !type || type !== type.trim() || /[\r\n\t\0]/.test(type) || new TextEncoder().encode(type).length > 100) ||
+          new Set(sourceTypes).size !== sourceTypes.length || new TextEncoder().encode(text(form, "source_type")).length > 2000)
+        throw new InputError("来源类型至少一项、最多 20 项；每项不能含逗号，且最多 100 UTF-8 字节。");
       const first = utcOf(form, "first_seen_at", "首次记录时间");
       const last = utcOf(form, "last_seen_at", "最后记录时间");
       if (first && last && sortableUTC(first) > sortableUTC(last))

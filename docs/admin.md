@@ -55,7 +55,7 @@
 
 ## 一次性安装 API 与页面
 
-部署者先准备数据库连接并执行全部迁移至 `015_content_reviews.sql`；安装表由 005 引入，但当前应用还要求后续迁移。安装页不创建数据库、不自动迁移或 seed。后端 `INSTALLATION_TOKEN` 为空时禁用新安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，可用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。令牌只配置在后端，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量，也不是管理员会话令牌。
+部署者先准备数据库连接并执行全部迁移至 `018_freeform_source_type_labels.sql`；安装表由 005 引入，但当前应用还要求后续迁移。安装页不创建数据库、不自动迁移或 seed。后端 `INSTALLATION_TOKEN` 为空时禁用新安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，可用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。令牌只配置在后端，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量，也不是管理员会话令牌。
 
 公开站点 `/(site)` 与 `/admin` 父 layout 在请求时检查安装状态。缺少后端配置或明确 `installed=false` 才跳 `/install`；旧后端 404、非法响应或离线仅显示不可用，不开放安装。构建可不连接后端，运行必须有可用 API。已安装的 `/install` 仅显示锁定；数据库保存的站点名称用于页眉、页脚与标题，简介用于 meta description。
 
@@ -135,7 +135,7 @@
 | slug | 必填，最多 160 字节；小写英文字母、数字及词间单个连字符 |
 | description | 可空，最多 20,000 UTF-8 字节 |
 | estimated_year | 可空，整数 1–9999 |
-| archive_status | 必填：uncertain、lost、partially_recovered、archived |
+| archive_status | 必填：lost（待寻回）、verifying（验证中）、archived（已归档） |
 | copyright_status | 必填：unknown、public_domain、licensed、copyrighted |
 | distribution_permission | 必填：unknown、permission_granted、metadata_only、restricted |
 | license、rights_holder | 各可空，最多 500 UTF-8 字节 |
@@ -170,7 +170,7 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 | first_seen_at / last_seen_at / recovered_at | 可空，仅完整 UTC `YYYY-MM-DDTHH:mm:ss[.1–6 位小数]Z`，有效日历，年份 1–9999；读写标准化为六位小数；来源首次时间不晚于最后时间 |
 | recovered_by | 可空；已有的人物编号，JSON 十进制字符串，不是数字 |
 
-来源类型为 `original_site`、`forum`、`mailing_list`、`archive`、`search_index`、`personal_collection` 或 `other`。来源与寻回记录都可上传最多 1 MiB 的 PDF、JPEG、PNG 或纯文本附件；数据库保存文件与 SHA-256。附件需管理员会话才能上传和下载，下载会重新核验摘要，并作为防嗅探附件响应。删除所属来源或寻回记录会级联删除附件。公开 API 不返回附件元数据、内容或摘要。
+来源类型可从“视觉小说、视频网站、论坛、联系原作者、搜索索引、archive.org、其它网站”中多选，也可添加自定义文本标签；旧类型值仍可读取。来源与寻回记录都可上传最多 1 MiB 的 PDF、JPEG、PNG 或纯文本附件；数据库保存文件与 SHA-256。附件需管理员会话才能上传和下载，下载会重新核验摘要，并作为防嗅探附件响应。删除所属来源或寻回记录会级联删除附件。公开 API 不返回附件元数据、内容或摘要。
 
 所有文字拒绝 NUL。未知日期不替换成当前时间，只有年份等不完整信息时将日期留空、在备注或证据中说明。浏览器时间控件按 UTC 使用，无本地时区转换；原有微秒值单独保留，控件显示毫秒，改动毫秒或清空重填会重置更细精度。寻回人支持分页、刷新，已有选中人物不因不在当前页而丢失。
 
@@ -180,7 +180,7 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 ## 验证
 
-数据库必须应用全部迁移至 `015_content_reviews.sql`，不能只更新前端。启动和 `/ready` 检查创建回执外键、回收站标记、审计表、清理重试列、历史证据、用户邀请、公开 UUID 和审核队列表；不修改已应用迁移。
+数据库必须应用全部迁移至 `018_freeform_source_type_labels.sql`，不能只更新前端；不修改已应用迁移。启动和 `/ready` 会检查关键历史结构；来源类型的新文本约束由迁移器应用，部署前须单独核对 `schema_migrations`。
 
 安装 API 检查：`python scripts/installation_smoke.py --api <测试后端> --allow-install`，要求环境变量 `INSTALLATION_TEST_TOKEN` 与该后端令牌一致。浏览器检查：`python scripts/installation_browser_smoke.py --frontend <测试前端> --allow-install`，另需 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD` 用于创建及登录新管理员，可加 `--channel msedge`、`--screenshots <目录>`，需 Playwright 及相应浏览器。两个脚本都会永久安装，必须各自使用独立、全新、已迁移的专用测试库，后端保持环境密码哈希为空；不能顺序指向同库，不得用于生产或已安装站点。
 
@@ -195,8 +195,14 @@ CTest 新增 installation 测试使用隔离 schema，测试数据库用户需�
 
 ## 新建档案同页上传（2026-09-24）
 
-`/admin/midis/new` 支持可选 MIDI 文件与资料一次保存。仅允许一个非空 `.mid` / `.midi`，最大 1 MiB，须确认公开分发权利。未选文件时可正常建档。`GET /api/v1/admin/session` 返回 `midi_import_enabled`；关闭导入时新建页隐藏文件输入，但后端仍独立验证开关。
+`/admin/midis/new` 支持可选音乐文件与资料一次保存。单文件最大 15 MB，不限制扩展名，须确认公开分发权利。未选文件时可正常建档。`GET /api/v1/admin/session` 返回 `midi_import_enabled`；关闭导入时新建页隐藏文件输入，但后端仍独立验证开关。
 
 `POST /api/v1/admin/midis` 在原资料字段外接受小写 UUID v4 的 `request_id`，及可选 `file: {filename, content_base64, rights_confirmed}`。附文件必须提供请求键，base64 必须为规范编码。成功或同内容重试均返回作品和 HTTP 201；更换内容复用已提交请求键返回 409。旧的无请求键纯资料请求仍兼容。
 
 校验失败保留输入，可以修改后重提；服务端结果不明或响应丢失时锁定原提交并提供“重试本次提交”，避免重建档案。事务失败不保留半成品作品，潜在孤立对象由 journal 清理。上传不自动更改归档状态或分发许可。编辑页和独立文件管理页继续可用。
+
+已归档档案及设为已归档仅超级管理员可操作。回收站中的 MIDI 档案和人物可由超级管理员输入“我确认删除档案编号x”后彻底删除；删除后编号会从最小空缺开始复用。公开注册的管理员账号默认停用，超级管理员在“用户账号”中启用后方可登录。
+
+## 文章
+
+超级管理员和管理员可在“文章管理”中撰写 Markdown 文章。每篇文章至少关联一条 MIDI，可选关联人物，可先保存为草稿，再发布。公开文章在 MIDI 与人物详情页双向展示；文章不参与站内搜索。关联已归档 MIDI 的文章仅超级管理员可修改。

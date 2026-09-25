@@ -22,6 +22,13 @@ std::optional<Credentials> AuthRepository::credentials(const std::string& userna
         users[0]["id"].as<std::string>(), users[0]["role"].as<std::string>()};
     return std::nullopt;
 }
+std::optional<Credentials> AuthRepository::disabledCredentials(const std::string& username) {
+    const auto users = db_->execSqlSync(
+        "SELECT id::text,username,password_hash,role FROM admin_users WHERE username=$1 AND status='disabled' AND password_hash IS NOT NULL", username);
+    if (users.empty()) return std::nullopt;
+    return Credentials{users[0]["username"].as<std::string>(), users[0]["password_hash"].as<std::string>(),
+        users[0]["id"].as<std::string>(), users[0]["role"].as<std::string>()};
+}
 std::optional<Credentials> AuthRepository::credentialsById(const std::string& userId) {
     const auto rows = db_->execSqlSync("SELECT id::text,username,password_hash,role FROM admin_users WHERE id=$1::uuid AND status='active' AND password_hash IS NOT NULL", userId);
     if (rows.empty()) return std::nullopt;
@@ -52,6 +59,9 @@ AuthService::AuthService(AuthRepository& repository, std::string username, std::
 bool AuthService::hasEnvironmentCredentials() const {
     return !environment_.username.empty() && !environment_.passwordHash.empty();
 }
+bool AuthService::isEnvironmentUsername(const std::string& username) const {
+    return hasEnvironmentCredentials() && username == environment_.username;
+}
 std::optional<Credentials> AuthService::credentials(const std::string& username) {
     if (hasEnvironmentCredentials() && username == environment_.username)
         return Credentials{environment_.username, environment_.passwordHash, "", "super_admin"};
@@ -60,7 +70,8 @@ std::optional<Credentials> AuthService::credentials(const std::string& username)
 }
 std::string AuthService::login(const std::string& username, const std::string& password) {
     const auto current = credentials(username);
-    if (!current && !hasEnvironmentCredentials() && !repository_.hasDatabaseCredentials())
+    if (!current && !hasEnvironmentCredentials() && !repository_.hasDatabaseCredentials() &&
+        !repository_.disabledCredentials(username))
         throw ApiError(503, "ADMIN_DISABLED", "Administrator credentials are not configured.");
     {
         std::lock_guard lock(mutex_);
@@ -72,7 +83,12 @@ std::string AuthService::login(const std::string& username, const std::string& p
     // Always verify the password, even for a wrong username.
     static const std::string dummyHash = "pbkdf2_sha256:600000:00000000000000000000000000000000:73cce23bed8110946640df7fee25f986fdd0ec35066980f5cfa99f6905bcbeb0";
     const bool passwordMatches = verifyPassword(password, current ? current->passwordHash : dummyHash);
-    if (!current || !passwordMatches) throw ApiError(401, "INVALID_CREDENTIALS", "Invalid username or password.");
+    if (!current || !passwordMatches) {
+        const auto disabled = current ? std::nullopt : repository_.disabledCredentials(username);
+        if (disabled && verifyPassword(password, disabled->passwordHash))
+            throw ApiError(403, "ACCOUNT_DISABLED", "Contact a super administrator through the About page to enable this account.");
+        throw ApiError(401, "INVALID_CREDENTIALS", "Invalid username or password.");
+    }
     const auto token = randomToken();
     repository_.create(digest(token), digest(current->username + ":" + current->passwordHash), *current);
     return token;

@@ -68,9 +68,8 @@ inline Json::Value toJson(const Overview& overview) {
     stats["downloadable"] = Json::Int64(overview.stats.downloadable);
     stats["sources"] = Json::Int64(overview.stats.sources);
     stats["statuses"]["archived"] = Json::Int64(overview.stats.archived);
-    stats["statuses"]["partially_recovered"] = Json::Int64(overview.stats.partiallyRecovered);
+    stats["statuses"]["verifying"] = Json::Int64(overview.stats.verifying);
     stats["statuses"]["lost"] = Json::Int64(overview.stats.lost);
-    stats["statuses"]["uncertain"] = Json::Int64(overview.stats.uncertain);
     json["recent"] = Json::Value(Json::arrayValue);
     for (const auto& entry : overview.recent) json["recent"].append(toJson(entry));
     json["needs_attention"] = Json::Value(Json::arrayValue);

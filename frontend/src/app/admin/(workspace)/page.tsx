@@ -14,7 +14,7 @@ export default async function AdminOverview() {
   try { overview = await getCatalogOverview(); } catch (error) {
     if (!(error instanceof ApiError)) throw error;
   }
-  const pending = overview ? overview.stats.statuses.partially_recovered + overview.stats.statuses.lost + overview.stats.statuses.uncertain : undefined;
+  const pending = overview ? overview.stats.statuses.verifying + overview.stats.statuses.lost : undefined;
   return <>
     <AdminPageHeader eyebrow="工作台 / 总览" title="管理工作台" description="从待完善的记录开始，补充作品资料、核对历史来源，继续整理每一份档案。" />
     <div className="mb-6 flex flex-wrap gap-3"><Link href="/admin/midis/new" className={primaryLink}>新增 MIDI 档案</Link><Link href="/admin/people/new" className={secondaryLink}>新增人物</Link><Link href="/admin/midis" className="px-2 py-2.5 text-sm text-muted hover:text-accent hover:underline">管理全部档案 →</Link></div>

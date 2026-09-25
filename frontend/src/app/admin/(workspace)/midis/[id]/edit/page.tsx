@@ -22,9 +22,11 @@ export default async function EditMidi({ params, searchParams }: { params: Promi
   }
   const { saved } = await searchParams;
   return <><AdminPageHeader eyebrow={`档案 / ${entry.id}`} title="编辑 MIDI 档案" description="维护作品基础资料。作品署名、历史来源与寻回记录通过独立页面管理，并与基础资料共用保存版本；前往其他页面前请先保存当前修改。" />
-    {saved === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已保存。<Link className="ml-3 underline" href={`/midis/${entry.public_id}`}>查看公开详情 ↗</Link></p>}
-    <MidiSectionNav id={entry.id} publicId={entry.public_id} current="edit" />
-    <MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} reviewRequired={session.role === "admin"} />
-    <DeleteConfirmation key={`delete-${entry.id}-${entry.revision}`} resource="midis" id={entry.id} revision={entry.revision} name={entry.title} reviewRequired={session.role === "admin"} />
+    {saved === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已保存。<Link className="ml-3 underline" href={`/midis/${entry.slug}`}>查看公开详情 ↗</Link></p>}
+    <MidiSectionNav id={entry.id} slug={entry.slug} current="edit" />
+    {entry.archive_status === "archived" && session.role === "admin"
+      ? <p role="status" className="rounded-lg border border-line bg-white p-5 text-sm">此档案已归档，仅超级管理员可继续修改。</p>
+      : <><MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} reviewRequired={session.role === "admin"} />
+        <DeleteConfirmation key={`delete-${entry.id}-${entry.revision}`} resource="midis" id={entry.id} revision={entry.revision} name={entry.title} reviewRequired={session.role === "admin"} /></>}
   </>;
 }

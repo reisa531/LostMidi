@@ -72,11 +72,25 @@ auth::SessionPrincipal ApiController::requireFilePrincipal(const drogon::HttpReq
 
 Json::Value ApiController::submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
                                               std::int64_t entityId, const Json::Value& payload) {
+    if ((type == "midi.create" || type == "midi.update") && payload["archive_status"] == "archived")
+        throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a super administrator may archive an entry.");
+    const bool midiChange = type.starts_with("midi.") || type.starts_with("history.") ||
+        type == "credits.update" || type == "evidence.upload" || type == "file.import";
+    std::optional<std::string> entityPublicId;
+    if (entityId > 0) {
+        const auto rows = midiChange
+            ? db_->execSqlSync("SELECT public_id::text,archive_status FROM midi_entries WHERE id=$1", entityId)
+            : db_->execSqlSync("SELECT public_id::text,NULL::text AS archive_status FROM people WHERE id=$1", entityId);
+        if (rows.empty()) throw ApiError(404, "ARCHIVE_NOT_FOUND", "The archive record no longer exists.");
+        entityPublicId = rows[0]["public_id"].as<std::string>();
+        if (midiChange && type != "midi.restore" && rows[0]["archive_status"].as<std::string>() == "archived")
+            throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a super administrator may modify an archived entry.");
+    }
     const auto rows = db_->execSqlSync(
-        "INSERT INTO admin_change_requests(request_type,entity_id,proposed_by,payload) "
-        "VALUES($1,$2,$3,$4::jsonb) RETURNING id::text,created_at",
+        "INSERT INTO admin_change_requests(request_type,entity_id,entity_public_id,proposed_by,payload) "
+        "VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5::jsonb) RETURNING id::text,created_at",
         type, entityId > 0 ? std::optional<std::int64_t>(entityId) : std::nullopt,
-        actor.username, payload.toStyledString());
+        entityPublicId.value_or(""), actor.username, payload.toStyledString());
     Json::Value result;
     result["request_id"] = rows[0]["id"].as<std::string>();
     result["status"] = "pending";
@@ -91,6 +105,7 @@ void ApiController::registerRoutes() {
     registerInstallationRoutes();
     registerAdminFileRoutes();
     registerCatalogRoutes();
+    registerArticleRoutes();
     drogon::app().setCustomErrorHandler([](drogon::HttpStatusCode status) {
         return errorResponse(static_cast<int>(status), "HTTP_ERROR", "The request could not be processed.");
     });

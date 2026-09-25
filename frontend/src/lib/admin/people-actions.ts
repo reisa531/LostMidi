@@ -35,7 +35,9 @@ export async function savePersonAction(_previous: { error: string }, form: FormD
     const columns = (name: string) => lines(name).map(line => line.split("|").map(part => part.trim()));
     const field = (parts: string[], index: number) => parts[index] || null;
     const aliasDetails = lines("alias_details").map(line => { const [name, note = "", period = "", source = ""] = line.split("|").map(part => part.trim()); return { name, note, period: period || null, source: source || null }; });
-    const existing = id ? (await adminRequest<PersonEdit>(`/api/v1/admin/people/${id}`)).person.profile : {};
+    const current = id ? await adminRequest<PersonEdit>(`/api/v1/admin/people/${id}`) : null;
+    if (current && current.person.revision !== Number(form.get("revision"))) throw new ApiError(409, "STALE_PERSON");
+    const existing = current?.person.profile ?? {};
     const profile = {
       ...existing,
       country: String(form.get("country") ?? "").trim() || null,

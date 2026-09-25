@@ -64,13 +64,16 @@ std::optional<MidiEntry> PostgresMidiRepository::findById(std::int64_t id) {
     return entryFrom(rows[0]);
 }
 MidiEntry PostgresMidiRepository::create(const MidiEntry& e) {
-    const auto rows = db_->execSqlSync(
-        "INSERT INTO midi_entries (slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
-        "VALUES ($1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
+    TransactionScope tx(db_);
+    const auto rows = tx.db->execSqlSync(
+        "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
+        "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
         e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
         *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
     if (rows.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
-    return entryFrom(rows[0]);
+    auto saved = entryFrom(rows[0]);
+    tx.commit();
+    return saved;
 }
 MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const std::string& requestId,
     const std::string& payloadSha256, const std::optional<MidiFile>& file, const std::function<void()>& persist) {
@@ -101,8 +104,8 @@ MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const st
     if (file && !tx.db->execSqlSync("SELECT 1 FROM midi_files WHERE sha256=$1", file->sha256).empty())
         throw ApiError(409, "FILE_OWNERSHIP_CONFLICT", "Identical bytes already belong to another MIDI entry.");
     const auto entries = tx.db->execSqlSync(
-        "INSERT INTO midi_entries (slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
-        "VALUES ($1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
+        "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
+        "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
         e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
         *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
     if (entries.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");

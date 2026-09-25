@@ -14,10 +14,14 @@ function message(error: unknown) {
   if (!(error instanceof ApiError)) return "请求失败，请稍后重试。";
   const messages: Record<string, string> = {
     INVALID_CREDENTIALS: "用户名或密码不正确。", LOGIN_RATE_LIMITED: "登录尝试过多，请一分钟后重试。",
+    ACCOUNT_DISABLED: "账号尚未启用，请联系超级管理员（关于我们页）启用账号。",
     ADMIN_DISABLED: "管理员账号尚未配置，请联系部署维护者。", INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
     SLUG_CONFLICT: "此 slug 已被使用，请换一个。", STALE_ENTRY: "作品资料已被其他页面修改。请保留当前内容，重新打开编辑页后合并修改。",
     INVALID_INPUT: "字段格式或长度不符合要求，请检查标题、slug、年份和文字长度。",
     MIDI_NOT_FOUND: "该档案已不存在。", UNAUTHORIZED: "会话已过期，请重新登录。",
+    ARCHIVE_SUPER_ADMIN_REQUIRED: "已归档档案及归档操作仅限超级管理员。",
+    USER_EXISTS: "账号或邮箱已存在。",
+    REGISTRATION_RATE_LIMITED: "注册请求过多，请一分钟后重试。",
   };
   return messages[error.code] ?? "服务暂时不可用，请稍后重试。";
 }
@@ -34,6 +38,24 @@ export async function loginAction(_previous: { error: string }, form: FormData) 
     });
   } catch (error) { return { error: message(error) }; }
   redirect("/admin");
+}
+export type RegisterState = { error: string; registered?: boolean };
+export async function registerAction(_previous: RegisterState, form: FormData): Promise<RegisterState> {
+  try {
+    await checkOrigin();
+    const username = String(form.get("username") ?? "");
+    const email = String(form.get("email") ?? "");
+    const password = String(form.get("password") ?? "");
+    const passwordConfirmation = String(form.get("password_confirmation") ?? "");
+    if (!/^[A-Za-z0-9_.-]{3,64}$/.test(username) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      email.length > 254 || password.length < 12 || password !== passwordConfirmation)
+      return { error: "请检查账号、邮箱及至少 12 位且一致的密码。" };
+    await apiRequest("/api/v1/admin/register", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, email, password, password_confirmation: passwordConfirmation }),
+    });
+    return { error: "", registered: true };
+  } catch (error) { return { error: message(error) }; }
 }
 export async function logoutAction() {
   try {

@@ -7,6 +7,7 @@ import { uploadEvidenceAction } from "@/lib/admin/history-actions";
 import type { HistoricalSource, HistoryEdit, RecoveryEvent } from "@/lib/admin/history";
 import { ExternalSource } from "@/components/archive";
 import { MarkdownField } from "@/components/admin/markdown-field";
+import { Markdown } from "@/components/markdown";
 
 type Selection = { kind: "source"; record?: HistoricalSource } | { kind: "event"; record?: RecoveryEvent };
 const inputClass = "mt-2 block w-full min-w-0 max-w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm";
@@ -42,15 +43,25 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
   const label = selection.kind === "source" ? "历史来源" : "寻回记录";
   const [state, action, pending] = useActionState(saveHistoryAction, { error: "" });
   const [confirming, setConfirming] = useState(false);
+  const [customSourceType, setCustomSourceType] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, []);
   const [values, setValues] = useState({
     website_name: source?.website_name ?? "", original_url: source?.original_url ?? "", wayback_url: source?.wayback_url ?? "",
     first_seen_at: localUTC(source?.first_seen_at), last_seen_at: localUTC(source?.last_seen_at), notes: source?.notes ?? "",
-    source_type: source?.source_type ?? "other", credibility: String(source?.credibility ?? 3), checked_at: localUTC(source?.checked_at),
+    source_type: source?.source_type ?? "", credibility: String(source?.credibility ?? 3), checked_at: localUTC(source?.checked_at),
     recovered_at: localUTC(event?.recovered_at), recovered_by_name: event?.recovered_by_name ?? "", story: event?.story ?? "", evidence: event?.evidence ?? "",
   });
   const change = (name: keyof typeof values, value: string) => setValues(old => ({ ...old, [name]: value }));
+  const selectedSourceTypes = values.source_type.split(",").filter(Boolean);
+  const setSourceTypes = (items: string[]) => change("source_type", items.join(","));
+  const addCustomSourceType = () => {
+    const label = customSourceType.trim();
+    if (!label || label.includes(",") || /[\r\n\t\0]/.test(label) || selectedSourceTypes.includes(label) ||
+        new TextEncoder().encode(label).length > 100 || selectedSourceTypes.length >= 20) return;
+    setSourceTypes([...selectedSourceTypes, label]);
+    setCustomSourceType("");
+  };
   const textarea = (name: "notes" | "story" | "evidence", title: string, required = false) =>
     <MarkdownField name={name} label={`${title}（支持 Markdown）${required ? " *" : ""}`} value={values[name]} onChange={value => change(name, value)} rows={name === "story" ? 7 : 5} required={required} disabled={pending || confirming} />;
 
@@ -71,9 +82,12 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
           <label className="block min-w-0 text-sm">存档网址（可留空）<input type="url" name="wayback_url" className={inputClass} maxLength={4096} value={values.wayback_url} onChange={event => change("wayback_url", event.target.value)} /></label>
         </div>
         <div className="grid min-w-0 gap-5 lg:grid-cols-2">
-          <label className="block min-w-0 text-sm">来源类型<select name="source_type" className={inputClass} value={values.source_type} onChange={event => change("source_type", event.target.value)}>
-            <option value="original_site">原始网站</option><option value="forum">论坛</option><option value="mailing_list">邮件列表</option><option value="archive">网页档案</option><option value="search_index">搜索索引</option><option value="personal_collection">个人收藏</option><option value="other">其他 / 未知</option>
-          </select></label>
+          <fieldset className="min-w-0 text-sm"><legend>来源类型（可多选，也可添加自定义标签）</legend><input type="hidden" name="source_type" value={values.source_type} />
+            <select aria-label="添加常用来源类型" className={inputClass} value="" onChange={event => { if (event.target.value && selectedSourceTypes.length < 20) setSourceTypes([...selectedSourceTypes, event.target.value]); }}><option value="">选择常用标签…</option>{commonSourceTypes.filter(label => !selectedSourceTypes.includes(label)).map(label => <option key={label} value={label}>{label}</option>)}</select>
+            <div className="mt-3 flex gap-2"><input aria-label="自定义来源类型" className={`${inputClass} mt-0`} value={customSourceType} maxLength={100} placeholder="输入自定义标签" onChange={event => setCustomSourceType(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addCustomSourceType(); } }} /><button type="button" className="shrink-0 rounded-lg border border-line px-3 text-xs text-accent" onClick={addCustomSourceType}>添加</button></div>
+            {selectedSourceTypes.length > 0 && <div className="mt-3 flex flex-wrap gap-2" aria-label="已选来源类型">{selectedSourceTypes.map(type => <span key={type} className="inline-flex items-center gap-2 rounded-full bg-surface px-3 py-1 text-xs">{sourceTypeLabels[type] ?? type}<button type="button" aria-label={`移除${sourceTypeLabels[type] ?? type}`} className="font-semibold text-accent" onClick={() => setSourceTypes(selectedSourceTypes.filter(item => item !== type))}>×</button></span>)}</div>}
+            <p className="mt-2 text-xs text-muted">至少一项，最多 20 项；自定义标签不得含逗号，每项最多 100 UTF-8 字节。</p>
+          </fieldset>
           <label className="block min-w-0 text-sm">人工可信度（1–5）<select name="credibility" className={inputClass} value={values.credibility} onChange={event => change("credibility", event.target.value)}>
             <option value="1">1 · 未核实</option><option value="2">2 · 较弱线索</option><option value="3">3 · 有支持资料</option><option value="4">4 · 多项资料吻合</option><option value="5">5 · 一手来源</option>
           </select></label>
@@ -121,9 +135,9 @@ export function HistoryForm({ history, reviewRequired = false }: { history: Hist
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-sources" className="text-lg font-semibold">历史来源</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "source" })} className={buttonClass}>新增历史来源</button></div>
       {history.historical_sources.length ? <ul className="space-y-6">{history.historical_sources.map(source => <li key={source.id} className="min-w-0 space-y-3 border-t border-line pt-5">
         <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="min-w-0 font-semibold">{source.website_name}</h3><button type="button" disabled={busy} className={buttonClass} onClick={() => setSelection({ kind: "source", record: source })} aria-label={`编辑历史来源 ${source.website_name}（编号 ${source.id}）`}>编辑 / 删除</button></div>
-        <p className="text-xs leading-6 text-muted">编号 {source.id} · {sourceTypeLabels[source.source_type] ?? "其他 / 未知"} · 人工可信度 {source.credibility}/5 · 最近核验：{utcLabel(source.checked_at)}<br />首次记录：{utcLabel(source.first_seen_at)} · 最后记录：{utcLabel(source.last_seen_at)}</p>
+        <p className="text-xs leading-6 text-muted">编号 {source.id} · {source.source_type.split(",").map(type => sourceTypeLabels[type] ?? type).join("、")} · 人工可信度 {source.credibility}/5 · 最近核验：{utcLabel(source.checked_at)}<br />首次记录：{utcLabel(source.first_seen_at)} · 最后记录：{utcLabel(source.last_seen_at)}</p>
         <div className="flex flex-wrap gap-4 text-sm">{source.original_url ? <ExternalSource url={source.original_url} label="原始网址" /> : <span className="text-muted">原始网址未登记</span>}{source.wayback_url ? <ExternalSource url={source.wayback_url} label="历史快照" /> : <span className="text-muted">存档网址未登记</span>}</div>
-        <p className="whitespace-pre-wrap text-sm leading-7">{source.notes ?? "暂无补充说明。"}</p>
+        {source.notes ? <Markdown source={source.notes} className="text-sm" /> : <p className="text-sm text-muted">暂无补充说明。</p>}
         <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="source" recordId={source.id} files={source.evidence_files ?? []} reviewRequired={reviewRequired} />
       </li>)}</ul> : <p className="text-sm text-muted">尚未登记历史来源。可新增网站、原始网址及存档线索。</p>}
     </section>
@@ -132,8 +146,8 @@ export function HistoryForm({ history, reviewRequired = false }: { history: Hist
       {history.recovery_events.length ? <ul className="space-y-6">{history.recovery_events.map(event => <li key={event.id} className="min-w-0 space-y-3 border-t border-line pt-5">
         <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="text-sm font-semibold">寻回记录 · 编号 {event.id}</h3><button type="button" disabled={busy} className={buttonClass} onClick={() => setSelection({ kind: "event", record: event })} aria-label={`编辑寻回记录 ${event.id}`}>编辑 / 删除</button></div>
         <p className="text-xs leading-6 text-muted">寻回时间：{utcLabel(event.recovered_at)} · 寻回人：{event.recovered_by_name ?? "姓名不详"}</p>
-        <p className="whitespace-pre-wrap text-sm leading-7">{event.story}</p>
-        <p className="whitespace-pre-wrap text-sm leading-7 text-muted">证据说明：{event.evidence ?? "尚未补充"}</p>
+        <Markdown source={event.story} className="text-sm" />
+        <div className="text-sm"><p className="text-muted">证据说明</p>{event.evidence ? <Markdown source={event.evidence} /> : <p className="text-muted">尚未补充</p>}</div>
         <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="event" recordId={event.id} files={event.evidence_files ?? []} reviewRequired={reviewRequired} />
       </li>)}</ul> : <p className="text-sm text-muted">尚无寻回记录。可新增寻回经过、人物及证据说明。</p>}
     </section>
@@ -156,6 +170,7 @@ function EvidenceFiles({ midiId, revision, kind, recordId, files, reviewRequired
   </div>;
 }
 
+const commonSourceTypes = ["视觉小说", "视频网站", "论坛", "联系原作者", "搜索索引", "archive.org", "其它网站"];
 const sourceTypeLabels: Record<string, string> = {
   original_site: "原始网站", forum: "论坛", mailing_list: "邮件列表", archive: "网页档案",
   search_index: "搜索索引", personal_collection: "个人收藏", other: "其他 / 未知",

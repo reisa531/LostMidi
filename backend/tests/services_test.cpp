@@ -72,7 +72,7 @@ TEST_F(ServiceTest, InvalidSlugDoesNotQueryRepository) {
 }
 TEST(MidiEstimatedDate, ValidatesLeapDaysAndMatchingYear) {
     midi::MidiEntry entry;
-    entry.title = "Test"; entry.slug = "test"; entry.archiveStatus = "uncertain";
+    entry.title = "Test"; entry.slug = "test"; entry.archiveStatus = "lost";
     entry.copyrightStatus = "unknown"; entry.distributionPermission = "unknown";
     entry.estimatedYear = 2024; entry.estimatedDate = "2024-02-29";
     midi::MidiWriteService::validate(entry);

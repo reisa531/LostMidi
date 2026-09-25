@@ -87,7 +87,7 @@ TEST(CatalogContract, InvalidHttpParametersAreBadRequests) {
         badRequest([&] { catalog::parseGroupQuery({{"by", value}}); });
     for (const auto* value : {"", "both", "none", "Author"})
         badRequest([&] { catalog::parseEntryQuery({{"missing", value}}); });
-    for (const auto* status : {"archived", "partially_recovered", "lost", "uncertain"})
+    for (const auto* status : {"archived", "verifying", "lost"})
         EXPECT_NO_THROW(catalog::parseEntryQuery({{"status", status}}));
 }
 TEST(CatalogContract, SourceValidationIsExactUtf8AndByteBounded) {
@@ -179,11 +179,11 @@ protected:
             "INSERT INTO midi_entries(id,slug,title,archive_status,distribution_permission,estimated_year,updated_at,description) VALUES"
             "(1,'alpha','Alpha','archived','unknown',1999,'2020-01-01T00:00:00Z','Private-sized detail'),"
             "(2,'beta','Beta','lost','unknown',NULL,'2020-01-02T00:00:00Z',NULL),"
-            "(3,'same-one','Same','partially_recovered','restricted',NULL,'2020-01-03T00:00:00Z',NULL),"
-            "(4,'same-two','Same','uncertain','metadata_only',NULL,'2020-01-04T00:00:00Z',NULL),"
+            "(3,'same-one','Same','verifying','restricted',NULL,'2020-01-03T00:00:00Z',NULL),"
+            "(4,'same-two','Same','lost','metadata_only',NULL,'2020-01-04T00:00:00Z',NULL),"
             "(5,'echo','Echo','archived','permission_granted',NULL,'2020-01-05T00:00:00Z',NULL),"
             "(6,'foxtrot','Foxtrot','lost','unknown',NULL,'2020-01-06T00:00:00Z',NULL),"
-            "(7,'zulu-one','Zulu','uncertain','unknown',NULL,'2020-01-07T00:00:00Z',NULL),"
+            "(7,'zulu-one','Zulu','lost','unknown',NULL,'2020-01-07T00:00:00Z',NULL),"
             "(8,'zulu-two','Zulu','lost','unknown',NULL,'2020-01-07T00:00:00Z',NULL)");
         db->execSqlSync("INSERT INTO midi_credits(midi_id,person_id,role) VALUES"
             "(1,11,'composer'),(1,11,'sequencer'),(1,12,'arranger'),(2,11,'contributor'),(3,12,'sequencer'),(5,11,'composer')");
@@ -207,7 +207,7 @@ TEST_F(CatalogPostgres, EmptyCatalogAndUncreditedPeopleDoNotCreateSyntheticGroup
     EXPECT_EQ(keys(overview), (std::set<std::string>{"stats", "recent", "needs_attention"}));
     EXPECT_EQ(keys(overview["stats"]), (std::set<std::string>{"entries", "people", "files", "with_files", "downloadable", "sources", "statuses"}));
     for (const auto* key : {"entries", "people", "files", "with_files", "downloadable", "sources"}) EXPECT_EQ(overview["stats"][key].asInt64(), 0);
-    for (const auto* key : {"archived", "partially_recovered", "lost", "uncertain"}) EXPECT_EQ(overview["stats"]["statuses"][key].asInt64(), 0);
+    for (const auto* key : {"archived", "verifying", "lost"}) EXPECT_EQ(overview["stats"]["statuses"][key].asInt64(), 0);
     EXPECT_TRUE(overview["recent"].isArray()); EXPECT_TRUE(overview["recent"].empty());
     EXPECT_TRUE(overview["needs_attention"].isArray()); EXPECT_TRUE(overview["needs_attention"].empty());
     const auto page = catalog::toJson(entries());
@@ -226,8 +226,8 @@ TEST_F(CatalogPostgres, OverviewUsesGlobalDistinctCountsAndSixNewestEntries) {
     const auto overview = service->overview();
     EXPECT_EQ(overview.stats.entries, 8); EXPECT_EQ(overview.stats.people, 3); EXPECT_EQ(overview.stats.files, 7);
     EXPECT_EQ(overview.stats.withFiles, 5); EXPECT_EQ(overview.stats.downloadable, 2); EXPECT_EQ(overview.stats.sources, 3);
-    EXPECT_EQ(overview.stats.archived, 2); EXPECT_EQ(overview.stats.partiallyRecovered, 1);
-    EXPECT_EQ(overview.stats.lost, 3); EXPECT_EQ(overview.stats.uncertain, 2);
+    EXPECT_EQ(overview.stats.archived, 2); EXPECT_EQ(overview.stats.verifying, 1);
+    EXPECT_EQ(overview.stats.lost, 5);
     ASSERT_EQ(overview.recent.size(), 6u); ASSERT_EQ(overview.needsAttention.size(), 6u);
     const std::vector<std::int64_t> recent{8,7,6,5,4,3}, attention{8,7,6,4,3,2};
     for (std::size_t i = 0; i < 6; ++i) {
@@ -240,7 +240,7 @@ TEST_F(CatalogPostgres, OverviewUsesGlobalDistinctCountsAndSixNewestEntries) {
     publicOnly(catalog::toJson(overview));
     db->execSqlSync("INSERT INTO midi_entries(id,slug,title,archive_status,updated_at) VALUES(9,'older','Older','lost','1999-01-01T00:00:00Z')");
     const auto expanded = service->overview();
-    EXPECT_EQ(expanded.stats.entries, 9); EXPECT_EQ(expanded.stats.lost, 4);
+    EXPECT_EQ(expanded.stats.entries, 9); EXPECT_EQ(expanded.stats.lost, 6);
     EXPECT_EQ(expanded.needsAttention.size(), 6u); EXPECT_EQ(expanded.needsAttention.back().id, 2);
 }
 TEST_F(CatalogPostgres, EntryPaginationAndTieSortingAreStable) {
@@ -262,7 +262,7 @@ TEST_F(CatalogPostgres, EntryPaginationAndTieSortingAreStable) {
 }
 TEST_F(CatalogPostgres, FiltersIntersectAndSourceNamesAreLiteralNotUrls) {
     seed();
-    EXPECT_EQ(ids(entries({{"status", "lost"}})), (std::vector<std::int64_t>{8,6,2}));
+    EXPECT_EQ(ids(entries({{"status", "lost"}})), (std::vector<std::int64_t>{8,7,6,4,2}));
     EXPECT_EQ(ids(entries({{"person", "11"}})), (std::vector<std::int64_t>{5,2,1}));
     EXPECT_EQ(ids(entries({{"person", "11"}, {"source", "Archive"}, {"status", "lost"}})), (std::vector<std::int64_t>{2}));
     EXPECT_EQ(entries({{"person", "11"}, {"source", "Archive"}, {"status", "lost"}}).total, 1);
@@ -271,7 +271,7 @@ TEST_F(CatalogPostgres, FiltersIntersectAndSourceNamesAreLiteralNotUrls) {
     for (const auto* source : {"archive", " Archive", "Archive ", "https://example.org/a", "' OR true --"})
         EXPECT_EQ(entries({{"source", source}}).total, 0);
     EXPECT_EQ(entries({{"person", "9223372036854775807"}}).total, 0);
-    EXPECT_EQ(entries({{"source", "Archive"}, {"status", "uncertain"}}).total, 0);
+    EXPECT_EQ(entries({{"source", "Archive"}, {"status", "verifying"}}).total, 0);
     db->execSqlSync("INSERT INTO historical_sources(midi_id,website_name) VALUES(8,$1)", std::string("乐曲's website"));
     EXPECT_EQ(ids(entries({{"source", "乐曲's website"}})), (std::vector<std::int64_t>{8}));
 }

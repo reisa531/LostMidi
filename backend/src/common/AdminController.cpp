@@ -7,6 +7,8 @@
 #include <set>
 #include <regex>
 #include <span>
+#include <chrono>
+#include <mutex>
 
 namespace lostmidi {
 namespace {
@@ -157,10 +159,11 @@ void ApiController::registerAdminRoutes() {
             if (decision != "approve" && decision != "reject") throw ApiError(400, "INVALID_INPUT", "Decision must be approve or reject.");
             const auto note = body["note"].isNull() ? std::string{} : stringOf(body, "note", 2000);
             TransactionScope claim(db_);
-            const auto rows = claim.db->execSqlSync("UPDATE admin_change_requests SET status='reviewing' WHERE id=$1::uuid AND status='pending' RETURNING request_type,entity_id,payload::text,proposed_by", requestId);
+            const auto rows = claim.db->execSqlSync("UPDATE admin_change_requests SET status='reviewing' WHERE id=$1::uuid AND status='pending' RETURNING request_type,entity_id,entity_public_id::text,payload::text,proposed_by", requestId);
             if (rows.empty()) throw ApiError(409, "REQUEST_NOT_PENDING", "This request has already been reviewed or is being handled.");
             const auto type = rows[0]["request_type"].as<std::string>();
             const auto entity = nullable<std::int64_t>(rows[0]["entity_id"]).value_or(0);
+            const auto entityPublicId = nullable<std::string>(rows[0]["entity_public_id"]);
             const auto proposedBy = rows[0]["proposed_by"].as<std::string>();
             Json::Value payload; Json::CharReaderBuilder reader;
             std::string parseErrors; std::istringstream input(rows[0]["payload"].as<std::string>());
@@ -170,6 +173,14 @@ void ApiController::registerAdminRoutes() {
                 db_->execSqlSync("UPDATE admin_change_requests SET status='rejected',review_note=$2,reviewed_by=$3,reviewed_at=CURRENT_TIMESTAMP WHERE id=$1::uuid", requestId, note, reviewer.username);
             } else {
                 try {
+                    if (entity > 0) {
+                        const bool personEntity = type.starts_with("person.");
+                        const auto current = personEntity
+                            ? db_->execSqlSync("SELECT public_id::text FROM people WHERE id=$1", entity)
+                            : db_->execSqlSync("SELECT public_id::text FROM midi_entries WHERE id=$1", entity);
+                        if (!entityPublicId || current.empty() || current[0]["public_id"].as<std::string>() != *entityPublicId)
+                            throw ApiError(409, "STALE_ENTRY", "The original archive record no longer exists.");
+                    }
                     Json::Value applied;
                     if (type == "midi.create") {
                         auto entryPayload = payload;
@@ -417,6 +428,111 @@ void ApiController::registerAdminRoutes() {
             return result;
         });
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/admin/trash/{1}/{2}/purge", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string type, std::string value) {
+        dispatch(std::move(callback), [this, request, type = std::move(type), value = std::move(value)] {
+            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization"));
+            if (type != "midi" && type != "person") throw ApiError(400, "INVALID_INPUT", "Unknown trash record type.");
+            const auto id = idOf(value);
+            const auto body = bodyOf(request);
+            fieldsOf(body, {"confirmation"});
+            if (value != std::to_string(id) || stringOf(body, "confirmation", 100) != "我确认删除档案编号" + value)
+                throw ApiError(400, "PURGE_CONFIRMATION_REQUIRED", "Type the exact confirmation phrase.");
+            TransactionScope tx(db_);
+            tx.db->execSqlSync(type == "midi" ? "SELECT pg_advisory_xact_lock(741035, 1)" : "SELECT pg_advisory_xact_lock(741035, 2)");
+            const auto rows = type == "midi"
+                ? tx.db->execSqlSync("SELECT title AS label FROM midi_entries WHERE id=$1 AND deleted_at IS NOT NULL FOR UPDATE", id)
+                : tx.db->execSqlSync("SELECT display_name AS label FROM people WHERE id=$1 AND deleted_at IS NOT NULL FOR UPDATE", id);
+            if (rows.empty()) throw ApiError(404, "TRASH_RECORD_NOT_FOUND", "The deleted record no longer exists.");
+            const auto articleLinks = type == "midi"
+                ? tx.db->execSqlSync("SELECT 1 FROM article_midis WHERE midi_id=$1 LIMIT 1", id)
+                : tx.db->execSqlSync("SELECT 1 FROM article_people WHERE person_id=$1 LIMIT 1", id);
+            if (!articleLinks.empty())
+                throw ApiError(409, "ARTICLE_IN_USE", "Remove related articles before permanently deleting this archive.");
+            const auto requests = tx.db->execSqlSync(
+                "SELECT status FROM admin_change_requests WHERE entity_id=$1 AND status IN ('pending','reviewing') AND "
+                "(($2='midi' AND request_type NOT LIKE 'person.%') OR ($2='person' AND request_type LIKE 'person.%')) FOR UPDATE", id, type);
+            for (const auto& pending : requests)
+                if (pending["status"].as<std::string>() == "reviewing")
+                    throw ApiError(409, "REVIEW_IN_PROGRESS", "A review is currently using this record. Retry shortly.");
+            tx.db->execSqlSync(
+                "UPDATE admin_change_requests SET status='stale',review_note='Record permanently deleted',reviewed_by=$3,reviewed_at=CURRENT_TIMESTAMP "
+                "WHERE entity_id=$1 AND status='pending' AND (($2='midi' AND request_type NOT LIKE 'person.%') OR ($2='person' AND request_type LIKE 'person.%'))",
+                id, type, actor.username);
+            std::vector<std::pair<std::string,std::string>> files;
+            if (type == "midi") {
+                for (const auto& file : tx.db->execSqlSync("SELECT sha256,storage_key FROM midi_files WHERE midi_id=$1", id)) {
+                    const auto sha = file["sha256"].as<std::string>();
+                    const auto key = file["storage_key"].as<std::string>();
+                    tx.db->execSqlSync("INSERT INTO midi_import_objects(sha256,storage_key,touched_at) "
+                        "VALUES($1,$2,CURRENT_TIMESTAMP-INTERVAL '25 hours') ON CONFLICT(sha256) DO UPDATE SET touched_at=EXCLUDED.touched_at", sha, key);
+                    files.emplace_back(sha,key);
+                }
+                tx.db->execSqlSync("DELETE FROM midi_entries WHERE id=$1 AND deleted_at IS NOT NULL", id);
+            } else {
+                tx.db->execSqlSync("DELETE FROM people WHERE id=$1 AND deleted_at IS NOT NULL", id);
+            }
+            tx.db->execSqlSync("INSERT INTO admin_audit_log(actor,action,entity_type,entity_id,entity_label) VALUES($1,'purge',$2,$3,$4)",
+                actor.username, type, id, rows[0]["label"].as<std::string>());
+            tx.commit();
+            bool cleanupPending = false;
+            for (const auto& [sha,key] : files) {
+                try {
+                    TransactionScope cleanup(db_);
+                    cleanup.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741033))", sha);
+                    if (cleanup.db->execSqlSync("SELECT 1 FROM midi_files WHERE sha256=$1 OR storage_key=$2", sha, key).empty())
+                        objects_.remove(key);
+                    cleanup.db->execSqlSync("DELETE FROM midi_import_objects WHERE sha256=$1 AND storage_key=$2", sha, key);
+                    cleanup.commit();
+                } catch (...) { cleanupPending = true; logEvent("purge_object_cleanup_pending"); }
+            }
+            Json::Value result;
+            result["purged_id"] = value; result["entity_type"] = type; result["cleanup_pending"] = cleanupPending;
+            return result;
+        });
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/admin/register", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+        dispatch(std::move(callback), [this, request] {
+            const auto body = bodyOf(request);
+            fieldsOf(body, {"username", "email", "password", "password_confirmation"});
+            const auto username = stringOf(body, "username", 64);
+            const auto email = stringOf(body, "email", 254);
+            const auto password = stringOf(body, "password", 1024);
+            const auto confirmation = stringOf(body, "password_confirmation", 1024);
+            if (!std::regex_match(username, std::regex("^[A-Za-z0-9_.-]{3,64}$")) ||
+                !std::regex_match(email, std::regex("^[^[:space:]@]+@[^[:space:]@]+\\.[^[:space:]@]+$")) ||
+                password.size() < 12 || password != confirmation)
+                throw ApiError(400, "INVALID_INPUT", "Check the username, email and matching password (at least 12 characters).");
+            if (auth_.isEnvironmentUsername(username))
+                throw ApiError(409, "USER_EXISTS", "Username or email is already registered.");
+            if (db_->execSqlSync("SELECT 1 FROM site_installation WHERE id=1 AND installed_at IS NOT NULL").empty())
+                throw ApiError(503, "ADMIN_DISABLED", "Site installation is not complete.");
+            static std::mutex registrationMutex;
+            static auto registrationWindow = std::chrono::steady_clock::now();
+            static int registrationAttempts = 0;
+            {
+                std::lock_guard lock(registrationMutex);
+                const auto now = std::chrono::steady_clock::now();
+                if (now - registrationWindow >= std::chrono::minutes(1)) { registrationWindow = now; registrationAttempts = 0; }
+                if (registrationAttempts >= 10) throw ApiError(429, "REGISTRATION_RATE_LIMITED", "Too many registrations. Retry in one minute.");
+                ++registrationAttempts;
+            }
+            if (!db_->execSqlSync("SELECT 1 FROM admin_users WHERE username=$1 OR lower(email)=lower($2) LIMIT 1", username, email).empty())
+                throw ApiError(409, "USER_EXISTS", "Username or email is already registered.");
+            const auto passwordHash = auth::hashPassword(password);
+            TransactionScope tx(db_);
+            const auto rows = tx.db->execSqlSync(
+                "INSERT INTO admin_users(username,email,password_hash,role,status) VALUES($1,$2,$3,'admin','disabled') "
+                "ON CONFLICT DO NOTHING RETURNING id::text", username, email, passwordHash);
+            if (rows.empty()) throw ApiError(409, "USER_EXISTS", "Username or email is already registered.");
+            const auto userId = rows[0]["id"].as<std::string>();
+            tx.db->execSqlSync("INSERT INTO admin_user_audit(actor,target_user,action,detail) VALUES($1,$2::uuid,'registered','{}'::jsonb)",
+                username, userId);
+            tx.commit();
+            Json::Value result;
+            result["id"] = userId; result["status"] = "disabled"; result["role"] = "admin";
+            return result;
+        }, 201);
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/session", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
             const auto principal = auth_.requirePrincipal(request->getHeader("authorization"));
@@ -434,9 +550,10 @@ void ApiController::registerAdminRoutes() {
             if (request->method() == drogon::Get) {
                 Json::Value result(Json::arrayValue);
                 for (const auto& row : db_->execSqlSync(
-                    "SELECT id::text,username,role,status,created_by,created_at FROM admin_users ORDER BY created_at,id")) {
+                    "SELECT id::text,username,email,role,status,created_by,created_at FROM admin_users ORDER BY created_at,id")) {
                     Json::Value item;
                     item["id"] = row["id"].as<std::string>(); item["username"] = row["username"].as<std::string>();
+                    item["email"] = nullable<std::string>(row["email"]).value_or("");
                     item["role"] = row["role"].as<std::string>(); item["status"] = row["status"].as<std::string>();
                     item["created_by"] = nullable<std::string>(row["created_by"]).value_or("");
                     item["created_at"] = row["created_at"].as<std::string>(); result.append(item);
