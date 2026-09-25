@@ -10,7 +10,7 @@ namespace {
 class Writer : public midi::IMidiWriter {
 public:
     int writes = 0;
-    void remove(std::int64_t, std::int64_t) override { ++writes; }
+    void remove(std::int64_t, std::int64_t, const std::string&) override { ++writes; }
     midi::MidiEntry create(const midi::MidiEntry& entry) override { ++writes; return entry; }
     midi::MidiEntry update(std::int64_t, const midi::MidiEntry& entry) override { ++writes; return entry; }
     std::optional<midi::MidiEntry> findById(std::int64_t) override { return std::nullopt; }
@@ -50,7 +50,7 @@ TEST(AdminPassword, TokensAreRandomAndOnlyDigestIsPersisted) {
 class PersonWriter : public person::IPersonWriter {
 public:
     int writes = 0;
-    void remove(std::int64_t, std::int64_t) override { ++writes; }
+    void remove(std::int64_t, std::int64_t, const std::string&) override { ++writes; }
     person::PersonList list(Page) override { return {{}, 0}; }
     person::PersonEdit getEditor(std::int64_t) override { return {}; }
     person::PersonEdit save(std::int64_t, const person::PersonEdit& edit) override { ++writes; return edit; }
@@ -61,11 +61,11 @@ TEST(AdminDelete, RequiresPositiveIdentityAndRevision) {
     Writer midis; midi::MidiWriteService midiService(midis);
     PersonWriter people; person::PersonWriteService personService(people);
     for (const auto& [id, revision] : {std::pair<std::int64_t, std::int64_t>{0, 1}, {-1, 1}, {1, 0}, {1, -1}}) {
-        EXPECT_THROW(midiService.remove(id, revision), ApiError);
-        EXPECT_THROW(personService.remove(id, revision), ApiError);
+        EXPECT_THROW(midiService.remove(id, revision, "admin"), ApiError);
+        EXPECT_THROW(personService.remove(id, revision, "admin"), ApiError);
     }
     EXPECT_EQ(midis.writes, 0); EXPECT_EQ(people.writes, 0);
-    midiService.remove(1, 1); personService.remove(1, 1);
+    midiService.remove(1, 1, "admin"); personService.remove(1, 1, "admin");
     EXPECT_EQ(midis.writes, 1); EXPECT_EQ(people.writes, 1);
 }
 TEST(PersonWrite, RejectsAmbiguousAliasesAndInvalidCreditsBeforePersistence) {

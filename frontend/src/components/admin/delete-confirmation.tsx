@@ -33,11 +33,10 @@ export function DeleteConfirmation({ resource, id, revision, name }: {
 
   return <section aria-labelledby={headingId} className="mt-10 min-w-0 space-y-4 rounded-xl border border-red-200 bg-white p-5 sm:p-6">
     <h2 id={headingId} className="text-lg font-semibold text-red-900">危险操作：删除{label}</h2>
-    <p className="break-words text-sm leading-7">即将删除「{name}」（编号 {id}）。此操作不可撤销，不会保存上方表单中尚未提交的修改。</p>
+    <p className="break-words text-sm leading-7">即将将「{name}」（编号 {id}）移入回收站。可以从后台回收站恢复；不会保存上方表单中尚未提交的修改。</p>
     {resource === "midis" ? <div className="space-y-2 text-sm leading-7 text-muted">
-      <p>将一并删除本档案的作品署名、历史来源、寻回记录和文件登记；关联人物不会被删除。</p>
-      <p>外部文件仅写入待清理日志（journal），至少 24 小时后才可通过现有显式维护清理；不会立即物理删除。桶内匿名可读对象在清理前仍可能被访问。</p>
-    </div> : <p className="text-sm leading-7 text-muted">仍被作品署名或寻回记录引用的人物不能删除，必须先手动解除所有相关引用；不会自动级联解除。</p>}
+      <p>作品署名、来源、寻回记录、文件登记和外部文件都会保留，恢复后继续可用。</p>
+    </div> : <p className="text-sm leading-7 text-muted">人物历史昵称会保留，恢复后继续可用。仍有作品署名或寻回记录引用的人物需要先解除引用。</p>}
     <form action={action} onReset={event => event.preventDefault()} onSubmit={event => {
       if (busy || submitting.current || !confirming || !confirmed) { event.preventDefault(); return; }
       submitting.current = true;
@@ -47,9 +46,9 @@ export function DeleteConfirmation({ resource, id, revision, name }: {
       <input type="hidden" name="revision" value={revision} />
       {confirming ? <fieldset disabled={busy} className="min-w-0 space-y-4 disabled:opacity-60">
         <legend className="sr-only">确认删除{label}</legend>
-        <label className="flex items-start gap-3 text-sm leading-7"><input type="checkbox" name="confirmed" value="true" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-2 shrink-0" /><span className="min-w-0 break-words">我确认删除{label}「{name}」（编号 {id}），已了解上述影响及此操作不可撤销。</span></label>
+        <label className="flex items-start gap-3 text-sm leading-7"><input type="checkbox" name="confirmed" value="true" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-2 shrink-0" /><span className="min-w-0 break-words">我确认将{label}「{name}」（编号 {id}）移入回收站，并了解可从后台恢复。</span></label>
         <div className="flex flex-wrap gap-5">
-          <button type="submit" disabled={busy || !confirmed} className="rounded-lg bg-red-700 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在删除，请勿重复操作…" : "确认删除"}</button>
+          <button type="submit" disabled={busy || !confirmed} className="rounded-lg bg-red-700 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在移入回收站…" : "移入回收站"}</button>
           <button type="button" disabled={busy} onClick={() => {
             if (!submitting.current) { setConfirming(false); setConfirmed(false); }
           }} className="text-sm underline disabled:opacity-50">取消</button>
@@ -63,7 +62,7 @@ export function DeleteConfirmation({ resource, id, revision, name }: {
           <Link href={listPath} target="_blank" rel="noopener noreferrer" className="underline">在新页面核对列表</Link>
         </div>
       </div>}
-      {state.deletedId && <p role="status" className="text-sm text-green-900">删除已完成，正在返回列表。<Link href={`${listPath}?deleted=1`} className="ml-2 underline">前往列表</Link></p>}
+      {state.deletedId && <p role="status" className="text-sm text-green-900">已移入回收站，正在返回列表。<Link href={`${listPath}?deleted=1`} className="ml-2 underline">前往列表</Link></p>}
     </form>
   </section>;
 }

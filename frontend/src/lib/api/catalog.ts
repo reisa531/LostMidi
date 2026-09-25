@@ -7,7 +7,7 @@ export type CatalogPath = "/midis" | "/people" | "/recovery" | "/map";
 export type UrlQuery = Record<string, string | number | undefined>;
 export type GroupBy = "author" | "source";
 export type CatalogQuery = {
-  page: number; pageSize: number; status?: ArchiveStatus; sort: "updated" | "title";
+  page: number; pageSize: number; status?: ArchiveStatus; sort: "updated" | "title"; q?: string;
   person?: string; source?: string; missing?: GroupBy;
 };
 export type MapQuery = {
@@ -65,16 +65,20 @@ function listFields(raw: SearchParams) {
   } as Pick<CatalogQuery, "page" | "pageSize" | "status" | "sort">;
 }
 export function readCatalogQuery(raw: SearchParams): CatalogQuery {
-  checkKeys(raw, ["page", "pageSize", "status", "sort", "person", "source", "missing"]);
+  checkKeys(raw, ["page", "pageSize", "status", "sort", "person", "source", "missing", "q"]);
   const person = single(raw, "person");
   const source = single(raw, "source");
   const missing = groupBy(single(raw, "missing"));
   if ((missing === "author" && person !== undefined) || (missing === "source" && source !== undefined)) throw new CatalogQueryError();
-  return { ...listFields(raw), person: person === undefined ? undefined : personId(person), source: source === undefined ? undefined : sourceName(source), missing };
+  const q = single(raw, "q");
+  if (q !== undefined && (!q.trim() || new TextEncoder().encode(q).length > 200)) throw new CatalogQueryError();
+  return { ...listFields(raw), q, person: person === undefined ? undefined : personId(person), source: source === undefined ? undefined : sourceName(source), missing };
 }
 export function readPeopleQuery(raw: SearchParams) {
-  checkKeys(raw, ["page", "pageSize"]);
-  return { page: integer(single(raw, "page"), 1), pageSize: integer(single(raw, "pageSize"), 20, 100) };
+  checkKeys(raw, ["page", "pageSize", "q"]);
+  const q = single(raw, "q");
+  if (q !== undefined && (!q.trim() || new TextEncoder().encode(q).length > 200)) throw new CatalogQueryError();
+  return { page: integer(single(raw, "page"), 1), pageSize: integer(single(raw, "pageSize"), 20, 100), q };
 }
 export function readMapQuery(raw: SearchParams): MapQuery {
   checkKeys(raw, ["by", "group", "missing", "groupPage", "page", "pageSize", "status", "sort"]);
@@ -124,7 +128,7 @@ export function getCatalogEntries(query: CatalogQuery) {
   const valid = readCatalogQuery(toRaw(query));
   return apiGet<CatalogEntries>(`/api/v1/catalog/entries?${encodeQuery(valid)}`);
 }
-export function getCatalogPeople(query: { page: number; pageSize: number }) {
+export function getCatalogPeople(query: { page: number; pageSize: number; q?: string }) {
   const valid = readPeopleQuery(toRaw(query));
   return apiGet<CatalogPeople>(`/api/v1/people?${encodeQuery(valid)}`);
 }

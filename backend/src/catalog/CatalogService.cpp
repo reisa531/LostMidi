@@ -29,11 +29,16 @@ bool validUtf8(const std::string& text) {
 }
 void validate(const EntryQuery& query) {
     query.page.validate();
+    if (query.search.size() > 200 || !validUtf8(query.search)) invalid("q must be valid UTF-8 with at most 200 bytes.");
     if (query.status && !validStatus(*query.status)) invalid("Invalid catalog status.");
     if (query.personId && *query.personId < 1) invalid("person must be a positive 64-bit integer or none.");
     if (query.source && (query.source->empty() || query.source->size() > 500 || !validUtf8(*query.source)))
         invalid("source must be nonempty UTF-8, at most 500 bytes, with no NUL.");
     if (query.sort != "updated" && query.sort != "title") invalid("sort must be updated or title.");
+}
+void validate(const PersonQuery& query) {
+    query.page.validate();
+    if (query.search.size() > 200 || !validUtf8(query.search)) invalid("q must be valid UTF-8 with at most 200 bytes.");
 }
 void validate(const GroupQuery& query) {
     query.page.validate();
@@ -48,10 +53,17 @@ Page parsePage(const QueryParameters& parameters, int defaultSize) {
     return page;
 }
 }
-Page parsePeoplePage(const QueryParameters& parameters) { return parsePage(parameters, 20); }
+PersonQuery parsePeopleQuery(const QueryParameters& parameters) {
+    PersonQuery query;
+    query.page = parsePage(parameters, 20);
+    if (const auto it = parameters.find("q"); it != parameters.end()) query.search = it->second;
+    validate(query);
+    return query;
+}
 EntryQuery parseEntryQuery(const QueryParameters& parameters) {
     EntryQuery query;
     query.page = parsePage(parameters, 20);
+    if (const auto it = parameters.find("q"); it != parameters.end()) query.search = it->second;
     if (const auto it = parameters.find("status"); it != parameters.end()) query.status = it->second;
     if (const auto it = parameters.find("source"); it != parameters.end()) query.source = it->second;
     if (const auto it = parameters.find("sort"); it != parameters.end()) query.sort = it->second;
@@ -85,9 +97,9 @@ PageResult<CatalogEntry> CatalogService::entries(const EntryQuery& query) {
     validate(query);
     return repository_.entries(query);
 }
-PageResult<Person> CatalogService::people(Page page) {
-    page.validate();
-    return repository_.people(page);
+PageResult<Person> CatalogService::people(const PersonQuery& query) {
+    validate(query);
+    return repository_.people(query);
 }
 PageResult<Group> CatalogService::groups(const GroupQuery& query) {
     validate(query);

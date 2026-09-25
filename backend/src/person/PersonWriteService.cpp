@@ -18,9 +18,10 @@ PersonList PersonWriteService::list(Page page) {
     return repository_.list(page);
 }
 PersonEdit PersonWriteService::get(std::int64_t id) { positive(id); return repository_.getEditor(id); }
-void PersonWriteService::remove(std::int64_t id, std::int64_t revision) {
+void PersonWriteService::remove(std::int64_t id, std::int64_t revision, const std::string& actor) {
     positive(id); positive(revision);
-    repository_.remove(id, revision);
+    if (actor.empty() || actor.size() > 100) invalid();
+    repository_.remove(id, revision, actor);
 }
 PersonEdit PersonWriteService::save(std::int64_t id, PersonEdit edit) {
     if (id < 0 || (id && edit.person.revision < 1)) invalid();

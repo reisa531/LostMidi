@@ -1,6 +1,6 @@
 # Admin 平台
 
-统一入口为 `/admin`，支持单管理员登录、退出、会话验证，以及 MIDI 基本信息新增和编辑。新站先通过 `/install` 一次性初始化，成功后另行登录。保存立即反映到公开站点，没有草稿或发布审核状态。
+统一入口为 `/admin`，支持单管理员登录、退出、会话验证，以及 MIDI 和人物的新增、编辑、回收站恢复和操作审计。新站先通过 `/install` 一次性初始化，成功后另行登录。保存立即反映到公开站点，没有草稿或发布审核状态。本分支新增的搜索与回收站尚未部署；数据库需迁移至 011。
 
 ## 当前页面
 
@@ -8,18 +8,19 @@
 | --- | --- |
 | `/install` | 一次性站点与管理员初始化；已安装仅显示锁定，不提供重装、设置编辑或密码重置 |
 | `/admin/login` | 管理员登录，无公开注册 |
-| `/admin` | 真实档案总数、查询连接状态、档案速览与模块入口 |
-| `/admin/midis` | 档案分页表格、新增入口、编辑及公开详情链接 |
-| `/admin/midis/new` | 新增档案基本信息 |
-| `/admin/midis/[id]/edit` | 编辑基本信息；保存后显示公开详情链接 |
+| `/admin` | 待完善记录、最近修改与快捷新增，不展示连接状态或管理功能目录 |
+| `/admin/midis` | 档案分页表格、新增入口、编辑及公开详情链接，显示删除完成提示 |
+| `/admin/midis/new` | 新增基本信息，可选同页上传一个 MIDI 文件 |
+| `/admin/midis/[id]/edit` | 编辑基本信息、查看公开详情，底部独立删除确认区 |
 | `/admin/midis/[id]/credits` | 添加、调整或移除作品署名 |
 | `/admin/midis/[id]/history` | 逐条新增、编辑、删除历史来源与寻回记录 |
-| `/admin/people` | 人物分页列表、创建和编辑入口 |
+| `/admin/midis/[id]/files` | 管理员单文件导入及文件元数据 |
+| `/admin/people` | 人物分页列表、创建和编辑入口，显示删除完成提示 |
 | `/admin/people/new` | 创建人物及历史昵称 |
-| `/admin/people/[id]/edit` | 编辑人物资料和昵称 |
-| `/admin/modules` | 管理功能目录，仅展示可使用的功能 |
+| `/admin/people/[id]/edit` | 编辑人物资料和昵称，底部独立删除确认区 |
+| `/admin/trash` | 查看并恢复软删除的 MIDI 与人物，查看最近 50 条删除/恢复审计记录 |
 
-人物管理、作品署名、来源与寻回已开放；后两者从作品编辑页进入。数据不可用时显示未知状态，不显示假的统计数字。
+人物管理、作品署名、来源与寻回已开放；作品相关维护从编辑页进入。数据不可用时显示未知状态，不显示假的统计数字。
 
 ## 结构与扩展
 
@@ -54,7 +55,7 @@ Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin 
 
 ## 一次性安装 API 与页面
 
-部署者先准备数据库连接并执行全部迁移至 `005_site_installation.sql`；安装页不创建数据库、不自动迁移或 seed。后端 `INSTALLATION_TOKEN` 为空时禁用新安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，可用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。令牌只配置在后端，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量，也不是管理员会话令牌。
+部署者先准备数据库连接并执行全部迁移至 `011_cleanup_retry_metadata.sql`；安装表由 005 引入，但当前应用还要求后续迁移。安装页不创建数据库、不自动迁移或 seed。后端 `INSTALLATION_TOKEN` 为空时禁用新安装；非空必须匹配 `[A-Za-z0-9_-]{32,128}`，可用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。令牌只配置在后端，不得放入 `NEXT_PUBLIC_`、URL 或前端环境变量，也不是管理员会话令牌。
 
 公开站点 `/(site)` 与 `/admin` 父 layout 在请求时检查安装状态。缺少后端配置或明确 `installed=false` 才跳 `/install`；旧后端 404、非法响应或离线仅显示不可用，不开放安装。构建可不连接后端，运行必须有可用 API。已安装的 `/install` 仅显示锁定；数据库保存的站点名称用于页眉、页脚与标题，简介用于 meta description。
 
@@ -96,10 +97,14 @@ Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin 
 | `POST /api/v1/admin/midis` | 新增；成功返回 201 和档案对象 |
 | `GET /api/v1/admin/midis/:id` | 读取编辑数据和 revision |
 | `PUT /api/v1/admin/midis/:id` | 根据 revision 更新，返回新档案对象 |
+| `DELETE /api/v1/admin/midis/:id` | 按 revision 将档案移入回收站，返回 `{deleted_id}`；所属元数据和文件保留 |
 | `GET /api/v1/admin/people` | 分页人物列表，支持 page / pageSize |
 | `POST /api/v1/admin/people` | 新增人物和昵称，返回 201 |
 | `GET /api/v1/admin/people/:id` | 读取人物、revision 及昵称 |
 | `PUT /api/v1/admin/people/:id` | 按 revision 更新人物及完整昵称列表 |
+| `DELETE /api/v1/admin/people/:id` | 按 revision 将人物移入回收站；仍被署名或寻回引用时拒绝 |
+| `GET /api/v1/admin/trash` | 回收站分页列表及最近 50 条操作记录 |
+| `POST /api/v1/admin/trash/:type/:id/restore` | 恢复软删除的 MIDI 或人物，并记录管理员和时间 |
 | `GET /api/v1/admin/midis/:id/credits` | 读取作品 revision 和署名列表 |
 | `PUT /api/v1/admin/midis/:id/credits` | 按作品 revision 替换完整署名列表 |
 | `GET /api/v1/admin/midis/:id/history` | 同一事务读取作品摘要、revision、来源及寻回记录 |
@@ -110,9 +115,13 @@ Next.js 服务端将会话令牌存入 HttpOnly、SameSite=Strict、Path=/admin 
 | `PUT /api/v1/admin/midis/:id/recovery-events/:eventId` | 原位编辑寻回记录，成功 200 |
 | `DELETE /api/v1/admin/midis/:id/recovery-events/:eventId` | 删除本作品的一条寻回记录，成功 200 JSON |
 
-档案与人物编辑页提供独立删除确认区。`DELETE /api/v1/admin/midis/:id` 和 `DELETE /api/v1/admin/people/:id` 只接受 JSON `{revision}`，成功返回 200 `{deleted_id}`；缺失返回 404，旧版本返回 409 `STALE_ENTRY` / `STALE_PERSON`。人物仍被作品署名或寻回记录引用时返回 409 `PERSON_IN_USE`，必须先解除引用，不会静默抹去历史关联。
+档案与人物编辑页提供独立回收站确认区，显示名称与编号；先展开再明确勾选才可提交，取消不提交，操作不会保存上方未提交修改。提交中禁用重复操作，成功返回列表。回收站会保留记录、关系和 MIDI 对象，可在后台恢复。删除表单独立于编辑表单，刷新后的 revision 会重置旧确认。
 
-删除 MIDI 原子移除其署名、来源、寻回和文件登记，但不删除关联人物。外部文件同事务写入清理 journal，站内详情与下载不再可用；对象不即时物理删除，只有原有显式维护命令在超过 24 小时且无引用时清理。匿名桶对象仍可能直接访问，彻底撤回需单独处理存储权限。008 迁移保留创建请求回执，已删除条目的旧创建请求返回 410 `CREATION_DELETED`，不会重新建档。网络结果不确定时先核对列表。
+`DELETE /api/v1/admin/midis/:id` 和 `DELETE /api/v1/admin/people/:id` 只接受 JSON `{revision}`，要求正整数版本，成功返回 200 `{deleted_id}`；缺失返回 404，旧版本返回 409 `STALE_ENTRY` / `STALE_PERSON`。人物仍被作品署名或寻回记录引用时返回 409 `PERSON_IN_USE`，必须先解除引用，不会静默抹去历史关联。MIDI 文件操作锁冲突返回 503 `SERVER_BUSY`，不等待反向锁顺序。
+
+移入回收站后站内详情和下载立即下架，数据与外部对象保持原位；恢复后继续可用。被软删除 MIDI 的旧创建请求重放仍返回 410 `CREATION_DELETED`，不会重新建档。对象清理失败会保留 journal，并记录重试次数与通用错误码。
+
+网络结果不确定时先核对列表，错误和确认选择保留；仅本次 DELETE 返回匹配资源的 `MIDI_NOT_FOUND` / `PERSON_NOT_FOUND` 才视为已删除，不能把任意 404 或鉴权失败当作成功。401 提供新页面登录；409 需刷新核对新版本后重新确认，不能盲目重试旧版本。
 
 除登录外均需要 Bearer 令牌。正常处理的管理响应带 `Cache-Control: no-store`。写入字段如下：
 
@@ -132,7 +141,7 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 重复 slug 返回 `409 SLUG_CONFLICT`；旧 revision 返回 `409 STALE_ENTRY`，避免覆盖其他页面已保存的修改。表单失败后保留输入，可在新页面登录或重新打开编辑页并手动合并。修改 slug 后旧公开 URL 返回 404，目前没有历史地址重定向；归档和权利状态不控制元数据可见性。
 
-其他错误包括 `400 INVALID_INPUT`、`401 INVALID_CREDENTIALS/UNAUTHORIZED`、`404 MIDI_NOT_FOUND`、`429 LOGIN_RATE_LIMITED` 和 `503 ADMIN_DISABLED/DATABASE_UNAVAILABLE`。没有注册、多角色、审核、作品或人物删除、文件上传下载功能；历史来源与寻回记录支持逐条删除。
+其他错误包括 `400 INVALID_INPUT`、`401 INVALID_CREDENTIALS/UNAUTHORIZED`、`404 MIDI_NOT_FOUND`、`429 LOGIN_RATE_LIMITED` 和 `503 ADMIN_DISABLED/DATABASE_UNAVAILABLE`。没有公开注册、多角色或审核功能。管理员可导入 MIDI 并删除档案或无引用人物；访客通过公开详情下载获准文件，不提供试听。历史来源与寻回记录支持逐条删除。
 
 ## 人物与署名规则
 
@@ -165,7 +174,7 @@ PUT 替换上述基本信息，省略可空字段会清空该字段；人物署�
 
 ## 验证
 
-数据库必须应用全部迁移至 `005_site_installation.sql`，不能只更新前端。005 只新增安装表；启动和 `/ready` 检查 005 记录及表可查询，继续检查 004 记录与寻回日期实际可空，不修改旧迁移。
+数据库必须应用全部迁移至 `011_cleanup_retry_metadata.sql`，不能只更新前端。启动和 `/ready` 检查创建回执外键、回收站标记、审计表及清理重试列；不修改已应用迁移。
 
 安装 API 检查：`python scripts/installation_smoke.py --api <测试后端> --allow-install`，要求环境变量 `INSTALLATION_TEST_TOKEN` 与该后端令牌一致。浏览器检查：`python scripts/installation_browser_smoke.py --frontend <测试前端> --allow-install`，另需 `ADMIN_TEST_USERNAME` / `ADMIN_TEST_PASSWORD` 用于创建及登录新管理员，可加 `--channel msedge`、`--screenshots <目录>`，需 Playwright 及相应浏览器。两个脚本都会永久安装，必须各自使用独立、全新、已迁移的专用测试库，后端保持环境密码哈希为空；不能顺序指向同库，不得用于生产或已安装站点。
 
@@ -175,7 +184,7 @@ CTest 新增 installation 测试使用隔离 schema，测试数据库用户需�
 
 可选浏览器验收：在独立 Python 环境安装 `playwright` 并运行 `python -m playwright install chromium`，再使用相同测试凭据执行 `python scripts/admin_browser_smoke.py --frontend http://localhost:3000 --allow-writes`。也可传 `--channel msedge` 使用已安装的 Edge；`--screenshots <目录>` 保存验收截图。浏览器地址必须与测试前端的 ADMIN_ORIGIN 一致。脚本会创建人物和作品，只能指向专用测试环境。
 
-运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。数据库需应用全部迁移至 005。运行中的 API 可用 `python scripts/admin_smoke.py --allow-writes` 检查，通过 `ADMIN_TEST_USERNAME`、`ADMIN_TEST_PASSWORD` 提供测试凭据；脚本保留新增档案，只在专用测试数据库运行。浏览器验收见 [RUN.md](../RUN.md)，实际执行结果及限制见 [验证记录](implementation-report.md)。
+当前提交尚未验证。计划发布时，数据库需先应用全部迁移至 011；届时运行前端 build、lint、typecheck，以及配置专用测试库后的 CTest。写入 smoke 和回收站恢复操作只允许在隔离测试数据库执行，不能在生产试删。浏览器验收见 [RUN.md](../RUN.md)，历史结果及本次未执行事项见 [验证记录](implementation-report.md)。
 
 
 ## 新建档案同页上传（2026-09-24）

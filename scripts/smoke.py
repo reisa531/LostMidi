@@ -3,6 +3,7 @@
 import argparse
 import html
 import json
+import urllib.parse
 import urllib.error
 import urllib.request
 
@@ -36,6 +37,8 @@ def main():
     beyond = json.loads(request(args.api, "/api/v1/midis?page=999999&pageSize=1"))
     assert beyond["data"] == []
     assert beyond["pagination"]["total"] == listing["pagination"]["total"]
+    searched = json.loads(request(args.api, "/api/v1/catalog/entries?" + urllib.parse.urlencode({"q": "Example", "pageSize": 10})))
+    assert any(entry["slug"] == "example-midi" for entry in searched["data"]), "Catalog search should include title and slug matches"
 
     for query in ("page=0", "page=-1", "page=abc", "pageSize=0", "pageSize=101"):
         error = json.loads(request(args.api, "/api/v1/midis?" + query, 400))
@@ -61,8 +64,11 @@ def main():
         print("PASS: backend health/readiness, pagination, validation, 404, archive and person relations")
         return
 
-    for path in ("/", "/about", "/midis"):
+    for path in ("/", "/about", "/midis", "/search?q=Example"):
         assert "<html" in request(args.frontend, path)
+    sitemap = request(args.frontend, "/sitemap.xml")
+    assert "/midis/example-midi" in sitemap, "Sitemap must include dynamic catalog routes"
+    assert "sitemap.xml" in request(args.frontend, "/robots.txt")
     page = html.unescape(request(args.frontend, "/midis/example-midi"))
     assert detail["entry"]["title"] in page, "Detail must render backend data"
     person_page = html.unescape(request(args.frontend, "/people/" + credit["person_id"]))

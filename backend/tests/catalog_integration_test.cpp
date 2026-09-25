@@ -44,7 +44,7 @@ public:
     int calls = 0;
     catalog::Overview overview() override { ++calls; return {}; }
     catalog::PageResult<catalog::CatalogEntry> entries(const catalog::EntryQuery&) override { ++calls; return {}; }
-    catalog::PageResult<catalog::Person> people(Page) override { ++calls; return {}; }
+    catalog::PageResult<catalog::Person> people(const catalog::PersonQuery&) override { ++calls; return {}; }
     catalog::PageResult<catalog::Group> groups(const catalog::GroupQuery&) override { ++calls; return {}; }
 };
 
@@ -55,7 +55,7 @@ TEST(CatalogContract, DefaultsAndUnassignedFilterContract) {
     EXPECT_FALSE(entries.missingAuthor); EXPECT_FALSE(entries.missingSource);
     const auto groups = catalog::parseGroupQuery({});
     EXPECT_EQ(groups.by, "author"); EXPECT_EQ(groups.page.number, 1); EXPECT_EQ(groups.page.size, 30);
-    EXPECT_EQ(catalog::parsePeoplePage({}).size, 20);
+    EXPECT_EQ(catalog::parsePeopleQuery({}).page.size, 20);
     const auto literal = catalog::parseEntryQuery({{"source", "none"}});
     EXPECT_EQ(literal.source, "none"); EXPECT_FALSE(literal.missingSource);
     EXPECT_TRUE(catalog::parseEntryQuery({{"missing", "source"}}).missingSource);
@@ -69,12 +69,12 @@ TEST(CatalogContract, DefaultsAndUnassignedFilterContract) {
 TEST(CatalogContract, InvalidHttpParametersAreBadRequests) {
     for (const auto* page : {"", "0", "-1", "1000001", "2147483648", "1.0", "1x", "+1", " 1"}) {
         badRequest([&] { catalog::parseEntryQuery({{"page", page}}); });
-        badRequest([&] { catalog::parsePeoplePage({{"page", page}}); });
+        badRequest([&] { catalog::parsePeopleQuery({{"page", page}}); });
         badRequest([&] { catalog::parseGroupQuery({{"page", page}}); });
     }
     for (const auto* size : {"", "0", "-1", "101", "99999999999999999999", "20x"}) {
         badRequest([&] { catalog::parseEntryQuery({{"pageSize", size}}); });
-        badRequest([&] { catalog::parsePeoplePage({{"pageSize", size}}); });
+        badRequest([&] { catalog::parsePeopleQuery({{"pageSize", size}}); });
         badRequest([&] { catalog::parseGroupQuery({{"pageSize", size}}); });
     }
     for (const auto* value : {"", "0", "-1", "+1", "1x", "1.0", "9223372036854775808", "NONE", "1 OR 1=1"})
@@ -107,7 +107,7 @@ TEST(CatalogContract, ServiceRejectsInvalidTypedQueriesBeforeRepositoryAccess) {
     query = {}; query.personId = 0; badRequest([&] { service.entries(query); });
     query = {}; query.source = ""; badRequest([&] { service.entries(query); });
     query = {}; query.sort = "id"; badRequest([&] { service.entries(query); });
-    badRequest([&] { service.people({0, 20}); });
+    badRequest([&] { service.people({Page{0, 20}, ""}); });
     badRequest([&] { service.groups({{1, 30}, "url"}); });
     EXPECT_EQ(repository.calls, 0);
 }
@@ -214,10 +214,10 @@ TEST_F(CatalogPostgres, EmptyCatalogAndUncreditedPeopleDoNotCreateSyntheticGroup
     EXPECT_TRUE(page["data"].isArray()); EXPECT_TRUE(page["data"].empty());
     EXPECT_EQ(page["pagination"]["page"].asInt(), 1); EXPECT_EQ(page["pagination"]["pageSize"].asInt(), 20);
     EXPECT_EQ(page["pagination"]["total"].asInt64(), 0);
-    EXPECT_TRUE(service->people({}).data.empty());
+    EXPECT_TRUE(service->people({Page{}, ""}).data.empty());
     EXPECT_EQ(groups("author").total, 0); EXPECT_EQ(groups("source").total, 0);
     db->execSqlSync("INSERT INTO people(id,display_name) VALUES(1,'No credits')");
-    const auto people = service->people({});
+    const auto people = service->people({Page{}, ""});
     ASSERT_EQ(people.data.size(), 1u); EXPECT_EQ(people.total, 1); EXPECT_EQ(people.data[0].midiCount, 0);
     EXPECT_EQ(groups("author").total, 0); EXPECT_EQ(service->overview().stats.people, 1);
 }
@@ -277,16 +277,16 @@ TEST_F(CatalogPostgres, FiltersIntersectAndSourceNamesAreLiteralNotUrls) {
 }
 TEST_F(CatalogPostgres, PeopleIncludesUncreditedAuthorsAndDistinctWorkCounts) {
     seed();
-    const auto first = service->people({1,1});
+    const auto first = service->people({Page{1,1}, ""});
     ASSERT_EQ(first.data.size(), 1u); EXPECT_EQ(first.total, 3); EXPECT_EQ(first.data[0].id, 11);
     EXPECT_EQ(first.data[0].midiCount, 3); EXPECT_EQ(first.data[0].biography, "Biography");
     EXPECT_EQ(first.data[0].aliases, (std::vector<std::string>{"Ace", "Zed"}));
-    const auto second = service->people({2,1});
+    const auto second = service->people({Page{2,1}, ""});
     ASSERT_EQ(second.data.size(), 1u); EXPECT_EQ(second.data[0].id, 12); EXPECT_EQ(second.data[0].midiCount, 2);
     EXPECT_FALSE(second.data[0].biography); EXPECT_EQ(second.data[0].aliases, (std::vector<std::string>{"Other"}));
-    const auto third = service->people({3,1});
+    const auto third = service->people({Page{3,1}, ""});
     ASSERT_EQ(third.data.size(), 1u); EXPECT_EQ(third.data[0].id, 13); EXPECT_EQ(third.data[0].midiCount, 0);
-    EXPECT_TRUE(service->people({4,1}).data.empty()); EXPECT_EQ(service->people({4,1}).total, 3);
+    EXPECT_TRUE(service->people({Page{4,1}, ""}).data.empty()); EXPECT_EQ(service->people({Page{4,1}, ""}).total, 3);
     const auto json = catalog::toJson(second);
     EXPECT_EQ(json["pagination"]["page"].asInt(), 2); EXPECT_EQ(json["pagination"]["pageSize"].asInt(), 1);
     EXPECT_EQ(json["pagination"]["total"].asInt64(), 3); EXPECT_TRUE(json["data"][0]["biography"].isNull());
@@ -380,7 +380,7 @@ TEST_F(CatalogPostgres, QueryCountIsConstantAndEnrichmentIsBoundToSelectedIds) {
     }
     db->execSqlSync("INSERT INTO people(id,display_name) SELECT n,'Bulk '||n FROM generate_series(100,250) n");
     for (const auto size : {1, 100}) {
-        queries.clear(); service->people({1,size});
+        queries.clear(); service->people({Page{1,size}, ""});
         ASSERT_EQ(queries.size(), 5u); // SET, count, page, aliases, distinct work counts.
         EXPECT_NE(queries[3].find("ANY($1::bigint[])"), std::string::npos);
         EXPECT_NE(queries[4].find("ANY($1::bigint[])"), std::string::npos);

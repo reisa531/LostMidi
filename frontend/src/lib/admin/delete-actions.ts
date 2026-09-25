@@ -43,6 +43,7 @@ export async function deleteEntryAction(_previous: DeleteState, form: FormData):
         CONFIRMATION_REQUIRED: "请先勾选确认，明确同意删除此记录。",
         STALE_ENTRY: "档案版本已变化，未执行删除。请先保留未保存的内容，刷新或重新打开编辑页，核对最新资料后重新确认删除；不要用旧版本直接重试。",
         STALE_PERSON: "人物版本已变化，未执行删除。请先保留未保存的内容，刷新或重新打开编辑页，核对最新资料后重新确认删除；不要用旧版本直接重试。",
+        PERSON_IN_USE: "人物仍被作品署名或寻回记录引用，暂时不能移入回收站。请先处理这些关联后再试。",
         PERSON_IN_USE: "人物仍被作品署名或寻回记录引用，无法删除。请先手动解除所有相关引用，再重新打开编辑页确认；系统不会自动级联解除。",
       };
       if (messages[error.code]) return { error: messages[error.code] };

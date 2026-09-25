@@ -15,6 +15,11 @@ PostgreSQL 保存档案元数据，文件二进制由 Backend 的 storage abstra
 | `recovery_events` | 可空的寻回时间、可空的贡献者外键、过程叙述与可空的文本证据；created_at 保留记录创建时间。 |
 | `admin_sessions` | 管理员会话令牌摘要、凭据标识与有效期；账号可来自数据库安装或环境覆盖，与人物分离。 |
 | `site_installation` | 005 新增，单行 `id=1` 持久安装标记、站点名称/简介及认证来源；数据库安装时保存管理员用户名与密码哈希。 |
+| `midi_import_objects` | 006 新增对象 journal；跟踪待清理对象摘要、存储 key 和触碰时间，不通过列桶发现孤立对象。 |
+| `midi_creation_requests` | 007 新增创建请求身份与提交摘要；008 将唯一作品关联改为可空，删除作品后保留回执。 |
+| `admin_audit_log` | 010 保存管理员删除与恢复操作；作品和人物通过 `deleted_at` / `deleted_by` 进入回收站。 |
+
+当前生产应用到 008；本分支新代码要求迁移至 `011_cleanup_retry_metadata.sql`。009 提供 `pg_trgm` 搜索索引，010 提供可恢复删除与审计，011 提供外部对象清理重试信息。本次没有部署或验证；生产迁移前须执行独立恢复演练。
 
 迁移 `002_admin_sessions_and_revision.sql` 增加 `admin_sessions`，以 64 位小写十六进制 `token_hash` 为主键，不存原始令牌。会话有效 8 小时，凭据标识由当前选用的用户名与哈希决定；不匹配的会话被拒绝，但恢复旧凭据可能让未过期的旧会话再次匹配，并非永久撤销。
 
@@ -24,7 +29,7 @@ PostgreSQL 保存档案元数据，文件二进制由 Backend 的 storage abstra
 
 署名角色暂定为 `composer`、`arranger`、`sequencer`、`contributor`。状态字段采用文本加 CHECK 约束，新增值通过后续 SQL migration 更新约束，不引入 PostgreSQL enum 类型。档案状态允许 `archived`、`partially_recovered`、`lost`、`uncertain`；这些是人工维护的档案判断，当前不从文件行数自动推导。
 
-删除作品会删除它的从属元数据。删除被署名的人物会被外键阻止，需先明确处理署名；人物删除后，寻回事件保留，`recovered_by` 设为 NULL。当前没有作品或人物删除 API，仅管理员可逐条删除历史来源及寻回记录。删除数据库中的文件行不会删除实际文件，未来的写入 / 删除 Service 需要协调这两种资源。
+MIDI 和人物进入回收站时只更新 `deleted_at` / `deleted_by`，不删除子记录、文件登记、人物关系或对象。公开查询排除软删除行；管理员可在回收站恢复。人物仍被署名或寻回引用时 API 会拒绝移入回收站。删除与恢复在同一事务写入 `admin_audit_log`，保留操作人、时间、对象类型、编号和标签。不要绕过 Service 直接删除业务记录。
 
 全局 `UNIQUE(sha256)` 将完全相同的二进制限制为一条文件记录，因此同一文件当前归属一个档案。若将来发现跨作品复用的真实需求，再拆分 object 表和作品文件关联表。当前由后端计算并规范化 SHA-256，数据库唯一约束是处理并发写入的最终防线。存储 key 是存储接口的标识而非下载 URL，路径安全由本地存储实现验证。
 
@@ -61,7 +66,7 @@ PostgreSQL 保存档案元数据，文件二进制由 Backend 的 storage abstra
 | `rights_holder` | 可空的权利人文字记录；不强行关联到人物表。 |
 | `distribution_permission` | `unknown`（默认）、`permission_granted`、`metadata_only`、`restricted`。 |
 
-版权归属和分发许可分别表达，存在于 archive.org 不代表 public domain。当前无法律判断、无下载 / 上传端点；这些字段也不会自动给予下载许可。如果不同文件版本需要不同许可，后续 migration 可在文件级别补充覆盖信息。
+版权归属和分发许可分别表达，存在于 archive.org 不代表 public domain。当前不自动判断法律权利。管理员导入要求明确确认公开分发；访客下载需文件确认且作品未标为 `restricted` / `metadata_only`，并校验归属、大小和 SHA-256。版权字段不会自动给予下载许可。如果不同文件版本需要不同许可，后续 migration 可在文件级别补充覆盖信息。
 
 ## 迁移运行方式
 
@@ -105,7 +110,7 @@ CTest 的 installation 集成测试会创建隔离 schema，连接用户需具�
 
 迁移 `003_person_revision.sql` 为人物增加正整数 revision 与 UPDATE 自动递增触发器。人物简介与完整昵称列表在同一事务保存；昵称保持大小写，允许不同人物使用相同昵称。后台人物写入必须携带旧 revision。
 
-署名保存整体替换当前作品的署名列表，使用作品 revision 防止覆盖其他编辑。事务锁定作品、检查人物外键并写入署名，未知人物或任何失败都会回滚署名和 revision。允许同一人物承担不同角色，禁止重复 `(person_id, role)`。空列表明确表示移除所有署名。当前没有人物删除接口。
+署名保存整体替换当前作品的署名列表，使用作品 revision 防止覆盖其他编辑。事务锁定作品、检查人物外键并写入署名，未知人物或任何失败都会回滚署名和 revision。允许同一人物承担不同角色，禁止重复 `(person_id, role)`。空列表明确表示移除所有署名。人物删除接口还会检查寻回引用，只有全部引用解除后才能删除。
 
 ## 来源与寻回写入
 
@@ -116,10 +121,20 @@ CTest 的 installation 集成测试会创建隔离 schema，连接用户需具�
 来源和寻回日期在 API 中使用 UTC 六位小数精度，未知时间和人物为 null；可空的寻回日期排列在已知日期之后。evidence 为自由文本，不是来源外键或文件附件。具体请求字段和错误码见 [Admin 文档](admin.md)。
 
 
-## 原子建档与请求回执（007）
+## 原子建档与请求回执（007–008）
 
-`007_midi_creation_requests.sql` 增加 `midi_creation_requests`：UUID v4 请求键、规范化提交内容的 SHA-256、唯一关联的作品 ID。回执与作品及可选文件在同一事务提交。相同键和内容返回已有作品，不重复创建或重新添加文件；相同键但不同内容返回 `409 IDEMPOTENCY_CONFLICT`。作品删除时回执随外键级联删除。
+`007_midi_creation_requests.sql` 增加 `midi_creation_requests`：UUID v4 请求键、规范化提交内容的 SHA-256、唯一关联的作品 ID。回执与作品及可选文件在同一事务提交。相同键和内容返回已有作品，不重复创建或重新添加文件；相同键但不同内容返回 `409 IDEMPOTENCY_CONFLICT`。
 
-写对象前仍独立提交 006 journal；存储或数据库提交失败时保留 journal 供既有安全清理处理，不直接删除对象。新建作品初始 revision 为 1；后续编辑、署名与文件导入沿用现有版本控制。007 不更改条目 ID 类型，不回填或覆盖历史资料。
+`008_deleted_creation_receipts.sql` 将 `midi_id` 改为可空，并将其外键从级联删除改为 `ON DELETE SET NULL`。删除作品后保留请求键及摘要；相同内容重放返回 `410 CREATION_DELETED`，不能让旧请求复活已删除作品，不同内容重放仍返回幂等冲突。
 
-新版启动与 `/ready` 要求 007 迁移记录及回执表，即使关闭导入也需要迁移。迁移通过现有 runner 的记录与校验和机制重复执行，不手工重复执行裸 CREATE TABLE SQL。
+写对象前仍独立提交 006 journal；存储或数据库提交失败时保留 journal 供既有安全清理处理，不直接删除对象。新建作品初始 revision 为 1；后续编辑、署名与文件导入沿用现有版本控制。007 和 008 不更改条目 ID 类型、已有资料或安装锁。
+
+新版启动与 `/ready` 要求 008 账本、`midi_id` 实际可空及保留回执的外键，并保留 007 及更早检查；即使关闭导入也需要迁移。当前工作区另要求 010 回收站列与审计表、011 清理尝试列。使用现有 runner 校验已应用文件并跳过，不手工重复执行裸迁移 SQL。
+
+## 搜索索引与回收站
+
+009 启用 PostgreSQL `pg_trgm`，为作品标题、slug、人物姓名、历史昵称和来源名称创建 GIN trigram 索引。目录 API 对查询词做参数绑定，转义 `!`、`%`、`_` 后执行子串匹配；分页结果、筛选和排序仍由 PostgreSQL 执行。
+
+010 增加 `midi_entries.deleted_at/deleted_by`、`people.deleted_at/deleted_by` 和 `admin_audit_log`。移入回收站先 `FOR UPDATE` 锁定记录并核对 revision，然后在同一事务写软删除标记和审计记录。人物仍被署名或寻回事件引用时返回 `409 PERSON_IN_USE`。MIDI 文件及所属来源、署名和寻回记录保留，恢复只清除删除标记并由触发器增加 revision；恢复操作也写入审计记录。
+
+公开目录、详情、人物和下载查询排除软删除行。删除 MIDI 不再加入对象清理 journal，因为文件仍被回收站记录引用；因此对象继续可恢复。011 为现有导入孤儿 journal 添加尝试次数、最近尝试时间和通用失败代码；对象删除失败后事务保留 journal，之后显式 `--cleanup-imports` 可重试。清理仍要求超过 24 小时、没有引用、每次最多 100 条，必须匹配原数据库和存储配置，禁止在生产试运行。

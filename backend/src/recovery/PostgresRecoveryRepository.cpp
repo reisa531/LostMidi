@@ -12,10 +12,10 @@ const std::string sourceSelect = R"SQL(
     FROM historical_sources
 )SQL";
 const std::string eventSelect = R"SQL(
-    SELECT r.id, r.recovered_by, p.display_name AS recovered_by_name, r.story, r.evidence,
+    SELECT r.id, CASE WHEN p.id IS NULL THEN NULL ELSE r.recovered_by END AS recovered_by, p.display_name AS recovered_by_name, r.story, r.evidence,
         to_char(r.recovered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS recovered_at,
         to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at
-    FROM recovery_events r LEFT JOIN people p ON p.id = r.recovered_by
+    FROM recovery_events r LEFT JOIN people p ON p.id = r.recovered_by AND p.deleted_at IS NULL
 )SQL";
 HistoricalSource sourceFrom(const drogon::orm::Row& row) {
     return {row["id"].as<std::int64_t>(), row["website_name"].as<std::string>(),
@@ -42,7 +42,7 @@ std::vector<RecoveryEvent> readEvents(const drogon::orm::DbClientPtr& db, std::i
 }
 std::int64_t advanceRevision(const drogon::orm::DbClientPtr& db, std::int64_t midiId, std::int64_t revision) {
     const auto rows = db->execSqlSync(
-        "UPDATE midi_entries SET updated_at=updated_at WHERE id=$1 AND revision=$2 RETURNING revision", midiId, revision);
+        "UPDATE midi_entries SET updated_at=updated_at WHERE id=$1 AND revision=$2 AND deleted_at IS NULL RETURNING revision", midiId, revision);
     if (rows.empty()) {
         if (db->execSqlSync("SELECT 1 FROM midi_entries WHERE id=$1", midiId).empty())
             throw ApiError(404, "MIDI_NOT_FOUND", "MIDI entry does not exist.");
@@ -66,7 +66,7 @@ std::vector<RecoveryEvent> PostgresRecoveryRepository::eventsFor(std::int64_t mi
 }
 HistoryEditor PostgresRecoveryRepository::getHistory(std::int64_t midiId) {
     TransactionScope tx(db_);
-    const auto rows = tx.db->execSqlSync("SELECT id,title,slug,revision FROM midi_entries WHERE id=$1 FOR SHARE", midiId);
+    const auto rows = tx.db->execSqlSync("SELECT id,title,slug,revision FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR SHARE", midiId);
     if (rows.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "MIDI entry does not exist.");
     HistoryEditor result{rows[0]["id"].as<std::int64_t>(), rows[0]["title"].as<std::string>(),
         rows[0]["slug"].as<std::string>(), rows[0]["revision"].as<std::int64_t>(),
@@ -103,7 +103,7 @@ EventWriteResult PostgresRecoveryRepository::saveEvent(std::int64_t midiId, std:
     const auto nextRevision = advanceRevision(tx.db, midiId, revision);
     if (eventId)
         requireEvent(tx.db->execSqlSync("SELECT id FROM recovery_events WHERE midi_id=$1 AND id=$2", midiId, eventId));
-    if (event.recoveredBy && tx.db->execSqlSync("SELECT id FROM people WHERE id=$1 FOR KEY SHARE", *event.recoveredBy).empty())
+    if (event.recoveredBy && tx.db->execSqlSync("SELECT id FROM people WHERE id=$1 AND deleted_at IS NULL FOR KEY SHARE", *event.recoveredBy).empty())
         throw ApiError(400, "UNKNOWN_PERSON", "The selected person no longer exists.");
     const auto rows = eventId
         ? tx.db->execSqlSync(

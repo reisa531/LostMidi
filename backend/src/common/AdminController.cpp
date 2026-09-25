@@ -1,6 +1,7 @@
 #include "common/ApiController.h"
 #include "common/Json.h"
 #include "common/Log.h"
+#include "common/Transaction.h"
 #include <set>
 
 namespace lostmidi {
@@ -86,6 +87,64 @@ midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
 }
 }
 void ApiController::registerAdminRoutes() {
+    drogon::app().registerHandler("/api/v1/admin/trash", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
+        dispatch(std::move(callback), [this, request] {
+            auth_.require(request->getHeader("authorization"));
+            Page page;
+            const auto& params = request->getParameters();
+            if (params.contains("page")) page.number = positiveInteger(params.at("page"), 1000000, "page");
+            if (params.contains("pageSize")) page.size = positiveInteger(params.at("pageSize"), 100, "pageSize");
+            const auto rows = db_->execSqlSync(
+                "SELECT entity_type,entity_id,entity_label,deleted_at,deleted_by FROM ("
+                "SELECT 'midi'::text AS entity_type,id AS entity_id,title AS entity_label,deleted_at,deleted_by FROM midi_entries WHERE deleted_at IS NOT NULL "
+                "UNION ALL SELECT 'person',id,display_name,deleted_at,deleted_by FROM people WHERE deleted_at IS NOT NULL) AS trash "
+                "ORDER BY deleted_at DESC,entity_type,entity_id LIMIT $1 OFFSET $2",
+                static_cast<std::int64_t>(page.size), page.offset());
+            const auto count = db_->execSqlSync("SELECT (SELECT count(*) FROM midi_entries WHERE deleted_at IS NOT NULL) + "
+                "(SELECT count(*) FROM people WHERE deleted_at IS NOT NULL) AS total")[0]["total"].as<std::int64_t>();
+            Json::Value result; result["data"] = Json::Value(Json::arrayValue);
+            for (const auto& row : rows) {
+                Json::Value item;
+                item["entity_type"] = row["entity_type"].as<std::string>();
+                item["entity_id"] = std::to_string(row["entity_id"].as<std::int64_t>());
+                item["entity_label"] = row["entity_label"].as<std::string>();
+                item["deleted_at"] = row["deleted_at"].as<std::string>();
+                item["deleted_by"] = row["deleted_by"].as<std::string>();
+                result["data"].append(item);
+            }
+            result["pagination"]["page"] = page.number;
+            result["pagination"]["pageSize"] = page.size;
+            result["pagination"]["total"] = Json::Int64(count);
+            result["audit"] = Json::Value(Json::arrayValue);
+            for (const auto& row : db_->execSqlSync("SELECT actor,action,entity_type,entity_id,entity_label,created_at FROM admin_audit_log ORDER BY id DESC LIMIT 50")) {
+                Json::Value item;
+                item["actor"] = row["actor"].as<std::string>();
+                item["action"] = row["action"].as<std::string>();
+                item["entity_type"] = row["entity_type"].as<std::string>();
+                item["entity_id"] = std::to_string(row["entity_id"].as<std::int64_t>());
+                item["entity_label"] = row["entity_label"].as<std::string>();
+                item["created_at"] = row["created_at"].as<std::string>();
+                result["audit"].append(item);
+            }
+            return result;
+        });
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/admin/trash/{1}/{2}/restore", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string type, std::string value) {
+        dispatch(std::move(callback), [this, request, type = std::move(type), value = std::move(value)] {
+            const auto actor = auth_.require(request->getHeader("authorization"));
+            if (type != "midi" && type != "person") throw ApiError(400, "INVALID_INPUT", "Unknown trash record type.");
+            const auto id = idOf(value);
+            TransactionScope tx(db_);
+            const auto rows = type == "midi"
+                ? tx.db->execSqlSync("UPDATE midi_entries SET deleted_at=NULL,deleted_by=NULL WHERE id=$1 AND deleted_at IS NOT NULL RETURNING title AS label", id)
+                : tx.db->execSqlSync("UPDATE people SET deleted_at=NULL,deleted_by=NULL WHERE id=$1 AND deleted_at IS NOT NULL RETURNING display_name AS label", id);
+            if (rows.empty()) throw ApiError(404, "TRASH_RECORD_NOT_FOUND", "The deleted record no longer exists.");
+            const auto label = rows[0]["label"].as<std::string>();
+            tx.db->execSqlSync("INSERT INTO admin_audit_log(actor,action,entity_type,entity_id,entity_label) VALUES($1,'restore',$2,$3,$4)", actor, type, id, label);
+            tx.commit();
+            Json::Value result; result["restored_id"] = std::to_string(id); result["entity_type"] = type; return result;
+        });
+    }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/people", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
             auth_.require(request->getHeader("authorization"));
@@ -108,12 +167,12 @@ void ApiController::registerAdminRoutes() {
     }, {drogon::Get, drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/people/{1}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
         dispatch(std::move(callback), [this, request, id = std::move(id)] {
-            auth_.require(request->getHeader("authorization"));
+            const auto actor = auth_.require(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return toJson(personWriter_.get(idOf(id)));
             if (request->method() == drogon::Delete) {
                 const auto body = bodyOf(request); fieldsOf(body, {"revision"});
                 const auto personId = idOf(id);
-                personWriter_.remove(personId, revisionOf(body));
+                personWriter_.remove(personId, revisionOf(body), actor);
                 logEvent("person_deleted");
                 Json::Value result; result["deleted_id"] = std::to_string(personId); return result;
             }
@@ -195,12 +254,12 @@ void ApiController::registerAdminRoutes() {
     }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/midis/{1}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
         dispatch(std::move(callback), [this, request, id = std::move(id)] {
-            auth_.require(request->getHeader("authorization"));
+            const auto actor = auth_.require(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return toJson(writer_.get(idOf(id)));
             if (request->method() == drogon::Delete) {
                 const auto body = bodyOf(request); fieldsOf(body, {"revision"});
                 const auto midiId = idOf(id);
-                writer_.remove(midiId, revisionOf(body));
+                writer_.remove(midiId, revisionOf(body), actor);
                 logEvent("midi_deleted");
                 Json::Value result; result["deleted_id"] = std::to_string(midiId); return result;
             }

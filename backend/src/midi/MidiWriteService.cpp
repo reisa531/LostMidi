@@ -36,10 +36,10 @@ MidiEntry MidiWriteService::update(std::int64_t id, MidiEntry entry) {
     if (id < 1 || entry.revision < 1) throw ApiError(400, "INVALID_INPUT", "A valid id and revision are required.");
     return repository_.update(id, entry);
 }
-void MidiWriteService::remove(std::int64_t id, std::int64_t revision) {
-    if (id < 1 || revision < 1)
+void MidiWriteService::remove(std::int64_t id, std::int64_t revision, const std::string& actor) {
+    if (id < 1 || revision < 1 || actor.empty() || actor.size() > 100)
         throw ApiError(400, "INVALID_INPUT", "A valid id and revision are required.");
-    repository_.remove(id, revision);
+    repository_.remove(id, revision, actor);
 }
 MidiEntry MidiWriteService::get(std::int64_t id) {
     const auto entry = repository_.findById(id);

@@ -19,7 +19,7 @@ public:
         const std::string& payloadSha256, const std::optional<MidiFile>& file,
         const std::function<void()>& persist) override;
     MidiEntry update(std::int64_t id, const MidiEntry& entry) override;
-    void remove(std::int64_t id, std::int64_t revision) override;
+    void remove(std::int64_t id, std::int64_t revision, const std::string& actor) override;
     std::optional<MidiEntry> findById(std::int64_t id) override;
     FileEditor fileEditor(std::int64_t id) override;
     FileImportResult importFile(const MidiFile& file, std::int64_t revision, const std::function<void()>& persist) override;

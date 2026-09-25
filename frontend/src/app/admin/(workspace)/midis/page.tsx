@@ -12,7 +12,7 @@ export default async function AdminMidis({ searchParams }: { searchParams: Promi
   await requireAdmin();
   const { page: raw = "1", deleted } = await searchParams;
   const header = <><AdminPageHeader eyebrow="Collection / MIDI" title="MIDI 档案" description="新增和编辑作品基础资料，维护归档状态与权利信息。" />
-    {deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">MIDI 档案删除成功（或已不存在）。关联人物未删除；外部文件仅登记待清理，至少 24 小时后由显式维护清理，不代表桶内匿名对象已立即物理删除。</p>}</>;
+    {deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已移入回收站，可随时恢复。关联记录和文件均已保留。</p>}</>;
   if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || Number(raw) > 1000000) return <>{header}<p>页码无效。<Link className="archive-link" href="/admin/midis">返回第一页</Link></p></>;
   const page = Number(raw);
   let result;

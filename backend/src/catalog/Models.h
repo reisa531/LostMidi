@@ -53,6 +53,7 @@ template<class T> struct PageResult {
 };
 struct EntryQuery {
     Page page;
+    std::string search;
     std::optional<std::string> status;
     std::optional<std::int64_t> personId;
     std::optional<std::string> source;
@@ -60,6 +61,7 @@ struct EntryQuery {
     bool missingAuthor = false;
     bool missingSource = false;
 };
+struct PersonQuery { Page page; std::string search; };
 struct GroupQuery {
     Page page{1, 30};
     std::string by = "author";

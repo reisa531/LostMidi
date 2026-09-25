@@ -17,7 +17,7 @@ void ApiController::registerCatalogRoutes() {
     drogon::app().registerHandler("/api/v1/people", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
             const auto& parameters = request->getParameters();
-            return catalog::toJson(catalog_.people(catalog::parsePeoplePage({parameters.begin(), parameters.end()})));
+            return catalog::toJson(catalog_.people(catalog::parsePeopleQuery({parameters.begin(), parameters.end()})));
         });
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/catalog/groups", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {

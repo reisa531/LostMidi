@@ -8,7 +8,7 @@ export const metadata = { title: "人物管理" };
 export default async function PeoplePage({ searchParams }: { searchParams: Promise<{ page?: string | string[]; deleted?: string | string[] }> }) {
   await requireAdmin();
   const { page: raw = "1", deleted } = await searchParams;
-  const notice = deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">人物删除成功（或已不存在）。</p>;
+  const notice = deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">人物已移入回收站，可从后台回收站恢复。</p>;
   if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || Number(raw) > 1000000) return <>{notice}<p>页码无效。<Link href="/admin/people" className="underline">返回第一页</Link></p></>;
   const page = Number(raw);
   let result;

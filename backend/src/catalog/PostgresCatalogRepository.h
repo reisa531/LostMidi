@@ -13,7 +13,7 @@ public:
         : db_(std::move(db)), observer_(std::move(observer)) {}
     Overview overview() override;
     PageResult<CatalogEntry> entries(const EntryQuery& query) override;
-    PageResult<Person> people(Page page) override;
+    PageResult<Person> people(const PersonQuery& query) override;
     PageResult<Group> groups(const GroupQuery& query) override;
 private:
     drogon::orm::DbClientPtr db_;

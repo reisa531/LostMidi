@@ -4,7 +4,7 @@
 
 namespace lostmidi::catalog {
 using QueryParameters = std::map<std::string, std::string>;
-Page parsePeoplePage(const QueryParameters& parameters);
+PersonQuery parsePeopleQuery(const QueryParameters& parameters);
 EntryQuery parseEntryQuery(const QueryParameters& parameters);
 GroupQuery parseGroupQuery(const QueryParameters& parameters);
 
@@ -18,7 +18,7 @@ public:
     explicit CatalogService(ICatalogRepository& repository) : repository_(repository) {}
     Overview overview() { return repository_.overview(); }
     PageResult<CatalogEntry> entries(const EntryQuery& query);
-    PageResult<Person> people(Page page);
+    PageResult<Person> people(const PersonQuery& query);
     PageResult<Group> groups(const GroupQuery& query);
 private:
     ICatalogRepository& repository_;

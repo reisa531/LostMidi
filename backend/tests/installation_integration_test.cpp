@@ -57,7 +57,7 @@ protected:
     }
     void SetUp() override {
         const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
-        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a dedicated test database migrated through 006.";
+        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a dedicated test database migrated through 011.";
         url_ = url;
         owner_ = drogon::orm::DbClient::newPgClient(url_, 1);
         owner_->setTimeout(10.0);
@@ -68,14 +68,15 @@ protected:
         owner_->execSqlSync("CREATE TABLE " + schema_ + ".admin_sessions (LIKE public.admin_sessions INCLUDING ALL)");
         db_ = connect();
         // Minimal surrounding schema for read-only startup/readiness checks, all isolated.
-        db_->execSqlSync("CREATE TABLE midi_entries (id BIGINT PRIMARY KEY, revision BIGINT)");
-        db_->execSqlSync("CREATE TABLE people (revision BIGINT)");
+        db_->execSqlSync("CREATE TABLE midi_entries (id BIGINT PRIMARY KEY, revision BIGINT, deleted_at TIMESTAMPTZ)");
+        db_->execSqlSync("CREATE TABLE people (revision BIGINT, deleted_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE recovery_events (recovered_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY)");
-        db_->execSqlSync("CREATE TABLE midi_import_objects (sha256 TEXT, storage_key TEXT, touched_at TIMESTAMPTZ)");
+        db_->execSqlSync("CREATE TABLE midi_import_objects (sha256 TEXT, storage_key TEXT, touched_at TIMESTAMPTZ, cleanup_attempts INTEGER, last_cleanup_attempt_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE midi_files (private_archive_confirmed BOOLEAN)");
         db_->execSqlSync("CREATE TABLE midi_creation_requests (request_id UUID, payload_sha256 TEXT, midi_id BIGINT REFERENCES midi_entries(id) ON DELETE SET NULL)");
-        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql')");
+        db_->execSqlSync("CREATE TABLE admin_audit_log (id BIGINT)");
+        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql'), ('009_catalog_search.sql'), ('010_recoverable_deletions.sql'), ('011_cleanup_retry_metadata.sql')");
     }
     void TearDown() override {
         db_.reset();
@@ -282,6 +283,12 @@ TEST_F(InstallationPostgres, ReadinessRequiresLedgerAndQueryableTableAndStatusPr
     db_->execSqlSync("ALTER TABLE midi_creation_requests DROP CONSTRAINT midi_creation_requests_midi_id_fkey");
     expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
     db_->execSqlSync("ALTER TABLE midi_creation_requests ADD FOREIGN KEY(midi_id) REFERENCES midi_entries(id) ON DELETE SET NULL");
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='010_recoverable_deletions.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('010_recoverable_deletions.sql')");
+    db_->execSqlSync("DELETE FROM schema_migrations WHERE version='011_cleanup_retry_metadata.sql'");
+    expectApiError([&] { requireDatabaseReady(db_); }, 503, "DATABASE_NOT_READY");
+    db_->execSqlSync("INSERT INTO schema_migrations VALUES('011_cleanup_retry_metadata.sql')");
     db_->execSqlSync("ALTER TABLE midi_creation_requests RENAME TO unavailable_creation_requests");
     EXPECT_THROW(requireDatabaseReady(db_), drogon::orm::DrogonDbException);
     db_->execSqlSync("ALTER TABLE unavailable_creation_requests RENAME TO midi_creation_requests");

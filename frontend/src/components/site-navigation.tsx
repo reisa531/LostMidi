@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const links = [
   { href: "/", label: "首页总览" },
   { href: "/midis", label: "MIDI" },
+  { href: "/search", label: "搜索" },
   { href: "/people", label: "作者" },
   { href: "/recovery", label: "寻回进度" },
   { href: "/map", label: "Map" },

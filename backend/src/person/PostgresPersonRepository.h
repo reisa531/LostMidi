@@ -15,7 +15,7 @@ public:
     PersonList list(Page page) override;
     PersonEdit getEditor(std::int64_t id) override;
     PersonEdit save(std::int64_t id, const PersonEdit& edit) override;
-    void remove(std::int64_t id, std::int64_t revision) override;
+    void remove(std::int64_t id, std::int64_t revision, const std::string& actor) override;
     CreditEdit getCredits(std::int64_t midiId) override;
     CreditEdit saveCredits(std::int64_t midiId, const CreditEdit& edit) override;
 private:

@@ -1,4 +1,5 @@
 #include "midi/PostgresMidiRepository.h"
+#include "common/Log.h"
 #include "common/Transaction.h"
 
 namespace lostmidi::midi {
@@ -21,15 +22,15 @@ MidiFile fileFrom(const drogon::orm::Row& row) {
 }
 std::vector<MidiEntry> PostgresMidiRepository::list(Page page) {
     std::vector<MidiEntry> entries;
-    for (const auto& row : db_->execSqlSync("SELECT * FROM midi_entries ORDER BY id LIMIT $1 OFFSET $2", static_cast<std::int64_t>(page.size), page.offset()))
+    for (const auto& row : db_->execSqlSync("SELECT * FROM midi_entries WHERE deleted_at IS NULL ORDER BY id LIMIT $1 OFFSET $2", static_cast<std::int64_t>(page.size), page.offset()))
         entries.push_back(entryFrom(row));
     return entries;
 }
 std::int64_t PostgresMidiRepository::count() {
-    return db_->execSqlSync("SELECT count(*) AS total FROM midi_entries")[0]["total"].as<std::int64_t>();
+    return db_->execSqlSync("SELECT count(*) AS total FROM midi_entries WHERE deleted_at IS NULL")[0]["total"].as<std::int64_t>();
 }
 std::optional<MidiEntry> PostgresMidiRepository::findBySlug(const std::string& slug) {
-    const auto rows = db_->execSqlSync("SELECT * FROM midi_entries WHERE slug = $1", slug);
+    const auto rows = db_->execSqlSync("SELECT * FROM midi_entries WHERE slug = $1 AND deleted_at IS NULL", slug);
     if (rows.empty()) return std::nullopt;
     return entryFrom(rows[0]);
 }
@@ -51,7 +52,7 @@ bool PostgresMidiRepository::insertIfAbsent(const MidiFile& file) {
         file.midiId, file.originalFilename, file.sha256, file.fileSize, file.storageKey).empty();
 }
 std::optional<MidiEntry> PostgresMidiRepository::findById(std::int64_t id) {
-    const auto rows = db_->execSqlSync("SELECT * FROM midi_entries WHERE id = $1", id);
+    const auto rows = db_->execSqlSync("SELECT * FROM midi_entries WHERE id = $1 AND deleted_at IS NULL", id);
     if (rows.empty()) return std::nullopt;
     return entryFrom(rows[0]);
 }
@@ -82,7 +83,7 @@ MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const st
         if (receipts[0]["midi_id"].isNull())
             throw ApiError(410, "CREATION_DELETED", "The entry created by this request has been deleted.");
         const auto entries = tx.db->execSqlSync("SELECT * FROM midi_entries WHERE id=$1 FOR SHARE", receipts[0]["midi_id"].as<std::int64_t>());
-        if (entries.empty()) throw ApiError(410, "CREATION_DELETED", "The entry created by this request has been deleted.");
+        if (entries.empty() || !entries[0]["deleted_at"].isNull()) throw ApiError(410, "CREATION_DELETED", "The entry created by this request has been deleted.");
         const auto saved = entryFrom(entries[0]);
         // A replay never writes storage or repairs/re-adds files. Only discard a
         // journal while its exact object is referenced, under the shared SHA lock.
@@ -120,7 +121,7 @@ MidiEntry PostgresMidiRepository::update(std::int64_t id, const MidiEntry& e) {
     try {
         const auto rows = db_->execSqlSync(
             "UPDATE midi_entries SET slug=$1,title=$2,description=NULLIF($3,''),estimated_year=NULLIF($4,0)::smallint,archive_status=$5,"
-            "copyright_status=$6,license=NULLIF($7,''),rights_holder=NULLIF($8,''),distribution_permission=$9 WHERE id=$10 AND revision=$11 RETURNING *",
+            "copyright_status=$6,license=NULLIF($7,''),rights_holder=NULLIF($8,''),distribution_permission=$9 WHERE id=$10 AND revision=$11 AND deleted_at IS NULL RETURNING *",
             e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.archiveStatus,
             *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission, id, e.revision);
         if (!rows.empty()) return entryFrom(rows[0]);
@@ -136,27 +137,21 @@ MidiEntry PostgresMidiRepository::update(std::int64_t id, const MidiEntry& e) {
     if (!findById(id)) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
     throw ApiError(409, "STALE_ENTRY", "This entry was changed elsewhere. Reload before saving.");
 }
-void PostgresMidiRepository::remove(std::int64_t id, std::int64_t revision) {
+void PostgresMidiRepository::remove(std::int64_t id, std::int64_t revision, const std::string& actor) {
     TransactionScope tx(db_);
     tx.db->execSqlSync("SET LOCAL lock_timeout = '5s'");
-    const auto rows = tx.db->execSqlSync("SELECT revision FROM midi_entries WHERE id=$1 FOR UPDATE", id);
+    const auto rows = tx.db->execSqlSync("SELECT title,revision FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", id);
     if (rows.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
     if (rows[0]["revision"].as<std::int64_t>() != revision)
         throw ApiError(409, "STALE_ENTRY", "This entry was changed elsewhere. Reload before deleting.");
-    const auto files = tx.db->execSqlSync("SELECT sha256,storage_key FROM midi_files WHERE midi_id=$1 ORDER BY sha256", id);
-    for (const auto& file : files) {
-        // Never wait for SHA while holding the parent: imports take those locks in reverse order.
-        const auto lock = tx.db->execSqlSync("SELECT pg_try_advisory_xact_lock(hashtextextended($1,741033)) AS locked", file["sha256"].as<std::string>());
-        if (!lock[0]["locked"].as<bool>()) throw ApiError(503, "SERVER_BUSY", "A file operation is in progress. Retry shortly.");
-        tx.db->execSqlSync("INSERT INTO midi_import_objects(sha256,storage_key) VALUES($1,$2) "
-            "ON CONFLICT(sha256) DO UPDATE SET touched_at=CURRENT_TIMESTAMP", file["sha256"].as<std::string>(), file["storage_key"].as<std::string>());
-    }
-    tx.db->execSqlSync("DELETE FROM midi_entries WHERE id=$1", id);
+    const auto label = rows[0]["title"].as<std::string>();
+    tx.db->execSqlSync("UPDATE midi_entries SET deleted_at=CURRENT_TIMESTAMP,deleted_by=$2 WHERE id=$1", id, actor);
+    tx.db->execSqlSync("INSERT INTO admin_audit_log(actor,action,entity_type,entity_id,entity_label) VALUES($1,'delete','midi',$2,$3)", actor, id, label);
     tx.commit();
 }
 FileEditor PostgresMidiRepository::fileEditor(std::int64_t id) {
     TransactionScope tx(db_);
-    const auto rows = tx.db->execSqlSync("SELECT * FROM midi_entries WHERE id=$1 FOR SHARE", id);
+    const auto rows = tx.db->execSqlSync("SELECT * FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR SHARE", id);
     if (rows.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
     FileEditor result{entryFrom(rows[0]), {}};
     for (const auto& row : tx.db->execSqlSync("SELECT * FROM midi_files WHERE midi_id=$1 ORDER BY id", id)) result.files.push_back(fileFrom(row));
@@ -172,7 +167,7 @@ FileImportResult PostgresMidiRepository::importFile(const MidiFile& file, std::i
     // A stable 64-bit PostgreSQL hash is sufficient: collisions only serialize
     // unrelated imports, never merge their records. Cleanup uses the same lock.
     tx.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741033))", file.sha256);
-    const auto parents = tx.db->execSqlSync("SELECT * FROM midi_entries WHERE id=$1 FOR UPDATE", file.midiId);
+    const auto parents = tx.db->execSqlSync("SELECT * FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", file.midiId);
     if (parents.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "The requested MIDI entry does not exist.");
     const auto parent = entryFrom(parents[0]);
     const auto existing = tx.db->execSqlSync("SELECT * FROM midi_files WHERE sha256=$1", file.sha256);
@@ -214,8 +209,20 @@ std::size_t PostgresMidiRepository::cleanupImports(const std::function<void(cons
         const auto pending = tx.db->execSqlSync("SELECT storage_key FROM midi_import_objects WHERE sha256=$1 AND touched_at < CURRENT_TIMESTAMP - INTERVAL '24 hours' FOR UPDATE", digest);
         if (pending.empty()) continue; // A retry refreshed it since candidate selection.
         const auto referenced = tx.db->execSqlSync("SELECT 1 FROM midi_files WHERE sha256=$1 OR storage_key=$2", digest, pending[0]["storage_key"].as<std::string>());
-        if (referenced.empty()) { remove(pending[0]["storage_key"].as<std::string>()); ++removed; }
-        tx.db->execSqlSync("DELETE FROM midi_import_objects WHERE sha256=$1", digest);
+        if (referenced.empty()) {
+            try {
+                remove(pending[0]["storage_key"].as<std::string>());
+                tx.db->execSqlSync("DELETE FROM midi_import_objects WHERE sha256=$1", digest);
+                ++removed;
+            } catch (...) {
+                // Keep the exact object identity for a later explicit retry. Never persist storage errors or credentials.
+                logEvent("orphan_object_cleanup_failed");
+                tx.db->execSqlSync("UPDATE midi_import_objects SET cleanup_attempts=cleanup_attempts+1, "
+                    "last_cleanup_attempt_at=CURRENT_TIMESTAMP,last_cleanup_error='STORAGE_DELETE_FAILED' WHERE sha256=$1", digest);
+            }
+        } else {
+            tx.db->execSqlSync("DELETE FROM midi_import_objects WHERE sha256=$1", digest);
+        }
         tx.commit();
     }
     return removed;

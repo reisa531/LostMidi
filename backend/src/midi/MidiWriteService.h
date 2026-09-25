@@ -7,7 +7,7 @@ public:
     virtual ~IMidiWriter() = default;
     virtual MidiEntry create(const MidiEntry& entry) = 0;
     virtual MidiEntry update(std::int64_t id, const MidiEntry& entry) = 0;
-    virtual void remove(std::int64_t id, std::int64_t revision) = 0;
+    virtual void remove(std::int64_t id, std::int64_t revision, const std::string& actor) = 0;
     virtual std::optional<MidiEntry> findById(std::int64_t id) = 0;
 };
 class MidiWriteService {
@@ -16,7 +16,7 @@ public:
     MidiEntry create(MidiEntry entry);
     MidiEntry update(std::int64_t id, MidiEntry entry);
     MidiEntry get(std::int64_t id);
-    void remove(std::int64_t id, std::int64_t revision);
+    void remove(std::int64_t id, std::int64_t revision, const std::string& actor);
     static void validate(MidiEntry& entry);
 private:
     IMidiWriter& repository_;
