@@ -49,11 +49,11 @@ protected:
     std::int64_t first = 0, second = 0;
     void SetUp() override {
         const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
-        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a disposable database migrated through 007.";
+        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a disposable database migrated through 011.";
         owner = drogon::orm::DbClient::newPgClient(url,1); owner->setTimeout(10.0);
         schema = "import_test_"+auth::randomToken().substr(0,24);
         owner->execSqlSync("CREATE SCHEMA "+schema); created = true;
-        for (const auto* table : {"midi_entries","midi_files","midi_import_objects","midi_creation_requests"})
+        for (const auto* table : {"midi_entries","midi_files","midi_import_objects","midi_creation_requests","admin_audit_log"})
             owner->execSqlSync("CREATE TABLE "+schema+"."+table+" (LIKE public."+table+" INCLUDING ALL)");
         std::string connection = url;
         if (connection.starts_with("postgres://") || connection.starts_with("postgresql://"))
@@ -316,40 +316,47 @@ TEST_F(ImportPostgres, CreationReceiptConstraintsRetainDeletedIdentity) {
     EXPECT_THROW(db->execSqlSync("INSERT INTO midi_creation_requests VALUES($1::uuid,$2,9223372036854775807)",requestA,std::string(64,'a')),drogon::orm::DrogonDbException);
     const auto saved=service->create(entry(),requestA);
     EXPECT_THROW(db->execSqlSync("INSERT INTO midi_creation_requests VALUES($1::uuid,$2,$3)",requestB,std::string(64,'a'),saved.id),drogon::orm::DrogonDbException);
-    repo->remove(saved.id, 1); counts(2,0,1,0);
+    repo->remove(saved.id, 1, "test-admin"); counts(3,0,1,0);
+    EXPECT_EQ(db->execSqlSync("SELECT midi_id FROM midi_creation_requests")[0][0].as<std::int64_t>(), saved.id);
+    apiError([&] { service->create(entry(),requestA); },410,"CREATION_DELETED");
+    db->execSqlSync("DELETE FROM midi_entries WHERE id=$1", saved.id);
     EXPECT_TRUE(db->execSqlSync("SELECT midi_id FROM midi_creation_requests")[0][0].isNull());
     apiError([&] { service->create(entry(),requestA); },410,"CREATION_DELETED");
     counts(2,0,1,0);
 }
-TEST_F(ImportPostgres, DeletionJournalsFilesAndPreventsReplayAndUnsafeCleanup) {
+TEST_F(ImportPostgres, SoftDeletionRetainsFilesAndPreventsReplayAndUnsafeCleanup) {
     const auto saved = service->create(entry(), requestA, upload());
     const auto key = storage::sha256(upload().bytes);
-    apiError([&] { repo->remove(saved.id, 2); },409,"STALE_ENTRY");
+    apiError([&] { repo->remove(saved.id, 2, "test-admin"); },409,"STALE_ENTRY");
     EXPECT_FALSE(journal(key)); EXPECT_TRUE(objects->exists(key));
+    db->execSqlSync("CREATE FUNCTION reject_delete_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test failure'; END $$");
+    db->execSqlSync("CREATE CONSTRAINT TRIGGER reject_delete_commit AFTER UPDATE ON midi_entries DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_delete_commit()");
+    EXPECT_ANY_THROW(repo->remove(saved.id, 1, "test-admin"));
+    ASSERT_TRUE(repo->findById(saved.id)); EXPECT_EQ(repo->findById(saved.id)->revision, 1);
+    EXPECT_TRUE(db->execSqlSync("SELECT 1 FROM admin_audit_log").empty());
+    EXPECT_FALSE(journal(key)); EXPECT_TRUE(objects->exists(key)); counts(3,1,1,0);
+    EXPECT_EQ(service->create(entry(), requestA, upload()).id, saved.id);
+    db->execSqlSync("DROP TRIGGER reject_delete_commit ON midi_entries");
     {
         TransactionScope other(db);
         other.db->execSqlSync("SELECT pg_advisory_xact_lock(hashtextextended($1,741033))", key);
-        apiError([&] { repo->remove(saved.id, 1); },503,"SERVER_BUSY");
-        EXPECT_TRUE(repo->findById(saved.id)); EXPECT_FALSE(journal(key));
+        repo->remove(saved.id, 1, "test-admin");
         other.commit();
     }
-    db->execSqlSync("CREATE FUNCTION reject_delete_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test failure'; END $$");
-    db->execSqlSync("CREATE CONSTRAINT TRIGGER reject_delete_commit AFTER DELETE ON midi_entries DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_delete_commit()");
-    EXPECT_ANY_THROW(repo->remove(saved.id, 1));
-    EXPECT_TRUE(repo->findById(saved.id)); EXPECT_FALSE(journal(key)); EXPECT_TRUE(objects->exists(key));
-    EXPECT_EQ(service->create(entry(), requestA, upload()).id, saved.id);
-    db->execSqlSync("DROP TRIGGER reject_delete_commit ON midi_entries");
-    repo->remove(saved.id, 1);
-    EXPECT_FALSE(repo->findById(saved.id)); EXPECT_TRUE(repo->filesFor(saved.id).empty());
-    EXPECT_TRUE(journal(key)); EXPECT_TRUE(objects->exists(key));
+    EXPECT_FALSE(repo->findById(saved.id)); EXPECT_EQ(repo->filesFor(saved.id).size(), 1u);
+    EXPECT_FALSE(journal(key)); EXPECT_TRUE(objects->exists(key)); counts(3,1,1,0);
+    EXPECT_EQ(db->execSqlSync("SELECT deleted_by FROM midi_entries WHERE id=$1", saved.id)[0][0].as<std::string>(), "test-admin");
+    EXPECT_EQ(db->execSqlSync("SELECT 1 FROM admin_audit_log WHERE action='delete'").size(), 1u);
+    apiError([&] { service->get(saved.id); },404,"MIDI_NOT_FOUND");
+    person::PostgresPersonRepository people(db); recovery::PostgresRecoveryRepository historyRepository(db);
+    recovery::RecoveryService history(historyRepository); midi::MidiService downloads(*repo,people,history);
+    apiError([&] { downloads.fileForDownload(saved.slug, repo->filesFor(saved.id)[0].id); },404,"MIDI_NOT_FOUND");
     apiError([&] { service->create(entry(), requestA, upload()); },410,"CREATION_DELETED");
+    apiError([&] { service->import(second, 1, "reused.mid", upload().bytes, true); },409,"FILE_OWNERSHIP_CONFLICT");
     EXPECT_EQ(service->cleanup(), 0u);
-    service->import(second, 1, "reused.mid", upload().bytes, true);
     age(key);
     EXPECT_EQ(service->cleanup(), 0u); EXPECT_TRUE(objects->exists(key));
-    repo->remove(second, 2); age(key);
-    EXPECT_EQ(service->cleanup(), 1u); EXPECT_FALSE(objects->exists(key));
-    EXPECT_FALSE(journal(key));
+    EXPECT_FALSE(journal(key)); counts(3,1,1,0);
 }
 TEST_F(ImportPostgres, IdempotentSameEntryConflictsAndRightsRemainUnchanged) {
     const auto content=data(); const auto before=service->get(first).entry;
@@ -458,9 +465,13 @@ TEST_F(ImportPostgres, CleanupOnlyRemovesAgedUnreferencedTrackedObjects) {
         EXPECT_FALSE(journal(saved.file.sha256)); EXPECT_TRUE(objects->exists(saved.file.storageKey));
         lock.commit();
     }
-    // A failed DELETE leaves its journal available for later maintenance.
-    EXPECT_THROW(repo->cleanupImports([](const std::string&) { throw std::runtime_error("injected deletion timeout"); }),std::runtime_error);
+    EXPECT_EQ(repo->cleanupImports([](const std::string&) { throw std::runtime_error("injected deletion timeout"); }),0u);
     EXPECT_TRUE(journal(orphan.sha256));
+    const auto retry = db->execSqlSync("SELECT cleanup_attempts,last_cleanup_attempt_at,last_cleanup_error FROM midi_import_objects WHERE sha256=$1", orphan.sha256);
+    ASSERT_EQ(retry.size(),1u);
+    EXPECT_EQ(retry[0]["cleanup_attempts"].as<int>(),1);
+    EXPECT_FALSE(retry[0]["last_cleanup_attempt_at"].isNull());
+    EXPECT_EQ(retry[0]["last_cleanup_error"].as<std::string>(),"STORAGE_DELETE_FAILED");
     EXPECT_EQ(service->cleanup(),1u); EXPECT_FALSE(objects->exists(orphan.storageKey)); EXPECT_FALSE(journal(orphan.sha256));
     EXPECT_TRUE(objects->exists(saved.file.storageKey)); EXPECT_TRUE(objects->exists(fresh.storageKey)); EXPECT_TRUE(objects->exists(untracked.storageKey));
     EXPECT_TRUE(journal(fresh.sha256)); EXPECT_EQ(service->cleanup(),0u);

@@ -174,7 +174,7 @@ TEST(PostgresIntegration, RecoveryCrudRollbackAndSharedRevision) {
     expectApiError([&] { service.getHistory(9223372036854775807LL); }, 404, "MIDI_NOT_FOUND");
 }
 
-TEST(PostgresIntegration, DeleteProtectsReferencesAndCascadesOnlyOwnedMetadata) {
+TEST(PostgresIntegration, SoftDeleteProtectsReferencesAndRetainsMetadata) {
     const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
     if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a disposable migrated database.";
     auto db = drogon::orm::DbClient::newPgClient(url, 4);
@@ -184,31 +184,47 @@ TEST(PostgresIntegration, DeleteProtectsReferencesAndCascadesOnlyOwnedMetadata) 
     const auto person = db->execSqlSync("INSERT INTO people(display_name) VALUES($1) RETURNING id", slug)[0][0].as<std::int64_t>();
     struct Cleanup {
         drogon::orm::DbClientPtr db; std::int64_t id, person;
-        ~Cleanup() { try { db->execSqlSync("DELETE FROM midi_entries WHERE id=$1", id); db->execSqlSync("DELETE FROM people WHERE id=$1", person); } catch (...) {} }
+        ~Cleanup() { try {
+            db->execSqlSync("DELETE FROM admin_audit_log WHERE (entity_type='midi' AND entity_id=$1) OR (entity_type='person' AND entity_id=$2)", id, person);
+            db->execSqlSync("DELETE FROM midi_entries WHERE id=$1", id);
+            db->execSqlSync("DELETE FROM people WHERE id=$1", person);
+        } catch (...) {} }
     } cleanup{db, id, person};
     db->execSqlSync("INSERT INTO person_aliases(person_id,alias) VALUES($1,'Old name')", person);
     db->execSqlSync("INSERT INTO midi_credits(midi_id,person_id,role) VALUES($1,$2,'composer')", id, person);
-    expectApiError([&] { people.remove(person, 2); }, 409, "STALE_PERSON");
-    expectApiError([&] { people.remove(person, 1); }, 409, "PERSON_IN_USE");
+    expectApiError([&] { people.remove(person, 2, "test-admin"); }, 409, "STALE_PERSON");
+    expectApiError([&] { people.remove(person, 1, "test-admin"); }, 409, "PERSON_IN_USE");
     db->execSqlSync("DELETE FROM midi_credits WHERE midi_id=$1", id);
     db->execSqlSync("INSERT INTO recovery_events(midi_id,recovered_by,story) VALUES($1,$2,'History')", id, person);
-    expectApiError([&] { people.remove(person, 1); }, 409, "PERSON_IN_USE");
+    expectApiError([&] { people.remove(person, 1, "test-admin"); }, 409, "PERSON_IN_USE");
     EXPECT_EQ(db->execSqlSync("SELECT recovered_by FROM recovery_events WHERE midi_id=$1", id)[0][0].as<std::int64_t>(), person);
     db->execSqlSync("INSERT INTO midi_credits(midi_id,person_id,role) VALUES($1,$2,'composer')", id, person);
     db->execSqlSync("INSERT INTO historical_sources(midi_id,website_name) VALUES($1,'History')", id);
     auto edit = *midis.findById(id); edit.title = "Edited"; midis.update(id, edit);
-    expectApiError([&] { midis.remove(id, 1); }, 409, "STALE_ENTRY");
+    expectApiError([&] { midis.remove(id, 1, "test-admin"); }, 409, "STALE_ENTRY");
     EXPECT_EQ(people.creditsFor(id).size(), 1u);
-    auto remove = [&] { try { midis.remove(id, 2); return 200; } catch (const ApiError& e) { return e.status; } };
+    auto remove = [&] { try { midis.remove(id, 2, "test-admin"); return 200; } catch (const ApiError& e) { return e.status; } };
     auto a = std::async(std::launch::async, remove), b = std::async(std::launch::async, remove);
     const auto first = a.get(), second = b.get();
     EXPECT_TRUE((first == 200 && second == 404) || (first == 404 && second == 200));
     EXPECT_FALSE(midis.findById(id)); EXPECT_TRUE(people.findById(person));
+    EXPECT_TRUE(people.midisFor(person).empty());
     for (const auto* table : {"midi_credits", "historical_sources", "recovery_events"})
-        EXPECT_TRUE(db->execSqlSync(std::string("SELECT 1 FROM ") + table + " WHERE midi_id=$1", id).empty());
-    people.remove(person, 1);
-    EXPECT_TRUE(people.aliasesFor(person).empty()); EXPECT_FALSE(people.findById(person));
-    expectApiError([&] { people.remove(person, 1); }, 404, "PERSON_NOT_FOUND");
+        EXPECT_EQ(db->execSqlSync(std::string("SELECT 1 FROM ") + table + " WHERE midi_id=$1", id).size(), 1u);
+    const auto audit = db->execSqlSync("SELECT actor,action,entity_label FROM admin_audit_log WHERE entity_type='midi' AND entity_id=$1", id);
+    ASSERT_EQ(audit.size(), 1u);
+    EXPECT_EQ(audit[0]["actor"].as<std::string>(), "test-admin");
+    EXPECT_EQ(audit[0]["action"].as<std::string>(), "delete");
+    EXPECT_EQ(audit[0]["entity_label"].as<std::string>(), "Edited");
+    expectApiError([&] { people.remove(person, 1, "test-admin"); }, 409, "PERSON_IN_USE");
+    db->execSqlSync("DELETE FROM midi_credits WHERE midi_id=$1", id);
+    db->execSqlSync("UPDATE recovery_events SET recovered_by=NULL WHERE midi_id=$1", id);
+    people.remove(person, 1, "test-admin");
+    EXPECT_EQ(people.aliasesFor(person), std::vector<std::string>{"Old name"});
+    EXPECT_FALSE(people.findById(person));
+    EXPECT_EQ(db->execSqlSync("SELECT revision FROM people WHERE id=$1", person)[0][0].as<std::int64_t>(), 2);
+    EXPECT_EQ(db->execSqlSync("SELECT actor FROM admin_audit_log WHERE entity_type='person' AND entity_id=$1", person)[0][0].as<std::string>(), "test-admin");
+    expectApiError([&] { people.remove(person, 1, "test-admin"); }, 404, "PERSON_NOT_FOUND");
 }
 
 TEST(PostgresIntegration, SeededArchiveRoundTrip) {

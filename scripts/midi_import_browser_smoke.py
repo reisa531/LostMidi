@@ -10,9 +10,9 @@ from playwright.sync_api import sync_playwright, expect
 from midi_import_smoke import midi
 
 
-def check_catalog(page, base, screenshots):
+def check_catalog(page, base, screenshots, search_slug):
     routes = [("/", "首页总览"), ("/midis", "MIDI"), ("/people", "作者"),
-              ("/recovery", "寻回进度"), ("/map", "Map")]
+              ("/recovery", "寻回进度"), ("/map", "Map"), ("/search", "搜索")]
     for width in (1280, 390):
         page.set_viewport_size({"width": width, "height": 900})
         for path, label in routes:
@@ -27,7 +27,7 @@ def check_catalog(page, base, screenshots):
     page.goto(base + "/midis?pageSize=1")
     expect(page.get_by_role("table").locator("tbody tr")).to_have_count(1)
     page.get_by_role("link", name="下一页", exact=True).click()
-    assert "page=2" in page.url
+    expect(page).to_have_url(re.compile(r'[?&]page=2(?:&|$)'))
     page.goto(base + "/recovery")
     page.locator("select[name=status]").select_option("lost")
     page.get_by_role("button", name="应用筛选").click()
@@ -41,7 +41,20 @@ def check_catalog(page, base, screenshots):
         expect(page.get_by_role("main").get_by_role("alert")).to_contain_text("筛选参数无效")
     page.goto(base + "/midis?page=1000000")
     expect(page.get_by_text("暂无档案", exact=True)).to_be_visible()
-    print("PASS: five catalog modules, active navigation, pagination, filters, groups, invalid/empty states and desktop/mobile layouts")
+    page.goto(base + "/search")
+    expect(page.get_by_text("输入关键词开始搜索", exact=True)).to_be_visible()
+    expect(page.locator('meta[name=robots]')).to_have_attribute('content', re.compile('noindex'))
+    page.get_by_role('textbox', name='搜索关键词').fill(search_slug)
+    page.get_by_role('button', name='搜索', exact=True).click()
+    expect(page.get_by_role('main').locator('a[href="/midis/' + search_slug + '"]')).to_have_count(1)
+    page.get_by_role('textbox', name='搜索关键词').fill('missing-' + uuid.uuid4().hex)
+    page.get_by_role('button', name='搜索', exact=True).click()
+    expect(page.get_by_text('没有匹配的作品', exact=True)).to_be_visible()
+    expect(page.get_by_text('没有匹配的人物', exact=True)).to_be_visible()
+    for query in ('q=', 'q=a&q=b', 'q=a&page=0', 'q=' + 'a' * 201):
+        page.goto(base + '/search?' + query)
+        expect(page.get_by_text('搜索条件无效', exact=True)).to_be_visible()
+    print("PASS: six catalog modules, navigation, pagination, filters, groups, search/noindex, invalid/empty states and desktop/mobile layouts")
 
 
 def check_deletion(page, context, base, screenshots):
@@ -67,14 +80,14 @@ def check_deletion(page, context, base, screenshots):
         page.goto(edit_url); page.wait_for_load_state('networkidle')
         section = page.get_by_role('region', name=re.compile('危险操作'))
         section.get_by_role('button', name=re.compile('^删除')).click()
-        expect(section.get_by_role('button', name='确认删除', exact=True)).to_be_disabled()
+        expect(section.get_by_role('button', name='移入回收站', exact=True)).to_be_disabled()
         section.get_by_role('checkbox').check()
         section.get_by_role('button', name='取消', exact=True).click()
         expect(section.get_by_role('checkbox')).to_have_count(0)
         section.get_by_role('button', name=re.compile('^删除')).click()
         section.get_by_role('checkbox').check()
         if resource == 'people':
-            section.get_by_role('button', name='确认删除', exact=True).click()
+            section.get_by_role('button', name='移入回收站', exact=True).click()
             expect(section.get_by_role('alert')).to_contain_text('人物仍被')
             expect(section.get_by_role('checkbox')).to_be_checked()
             request(midi_path + '/credits', 'PUT', {'revision': 2, 'credits': []})
@@ -82,7 +95,7 @@ def check_deletion(page, context, base, screenshots):
         else:
             current = request(midi_path)
             request(midi_path, 'PUT', {**draft, 'title': '已修改档案', 'revision': current['revision']})
-        section.get_by_role('button', name='确认删除', exact=True).click()
+        section.get_by_role('button', name='移入回收站', exact=True).click()
         expect(section.get_by_role('alert')).to_contain_text('版本已变化')
         page.reload(); page.wait_for_load_state('networkidle')
         page.set_viewport_size({'width': 390, 'height': 844})
@@ -99,16 +112,27 @@ def check_deletion(page, context, base, screenshots):
                 route.continue_()
         if resource == 'midis':
             page.route('**/admin/midis/' + item['id'] + '/edit', lose_response)
-            section.get_by_role('button', name='确认删除', exact=True).click()
+            section.get_by_role('button', name='移入回收站', exact=True).click()
             expect(section.get_by_role('alert')).to_contain_text('连接中断')
             expect(section.get_by_role('checkbox')).to_be_checked()
             page.unroute('**/admin/midis/' + item['id'] + '/edit', lose_response)
-        section.get_by_role('button', name='确认删除', exact=True).click()
+        section.get_by_role('button', name='移入回收站', exact=True).click()
         expect(page).to_have_url(base + '/admin/' + resource + '?deleted=1')
-        expect(page.get_by_role('status')).to_contain_text('删除成功')
-        assert context.request.get(api + '/api/v1/' + resource + '/' + (draft['slug'] if resource == 'midis' else item['id'])).status == 404
+        expect(page.get_by_role('status')).to_contain_text('已移入回收站')
+        public_path = '/api/v1/' + resource + '/' + (draft['slug'] if resource == 'midis' else item['id'])
+        assert context.request.get(api + public_path).status == 404
+        page.goto(base + '/admin/trash')
+        kind = 'midi' if resource == 'midis' else 'person'
+        form = page.locator('form').filter(has=page.locator('input[name=type][value="' + kind + '"]')).filter(
+            has=page.locator('input[name=id][value="' + item['id'] + '"]'))
+        expect(form).to_have_count(1)
+        form.get_by_role('button', name='恢复', exact=True).click()
+        expect(form).to_have_count(0)
+        assert context.request.get(api + public_path).ok
+        audit = request('/api/v1/admin/trash')['audit']
+        assert sorted(row['action'] for row in audit if row['entity_type'] == kind and row['entity_id'] == item['id']) == ['delete', 'restore']
     page.set_viewport_size({'width': 1280, 'height': 900})
-    print('PASS: delete confirmation/cancel, referenced person rejection, stale versions, mobile layout, lost-response retry and list navigation')
+    print('PASS: deletion confirmation, references, stale versions, mobile layout, lost-response retry, trash restore and audit history')
 
 
 def main():
@@ -120,6 +144,7 @@ def main():
     parser.add_argument('--expect-disabled', action='store_true')
     args = parser.parse_args()
     base = args.frontend.rstrip('/')
+    expect.set_options(timeout=30000)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(channel=args.channel)
         context = browser.new_context(viewport={'width': 1280, 'height': 900})
@@ -131,7 +156,7 @@ def main():
         page.locator('[name=username]').fill(os.environ['ADMIN_TEST_USERNAME'])
         page.locator('[name=password]').fill(os.environ['ADMIN_TEST_PASSWORD'])
         page.get_by_role('button', name='登录', exact=True).click()
-        expect(page).to_have_url(base + '/admin')
+        expect(page).to_have_url(base + '/admin', timeout=30000)
         page.goto(base + '/admin/midis/new')
         if args.expect_disabled:
             expect(page.get_by_role('status')).to_contain_text('文件导入尚未启用')
@@ -184,9 +209,14 @@ def main():
         expect(page.locator('[name=revision]')).to_have_value('2')
         # Another file import makes the form stale; refresh preserves input.
         stale = context.new_page(); stale.goto(page.url)
+        stale.wait_for_load_state('networkidle')
+        expect(stale.locator('[name=revision]')).to_have_value('2')
+        page.bring_to_front()
+        expect(upload).to_be_enabled()
         upload.set_input_files({'name': 'second.mid', 'mimeType': 'audio/midi', 'buffer': midi(71)})
         rights.check(); submit.click()
         expect(page.locator('[name=revision]')).to_have_value('3')
+        stale.bring_to_front()
         pending_file = stale.locator('[name=file]')
         pending_file.set_input_files({'name': 'retry.mid', 'mimeType': 'audio/midi', 'buffer': midi(72)})
         stale.locator('[name=rights_confirmed]').check()
@@ -206,6 +236,8 @@ def main():
         assert stale.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Mobile overflow'
         if args.screenshots:
             stale.screenshot(path=str(args.screenshots / 'files-mobile.png'), full_page=True)
+        stale.close()
+        visitor.bring_to_front()
         visitor.reload()
         downloads = visitor.get_by_role('button', name=re.compile(r'^下载 MIDI：'))
         expect(downloads).to_have_count(3)
@@ -230,10 +262,14 @@ def main():
             downloads.first.click()
         assert Path(retry_download.value.path()).read_bytes() == midi(70)
         expect(visitor.get_by_role('main').get_by_role('alert')).to_have_count(0)
+        page.bring_to_front()
         page.goto(edit_url)
+        page.wait_for_load_state('networkidle')
         page.locator('[name=distribution_permission]').select_option('restricted')
         page.get_by_role('button', name='保存修改', exact=True).click()
         expect(page.get_by_role('status')).to_contain_text('档案已保存')
+        expect(page.locator('[name=distribution_permission]')).to_have_value('restricted')
+        visitor.bring_to_front()
         downloads.first.click()
         expect(visitor.get_by_role('main').get_by_role('alert')).to_contain_text('暂时无法下载')
         visitor.reload()
@@ -316,7 +352,7 @@ def main():
         if args.screenshots:
             page.screenshot(path=str(args.screenshots / 'create-mobile.png'), full_page=True)
         check_deletion(page, context, base, args.screenshots)
-        check_catalog(visitor, base, args.screenshots)
+        check_catalog(visitor, base, args.screenshots, create_slug)
         assert not errors, errors
         visitor_context.close()
         browser.close()

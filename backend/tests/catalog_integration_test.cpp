@@ -374,7 +374,7 @@ TEST_F(CatalogPostgres, QueryCountIsConstantAndEnrichmentIsBoundToSelectedIds) {
         EXPECT_EQ(result.data.size(), static_cast<std::size_t>(std::stoi(size))); EXPECT_EQ(result.total, 159);
         ASSERT_EQ(queries.size(), 6u); // SET, count, page, credits, sources, files.
         EXPECT_EQ(queries[0], "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-        EXPECT_NE(queries[2].find("LIMIT $6 OFFSET $7"), std::string::npos);
+        EXPECT_NE(queries[2].find("LIMIT $7 OFFSET $8"), std::string::npos);
         for (std::size_t i = 3; i < 6; ++i) EXPECT_NE(queries[i].find("ANY($1::bigint[])"), std::string::npos);
         for (const auto& sql : queries) EXPECT_EQ(sql.find("SELECT *"), std::string::npos);
     }

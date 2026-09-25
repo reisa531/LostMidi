@@ -73,7 +73,24 @@ def main():
     assert request(person_path, 'DELETE', {'revision': 2}, token, expected=(409,))['error']['code'] == 'STALE_PERSON'
     request(person_path, 'DELETE', {'revision': 1}, token)
     request('/api/v1/people/' + person['id'], expected=(404,))
-    print('PASS: authenticated revision-checked MIDI/person deletion and deleted creation replay rejection')
+    request('/api/v1/admin/trash', expected=(401,))
+    for kind, item in (('midi', metadata), ('person', person)):
+        restore_path = '/api/v1/admin/trash/' + kind + '/' + item['id'] + '/restore'
+        request(restore_path, 'POST', expected=(401,))
+        trash = request('/api/v1/admin/trash?pageSize=100', token=token)
+        assert any(row['entity_type'] == kind and row['entity_id'] == item['id'] for row in trash['data'])
+        assert request(restore_path, 'POST', token=token)['restored_id'] == item['id']
+        assert request(restore_path, 'POST', token=token, expected=(404,))['error']['code'] == 'TRASH_RECORD_NOT_FOUND'
+        trash = request('/api/v1/admin/trash?pageSize=100', token=token)
+        assert not any(row['entity_type'] == kind and row['entity_id'] == item['id'] for row in trash['data'])
+        actions = [row['action'] for row in trash['audit'] if row['entity_type'] == kind and row['entity_id'] == item['id']]
+        assert sorted(actions) == ['delete', 'restore']
+    restored = request('/api/v1/admin/midis/' + metadata['id'], token=token)
+    assert restored['revision'] == 3 and restored['title'] == creation['title']
+    assert request('/api/v1/admin/midis', 'POST', creation, token, expected=(201,))['id'] == metadata['id']
+    restored_person = request(person_path, token=token)
+    assert restored_person['person']['revision'] == 3 and restored_person['aliases'] == ['Old']
+    print('PASS: authenticated soft deletion, deleted replay rejection, restore, retained aliases and audit history')
     combined = {**draft, 'slug': 'create-file-' + uuid.uuid4().hex, 'request_id': str(uuid.uuid4()),
                 'distribution_permission': 'permission_granted', 'file': {
                     'filename': '一起保存.mid', 'content_base64': base64.b64encode(midi(80)).decode(), 'rights_confirmed': True}}
@@ -123,8 +140,24 @@ def main():
         request(entry_path, 'DELETE', {'revision': 2}, token)
         request('/api/v1/midis/' + combined['slug'] + '/files/' + detail['files'][0]['id'] + '/download', expected=(404,))
         assert request('/api/v1/admin/midis', 'POST', combined, token, expected=(410,))['error']['code'] == 'CREATION_DELETED'
+        assert request(person_path, 'DELETE', {'revision': 1}, token, expected=(409,))['error']['code'] == 'PERSON_IN_USE'
+        assert request('/api/v1/admin/midis', 'POST', duplicate, token, expected=(409,))['error']['code'] == 'FILE_OWNERSHIP_CONFLICT'
+        search_path = '/api/v1/catalog/entries?q=' + urllib.parse.quote(combined['slug'])
+        assert request(search_path)['pagination']['total'] == 0
+        request('/api/v1/admin/trash/midi/' + created['id'] + '/restore', 'POST', token=token)
+        restored = request(entry_path, token=token)
+        assert restored['revision'] == 4
+        restored_detail = request('/api/v1/midis/' + combined['slug'])
+        assert restored_detail['files'] == detail['files']
+        assert request(search_path)['pagination']['total'] == 1
+        credits = request(entry_path + '/credits', token=token)
+        assert len(credits['credits']) == 1 and credits['credits'][0]['person_id'] == referenced['id']
+        download = '/api/v1/midis/' + combined['slug'] + '/files/' + detail['files'][0]['id'] + '/download'
+        with opener.open(args.api.rstrip('/') + download, timeout=60) as response:
+            assert response.status == 200 and response.read() == midi(80)
+        request(entry_path + '/credits', 'PUT', {'revision': restored['revision'], 'credits': []}, token)
         request(person_path, 'DELETE', {'revision': 1}, token)
-        print('PASS: atomic create, validation rollback, safe replay, hash conflicts, catalog and deletion of file-bearing entries')
+        print('PASS: atomic creation, replay, ownership, search visibility, retained credits and exact-byte download after restore')
     first = request('/api/v1/admin/midis', 'POST', draft, token, expected=(201,))
     other = request('/api/v1/admin/midis', 'POST', {**draft, 'slug': draft['slug']+'-other'}, token, expected=(201,))
     path = '/api/v1/admin/midis/' + first['id'] + '/files'
