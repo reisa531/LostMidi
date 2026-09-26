@@ -5,16 +5,11 @@ import { ApiError } from "@/lib/api/client";
 import { Status, Section, Unavailable, ExternalSource, dateLabel, copyrightLabel, distributionLabel, roleName } from "@/components/archive";
 import { MidiDownload } from "@/components/midi-download";
 import { UsageTerms } from "@/components/usage-terms";
-import type { EvidenceFile } from "@/lib/api/types";
+import { EvidenceAttachments } from "@/components/evidence-attachments";
 import type { Metadata } from "next";
 import { Markdown, markdownSummary } from "@/components/markdown";
 import { Suspense } from "react";
 import { RelatedArticlesFor } from "@/components/related-articles";
-
-function EvidenceAttachments({ midiId, files }: { midiId: string; files: EvidenceFile[] }) {
-  if (!files.length) return null;
-  return <div className="rounded-lg border border-line bg-white/70 p-4"><p className="mb-2 text-xs font-medium text-muted">证据附件 · {files.length}</p><ul className="space-y-2">{files.map(file => <li key={file.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><a className="archive-link min-w-0 break-all" href={`/api/midis/${midiId}/evidence/${file.id}`}>{file.filename} ↓</a><span className="text-xs text-muted">{file.file_size.toLocaleString("zh-CN")} 字节</span></li>)}</ul></div>;
-}
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
