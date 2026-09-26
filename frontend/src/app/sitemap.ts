@@ -16,7 +16,8 @@ export async function generateSitemaps() {
   const kinds: Kind[] = ["midis", "people", "articles"];
   return [{ id: "static" }, ...kinds.flatMap((kind, index) => {
     const result = counts[index];
-    const total = result.status === "fulfilled" ? "total" in result.value ? result.value.total : result.value.pagination.total : 0;
+    const value = result.status === "fulfilled" ? result.value as { total?: number; pagination?: { total?: number } } | undefined : undefined;
+    const total = typeof value?.total === "number" ? value.total : value?.pagination?.total ?? 0;
     return Array.from({ length: Math.max(1, Math.ceil(total / SITEMAP_SIZE)) }, (_, shard) => ({ id: `${kind}-${shard}` }));
   })];
 }

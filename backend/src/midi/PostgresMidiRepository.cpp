@@ -69,16 +69,18 @@ MidiEntry PostgresMidiRepository::create(const MidiEntry& e) {
     TransactionScope tx(db_);
     if (!tx.db->execSqlSync("SELECT 1 FROM midi_slug_history WHERE slug=$1", e.slug).empty())
         throw ApiError(409, "SLUG_CONFLICT", "This slug is reserved by another archive.");
-    drogon::orm::Result rows;
-    try { rows = tx.db->execSqlSync(
-        "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
-        "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
-        e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
-        *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
-    } catch (const drogon::orm::SqlError& error) {
-        if (error.sqlState() == "23505") throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
-        throw;
-    }
+    const auto rows = [&] {
+        try {
+            return tx.db->execSqlSync(
+                "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
+                "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
+                e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
+                *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
+        } catch (const drogon::orm::SqlError& error) {
+            if (error.sqlState() == "23505") throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
+            throw;
+        }
+    }();
     if (rows.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
     auto saved = entryFrom(rows[0]);
     tx.commit();
@@ -114,16 +116,18 @@ MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const st
         throw ApiError(409, "FILE_OWNERSHIP_CONFLICT", "Identical bytes already belong to another MIDI entry.");
     if (!tx.db->execSqlSync("SELECT 1 FROM midi_slug_history WHERE slug=$1", e.slug).empty())
         throw ApiError(409, "SLUG_CONFLICT", "This slug is reserved by another archive.");
-    drogon::orm::Result entries;
-    try { entries = tx.db->execSqlSync(
-        "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
-        "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
-        e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
-        *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
-    } catch (const drogon::orm::SqlError& error) {
-        if (error.sqlState() == "23505") throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
-        throw;
-    }
+    const auto entries = [&] {
+        try {
+            return tx.db->execSqlSync(
+                "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
+                "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
+                e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
+                *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
+        } catch (const drogon::orm::SqlError& error) {
+            if (error.sqlState() == "23505") throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
+            throw;
+        }
+    }();
     if (entries.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
     const auto saved = entryFrom(entries[0]);
     if (file) {
