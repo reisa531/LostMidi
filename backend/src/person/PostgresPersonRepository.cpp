@@ -63,7 +63,7 @@ namespace lostmidi::person {
 PersonList PostgresPersonRepository::list(Page page) {
     PersonList result;
     result.total = db_->execSqlSync("SELECT count(*) AS total FROM people WHERE deleted_at IS NULL")[0]["total"].as<std::int64_t>();
-    for (const auto& row : db_->execSqlSync("SELECT * FROM people WHERE deleted_at IS NULL ORDER BY id LIMIT $1 OFFSET $2", static_cast<std::int64_t>(page.size), page.offset()))
+    for (const auto& row : db_->execSqlSync("SELECT id,display_name,NULL::text AS biography,created_at,revision,public_id,summary,'{}'::text AS profile,updated_at FROM people WHERE deleted_at IS NULL ORDER BY id LIMIT $1 OFFSET $2", static_cast<std::int64_t>(page.size), page.offset()))
         result.data.push_back(personFrom(row));
     return result;
 }

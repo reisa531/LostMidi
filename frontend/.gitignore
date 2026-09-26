@@ -18,3 +18,13 @@ coverage/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local agent context and generated tooling
+AGENTS.md
+CLAUDE.md
+TASK.md
+.agents/
+.codex/
+.local/
+.tools/
+.venv/

@@ -1,12 +1,38 @@
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { getPersonById } from "@/lib/api/person";
+import { getCatalogPeople } from "@/lib/api/catalog";
 import { ApiError } from "@/lib/api/client";
 import { Section, Unavailable, roleName } from "@/components/archive";
 import type { Metadata } from "next";
-import { Markdown, markdownSummary } from "@/components/markdown";
-import { getPersonArticles } from "@/lib/api/articles";
-import { RelatedArticles } from "@/components/related-articles";
+import { Markdown, markdownHeadings, markdownSummary } from "@/components/markdown";
+import { Suspense } from "react";
+import { RelatedArticlesFor } from "@/components/related-articles";
+
+type Collaborator = { name: string; personId: string; source: string; publicId?: string };
+async function resolveCollaborators(profile: Record<string, unknown>): Promise<Collaborator[]> {
+  const raw = Array.isArray(profile.collaborators) ? profile.collaborators : [];
+  const items = raw.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map(item => ({ name: String(item.name ?? "合作者"), personId: String(item.personId ?? ""), source: String(item.source ?? "") }));
+  const resolved: Collaborator[] = [];
+  for (let start = 0; start < items.length; start += 6) {
+    resolved.push(...await Promise.all(items.slice(start, start + 6).map(async item => {
+      try {
+        if (/^(?:[1-9]\d{0,18}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(item.personId)) {
+          const person = await getPersonById(item.personId);
+          return { ...item, publicId: person.person.public_id };
+        }
+        if (item.name && new TextEncoder().encode(item.name).length <= 200) {
+          const matches = await getCatalogPeople({ page: 1, pageSize: 20, q: item.name });
+          const exact = matches.data.filter(person => person.display_name === item.name || person.aliases.includes(item.name));
+          if (exact.length === 1 && matches.pagination.total <= 20) return { ...item, publicId: exact[0].public_id };
+        }
+      } catch { /* A missing or unavailable profile stays plain text. */ }
+      return item;
+    })));
+  }
+  return resolved;
+}
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -31,16 +57,15 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     throw error;
   }
   if (!stableId) permanentRedirect(`/people/${detail.person.public_id}`);
-  const relatedArticles = await getPersonArticles(detail.person.public_id);
   const profile = detail.person.profile;
+  const collaborators = await resolveCollaborators(profile);
   const summary = detail.person.summary || markdownSummary(detail.person.biography ?? `${detail.person.display_name} 的人物档案、历史昵称与相关 MIDI 作品。`, 155);
   const sameAs = Array.isArray(profile.sameAs) ? profile.sameAs.filter((url): url is string => typeof url === "string" && /^https:\/\//.test(url)) : [];
   const structuredData = { "@context": "https://schema.org", "@type": "Person", name: detail.person.display_name, description: summary, sameAs: sameAs.length ? sameAs : undefined, alternateName: detail.aliases.length ? detail.aliases : undefined, url: `${process.env.ADMIN_ORIGIN ?? ""}/people/${detail.person.public_id}` };
   const facts = ["country", "activeTime", "pronunciation", "birthText", "birthplace", "residence", "education", "gender", "roles"].filter(key => profile[key] && (!Array.isArray(profile[key]) || profile[key].length));
   const sites = Array.isArray(profile.sites) ? profile.sites : [];
   const midiGroups = [...detail.midis.reduce((map, midi) => { const current = map.get(midi.id) ?? { ...midi, roles: [] as string[] }; current.roles.push(midi.role); map.set(midi.id, current); return map; }, new Map<string, { id: string; public_id: string; slug: string; title: string; roles: string[] }>()).values()];
-  const headingCounts = new Map<string, number>();
-  const headings = (detail.person.biography ?? "").split(/\r?\n/).flatMap(line => { const match = line.match(/^\s*(?:#{1,6}\s+|【)(.*?)(?:】)?\s*$/); if (!match?.[1]) return []; const title = match[1].trim(), base = title.toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]+/g, "-").replace(/^-|-$/g, "") || "section", count = headingCounts.get(base) ?? 0; headingCounts.set(base, count + 1); return [{ title, id: count ? `${base}-${count + 1}` : base }]; });
+  const headings = markdownHeadings(detail.person.biography ?? "");
   const neighbors = [detail.previous, detail.next].filter(Boolean);
   return <article className="mx-auto max-w-6xl"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} /><p className="eyebrow"><Link href="/people" className="archive-link">人物</Link> / 档案</p>
     <h1 className="my-6 font-serif text-4xl">{detail.person.display_name}</h1><p className="mb-8 max-w-3xl text-lg leading-8 text-muted">{summary}</p>
@@ -52,13 +77,13 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     {Array.isArray(profile.sources) && profile.sources.length > 0 && <Section title="出处"><ul className="space-y-3">{profile.sources.map((item, index) => typeof item === "object" && item && <li key={index}>{String((item as Record<string, unknown>).title ?? "未命名来源")} {typeof (item as Record<string, unknown>).url === "string" && <a className="archive-link" href={String((item as Record<string, unknown>).url)} rel="noopener noreferrer" target="_blank">查看来源</a>}</li>)}</ul></Section>}
     {typeof profile.rights === "string" && profile.rights && <Section title="权利说明"><Markdown source={profile.rights} /></Section>}
     {Array.isArray(profile.works) && profile.works.length > 0 && <Section title="对外署名作品"><ul className="space-y-3">{profile.works.map((item, index) => { if (typeof item !== "object" || !item) return null; const work = item as Record<string, unknown>, title = String(work.title ?? "作品"), internal = typeof work.midiId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(work.midiId); return <li key={index}>{internal ? <Link className="archive-link" href={`/midis/${work.midiId}`}>{title}</Link> : typeof work.url === "string" ? <a className="archive-link" href={work.url} target="_blank" rel="noopener noreferrer">{title}</a> : title} {String(work.role ?? "")}</li>; })}</ul></Section>}
-    {Array.isArray(profile.collaborators) && profile.collaborators.length > 0 && <Section title="合作者"><ul className="flex flex-wrap gap-3">{profile.collaborators.map((item, index) => typeof item === "object" && item && <li key={index}>{String((item as Record<string, unknown>).name ?? "合作者")}</li>)}</ul></Section>}
+    {collaborators.length > 0 && <Section title="合作者"><ul className="flex flex-wrap gap-2">{collaborators.map((item, index) => <li key={index} className="rounded-full border border-line bg-white/70 px-3 py-1.5">{item.publicId ? <Link className="archive-link" href={`/people/${item.publicId}`}>{item.name}</Link> : <span>{item.name}</span>}{item.source && <span className="ml-2 text-xs text-muted">{item.source}</span>}</li>)}</ul></Section>}
     {sameAs.length > 0 && <Section title="相关链接"><ul className="space-y-2">{sameAs.map(url => <li key={url}><a className="archive-link break-all" href={url} target="_blank" rel="noopener noreferrer">{url}</a></li>)}</ul></Section>}
-    <Section title="相关作品">{midiGroups.length ? <ul className="space-y-4">{midiGroups.map(m => <li key={m.id}>
+    <Section title="相关作品">{midiGroups.length ? <><p className="mb-3 text-xs text-muted">共 {midiGroups.length} 部，展示前 20 部。</p><ul className="space-y-4">{midiGroups.slice(0, 20).map(m => <li key={m.id}>
       <Link className="archive-link" href={`/midis/${m.slug}`}>{m.title}</Link><span className="ml-3 text-muted">{m.roles.map(roleName).join("、")}</span>
-    </li>)}</ul> : <div className="space-y-2"><p className="text-muted">尚无作品署名记录。</p><Link href={`/search?person=${encodeURIComponent(detail.person.id)}`} className="archive-link">按此人物筛选 MIDI 目录 →</Link></div>}</Section>
+    </li>)}</ul>{midiGroups.length > 20 && <Link href={`/search?person=${encodeURIComponent(detail.person.id)}`} className="mt-4 inline-block archive-link">查看全部相关作品 →</Link>}</> : <div className="space-y-2"><p className="text-muted">尚无作品署名记录。</p><Link href={`/search?person=${encodeURIComponent(detail.person.id)}`} className="archive-link">按此人物筛选 MIDI 目录 →</Link></div>}</Section>
     </div><aside className="h-fit rounded-xl border border-line bg-white/70 p-5"><h2 className="font-semibold">人物资料</h2><dl className="mt-4 space-y-4 text-sm">{facts.map(key => <div key={key}><dt className="text-xs text-muted">{({country:"国家",activeTime:"活动时间",pronunciation:"读音",birthText:"出生信息",birthplace:"出生地",residence:"居住地",education:"学历",gender:"性别",roles:"身份 / 乐器 / 工具"} as Record<string,string>)[key] ?? key}</dt><dd>{Array.isArray(profile[key]) ? (profile[key] as unknown[]).join("、") : String(profile[key])}{key === "birthText" && profile.birthCertainty && profile.birthCertainty !== "confirmed" ? `（${profile.birthCertainty === "approximate" ? "推测" : "未确认"}）` : ""}</dd></div>)}{sites.map((item, index) => typeof item === "object" && item && <div key={`site-${index}`}><dt className="text-xs text-muted">站点</dt><dd>{typeof (item as Record<string, unknown>).url === "string" ? <a className="archive-link" href={String((item as Record<string, unknown>).url)} target="_blank" rel="noopener noreferrer">{String((item as Record<string, unknown>).name ?? "站点")}</a> : String((item as Record<string, unknown>).name ?? "站点")}</dd></div>)}<div><dt className="text-xs text-muted">更新时间 · 版本</dt><dd>{detail.person.updated_at} · {detail.person.revision}</dd></div></dl><Link className="mt-5 inline-block text-sm archive-link" href={`/search?person=${encodeURIComponent(detail.person.id)}`}>相关作品搜索 →</Link><div className="mt-3 flex flex-wrap gap-3 text-xs"><Link className="archive-link" href={`/map?group=${encodeURIComponent(detail.person.id)}`}>来源图谱</Link><Link className="archive-link" href="/recovery">寻回记录</Link><Link className="archive-link" href="/midis">MIDI 目录</Link></div></aside></div>
-    <div className="mt-10"><RelatedArticles articles={relatedArticles} /></div>
+    <div className="mt-10"><Suspense fallback={<p className="text-sm text-muted">正在加载相关文章…</p>}><RelatedArticlesFor kind="person" id={detail.person.public_id} /></Suspense></div>
     {neighbors.length > 0 && <nav aria-label="相邻人物" className="mt-10 flex justify-between border-t border-line pt-5 text-sm">{detail.previous ? <Link className="archive-link" href={`/people/${detail.previous.public_id}`}>← {detail.previous.display_name}</Link> : <span />}{detail.next ? <Link className="archive-link" href={`/people/${detail.next.public_id}`}>{detail.next.display_name} →</Link> : <span />}</nav>}
   </article>;
 }

@@ -42,6 +42,7 @@ export async function savePersonAction(_previous: { error: string }, form: FormD
       ...existing,
       country: String(form.get("country") ?? "").trim() || null,
       activeTime: String(form.get("active_time") ?? "").trim() || null,
+      rights: String(form.get("rights") ?? "").trim() || null,
       sameAs: lines("same_as"),
       collaborators: columns("collaborators").map(p => ({ name: p[0] || "", personId: field(p,1), source: field(p,2) })),
       aliasDetails: aliasDetails.filter(item => aliases.includes(item.name)),
@@ -52,8 +53,8 @@ export async function savePersonAction(_previous: { error: string }, form: FormD
         ...(id ? { revision: Number(form.get("revision")) } : {}) }),
     });
   } catch (error) { return { error: errorMessage(error) }; }
-  if ("request_id" in saved) redirect("/admin/changes?submitted=1");
-  redirect(`/admin/people/${saved.person.id}/edit?saved=1`);
+  if ("request_id" in saved) return { error: "", target: "/admin/changes?submitted=1" };
+  return { error: "", target: `/admin/people/${saved.person.id}/edit?saved=1` };
 }
 export async function loadPeopleAction(page: number) {
   await checkOrigin();

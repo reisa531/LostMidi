@@ -32,7 +32,9 @@ std::int64_t PostgresMidiRepository::count() {
     return db_->execSqlSync("SELECT count(*) AS total FROM midi_entries WHERE deleted_at IS NULL")[0]["total"].as<std::int64_t>();
 }
 std::optional<MidiEntry> PostgresMidiRepository::findBySlug(const std::string& slug) {
-    const auto rows = db_->execSqlSync("SELECT * FROM midi_entries WHERE slug = $1 AND deleted_at IS NULL", slug);
+    const auto rows = db_->execSqlSync("SELECT m.* FROM midi_entries m WHERE m.deleted_at IS NULL "
+        "AND (m.slug=$1 OR EXISTS(SELECT 1 FROM midi_slug_history h WHERE h.slug=$1 AND h.midi_id=m.id)) "
+        "ORDER BY (m.slug=$1) DESC LIMIT 1", slug);
     if (rows.empty()) return std::nullopt;
     return entryFrom(rows[0]);
 }
@@ -65,11 +67,18 @@ std::optional<MidiEntry> PostgresMidiRepository::findById(std::int64_t id) {
 }
 MidiEntry PostgresMidiRepository::create(const MidiEntry& e) {
     TransactionScope tx(db_);
-    const auto rows = tx.db->execSqlSync(
+    if (!tx.db->execSqlSync("SELECT 1 FROM midi_slug_history WHERE slug=$1", e.slug).empty())
+        throw ApiError(409, "SLUG_CONFLICT", "This slug is reserved by another archive.");
+    drogon::orm::Result rows;
+    try { rows = tx.db->execSqlSync(
         "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
         "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
         e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
         *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
+    } catch (const drogon::orm::SqlError& error) {
+        if (error.sqlState() == "23505") throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
+        throw;
+    }
     if (rows.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
     auto saved = entryFrom(rows[0]);
     tx.commit();
@@ -103,11 +112,18 @@ MidiEntry PostgresMidiRepository::createWithRequest(const MidiEntry& e, const st
     }
     if (file && !tx.db->execSqlSync("SELECT 1 FROM midi_files WHERE sha256=$1", file->sha256).empty())
         throw ApiError(409, "FILE_OWNERSHIP_CONFLICT", "Identical bytes already belong to another MIDI entry.");
-    const auto entries = tx.db->execSqlSync(
+    if (!tx.db->execSqlSync("SELECT 1 FROM midi_slug_history WHERE slug=$1", e.slug).empty())
+        throw ApiError(409, "SLUG_CONFLICT", "This slug is reserved by another archive.");
+    drogon::orm::Result entries;
+    try { entries = tx.db->execSqlSync(
         "INSERT INTO midi_entries (id,slug,title,description,estimated_year,estimated_date,archive_status,copyright_status,license,rights_holder,distribution_permission) "
         "VALUES (public.allocate_archive_id('midi'),$1,$2,NULLIF($3,''),NULLIF($4,0)::smallint,NULLIF($5,'')::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10) ON CONFLICT(slug) DO NOTHING RETURNING *",
         e.slug, e.title, e.description.value_or(""), e.estimatedYear.value_or(0), e.estimatedDate.value_or(""), e.archiveStatus,
         *e.copyrightStatus, e.license.value_or(""), e.rightsHolder.value_or(""), *e.distributionPermission);
+    } catch (const drogon::orm::SqlError& error) {
+        if (error.sqlState() == "23505") throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
+        throw;
+    }
     if (entries.empty()) throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
     const auto saved = entryFrom(entries[0]);
     if (file) {
@@ -141,7 +157,8 @@ MidiEntry PostgresMidiRepository::update(std::int64_t id, const MidiEntry& e) {
         if (sqlError && !sqlError->sqlState().empty() && sqlError->sqlState() != "23505") throw;
         // Some Drogon PostgreSQL builds expose only Failure, without SQLSTATE.
         // Confirm the conflicting record instead of parsing localized error text.
-        if (!db_->execSqlSync("SELECT 1 FROM midi_entries WHERE slug=$1 AND id<>$2", e.slug, id).empty())
+        if (!db_->execSqlSync("SELECT 1 FROM midi_entries WHERE slug=$1 AND id<>$2", e.slug, id).empty() ||
+            !db_->execSqlSync("SELECT 1 FROM midi_slug_history WHERE slug=$1 AND midi_id<>$2", e.slug, id).empty())
             throw ApiError(409, "SLUG_CONFLICT", "This slug is already in use.");
         throw;
     }

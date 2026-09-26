@@ -42,7 +42,7 @@ add_library(lostmidi_postgres
 target_link_libraries(lostmidi_postgres PUBLIC lostmidi_core Drogon::Drogon PRIVATE OpenSSL::Crypto)
 
 add_executable(lostmidi_api src/main.cpp src/common/ApiController.cpp
-    src/common/AdminController.cpp src/common/AdminRecoveryController.cpp src/common/InstallationController.cpp
+    src/common/AdminController.cpp src/common/AdminReviewQueueController.cpp src/common/AdminRecoveryController.cpp src/common/InstallationController.cpp
     src/common/AdminFileController.cpp src/common/CatalogController.cpp src/common/ArticleController.cpp)
 target_link_libraries(lostmidi_api PRIVATE lostmidi_postgres)
 

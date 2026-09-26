@@ -4,6 +4,7 @@
 #include "person/PersonWriteService.h"
 #include "recovery/RecoveryWriteService.h"
 #include "common/Error.h"
+#include "common/Json.h"
 
 using namespace lostmidi;
 namespace {
@@ -87,6 +88,27 @@ TEST(PersonWrite, NormalizesTextAndAllowsMultipleRoles) {
     ASSERT_EQ(saved.aliases.size(), 1u); EXPECT_EQ(saved.aliases[0], "old");
     EXPECT_NO_THROW(service.saveCredits(1, {1, {{1, "", "composer"}, {1, "", "sequencer"}}}));
     EXPECT_NO_THROW(service.saveCredits(1, {1, {}}));
+}
+TEST(PersonWrite, AllowsLongRelatedLinksWithinBound) {
+    PersonWriter writer; person::PersonWriteService service(writer);
+    person::PersonEdit edit; edit.person.displayName = "Name"; edit.profileProvided = true;
+    const auto url = "https://example.org/" + std::string(6000, 'a');
+    edit.person.profile = "{\"sameAs\":[\"" + url + "\"]}";
+    EXPECT_NO_THROW(service.save(0, edit));
+    edit.person.profile = "{\"sameAs\":[\"https://example.org/" + std::string(8192, 'a') + "\"]}";
+    EXPECT_THROW(service.save(0, edit), ApiError);
+    EXPECT_EQ(writer.writes, 1);
+}
+TEST(MidiDetailJson, IncludesSourceAndRecoveryEvidence) {
+    midi::MidiDetail detail; detail.entry.id = 7; detail.entry.slug = "example";
+    recovery::HistoricalSource source; source.id = 11; source.websiteName = "Archive";
+    source.evidenceFiles.push_back({13, "source.pdf", "application/pdf", "hash", 12, "2026-01-01"});
+    recovery::RecoveryEvent event; event.id = 17; event.story = "Found";
+    event.evidenceFiles.push_back({19, "event.png", "image/png", "hash", 14, "2026-01-02"});
+    detail.history.sources.push_back(source); detail.history.events.push_back(event);
+    const auto json = toJson(detail);
+    EXPECT_EQ(json["historical_sources"][0]["evidence_files"][0]["filename"].asString(), "source.pdf");
+    EXPECT_EQ(json["recovery_events"][0]["evidence_files"][0]["filename"].asString(), "event.png");
 }
 class RecoveryWriter : public recovery::IRecoveryWriter {
 public:

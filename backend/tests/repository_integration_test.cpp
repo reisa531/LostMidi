@@ -101,6 +101,9 @@ TEST(PostgresIntegration, PublicUuidIdentifiersRemainStableAcrossSlugChanges) {
     entry.slug += "-renamed"; entry.revision = 1;
     entry = writer.update(entry.id, entry);
     EXPECT_EQ(entry.publicId, midis.findByPublicId(entry.publicId)->publicId);
+    ASSERT_TRUE(midis.findBySlug(slug).has_value());
+    EXPECT_EQ(midis.findBySlug(slug)->id, entry.id);
+    expectApiError([&] { writer.create(midi::MidiEntry{0,slug,"Reserved slug test",{}, {},"lost",{}, {},"unknown",{}, {},"metadata_only"}); }, 409, "SLUG_CONFLICT");
     person::PostgresPersonRepository people(db); person::PersonWriteService peopleWriter(people);
     person::PersonEdit person; person.person.displayName = slug;
     const auto saved = peopleWriter.save(0, person);

@@ -125,8 +125,8 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
     });
     queued = result.status === "pending" && Boolean(result.request_id);
   } catch (error) { return { error: errorMessage(error) }; }
-  if (queued) redirect("/admin/changes?submitted=1");
-  redirect(`/admin/midis/${midiId}/history?${operation === "delete" ? "deleted" : "saved"}=1`);
+  if (queued) return { error: "", target: "/admin/changes?submitted=1" };
+  return { error: "", target: `/admin/midis/${midiId}/history?${operation === "delete" ? "deleted" : "saved"}=1` };
 }
 
 export async function uploadEvidenceAction(form: FormData): Promise<never> {

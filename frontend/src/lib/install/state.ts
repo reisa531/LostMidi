@@ -19,6 +19,10 @@ export type InstallationState =
   | { kind: "unavailable" }
   | { kind: "reachable"; status: InstallationStatus };
 
+// A successful installed response is safe to reuse for read-only site chrome during
+// a same-process backend outage. Never cache an uninstalled response or use this to open /install.
+let lastKnownInstalledSite: InstallationStatus["site"] | null = null;
+
 export function deploymentConfig() {
   // Never reflect malformed environment values (which could contain credentials).
   const backendUrl = backendAddress(process.env.BACKEND_API_URL ?? "");
@@ -43,6 +47,7 @@ export const getInstallationState = cache(async (): Promise<InstallationState> =
   try {
     const status = await apiRequest<unknown>("/api/v1/installation");
     if (!isInstallationStatus(status)) return { kind: "unavailable" };
+    if (status.installed) lastKnownInstalledSite = status.site;
     return { kind: "reachable", status };
   } catch {
     // An outage, old backend, or invalid response must NEVER enable installation.
@@ -52,7 +57,7 @@ export const getInstallationState = cache(async (): Promise<InstallationState> =
 
 export async function installedSite() {
   const state = await getInstallationState();
-  return state.kind === "reachable" && state.status.installed ? state.status.site : defaultSite;
+  return state.kind === "reachable" && state.status.installed ? state.status.site : state.kind === "unavailable" ? lastKnownInstalledSite ?? defaultSite : defaultSite;
 }
 
 export async function requireInstallation() {

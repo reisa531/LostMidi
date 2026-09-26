@@ -12,3 +12,20 @@ Dockerfile
 .dockerignore
 .vscode
 .idea
+
+# Local agent notes, conversation exports and backup data
+**/AGENTS.md
+**/CLAUDE.md
+**/TASK.md
+**/.agents
+**/.codex
+**/.local
+**/.tools
+**/.venv
+**/.vscode
+**/.conan2
+**/*.dump
+**/*.sql.gz
+**/*.pem
+**/*.key
+分析项目_*.md

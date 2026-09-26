@@ -147,8 +147,16 @@ inline Json::Value toJson(const midi::MidiDetail& d) {
     j["entry"] = toJson(d.entry);
     j["credits"] = jsonArray(d.credits);
     j["people"] = jsonArray(d.people);
-    j["historical_sources"] = jsonArray(d.history.sources);
-    j["recovery_events"] = jsonArray(d.history.events);
+    j["historical_sources"] = Json::Value(Json::arrayValue);
+    for (const auto& source : d.history.sources) {
+        auto item = toJson(source); item["evidence_files"] = jsonArray(source.evidenceFiles);
+        j["historical_sources"].append(item);
+    }
+    j["recovery_events"] = Json::Value(Json::arrayValue);
+    for (const auto& event : d.history.events) {
+        auto item = toJson(event); item["evidence_files"] = jsonArray(event.evidenceFiles);
+        j["recovery_events"].append(item);
+    }
     j["files"] = Json::Value(Json::arrayValue);
     for (const auto& file : d.files) {
         auto item = toJson(file);

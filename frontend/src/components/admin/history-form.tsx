@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { saveHistoryAction } from "@/lib/admin/history-actions";
 import { uploadEvidenceAction } from "@/lib/admin/history-actions";
 import type { HistoricalSource, HistoryEdit, RecoveryEvent } from "@/lib/admin/history";
 import { ExternalSource } from "@/components/archive";
 import { MarkdownField } from "@/components/admin/markdown-field";
+import { DraftNotice, useFormDraft } from "@/components/admin/use-form-draft";
 import { Markdown } from "@/components/markdown";
 
 type Selection = { kind: "source"; record?: HistoricalSource } | { kind: "event"; record?: RecoveryEvent };
@@ -38,10 +40,17 @@ function UTCInput({ name, label, value, onChange }: { name: string; label: strin
 function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequired }: {
   midiId: string; revision: number; selection: Selection; onCancel: () => void; reviewRequired: boolean;
 }) {
+  const router = useRouter();
+  const draftKey = `history:${midiId}:${selection.kind}:${selection.record?.id ?? "new"}:${revision}`;
+  const { attachForm, dirty, hasDraft, saveDraft, clearDraft, discardDraft, restoreDraft } = useFormDraft(draftKey);
   const source = selection.kind === "source" ? selection.record : undefined;
   const event = selection.kind === "event" ? selection.record : undefined;
   const label = selection.kind === "source" ? "历史来源" : "寻回记录";
-  const [state, action, pending] = useActionState(saveHistoryAction, { error: "" });
+  const [state, action, pending] = useActionState(async (previous: { error: string }, form: FormData) => {
+    const next = await saveHistoryAction(previous, form);
+    if (next.target) { clearDraft(); try { sessionStorage.removeItem(`lostmidi:draft:${draftKey}:values`); } catch { /* Storage may be disabled. */ } router.push(next.target); router.refresh(); }
+    return next;
+  }, { error: "" });
   const [confirming, setConfirming] = useState(false);
   const [customSourceType, setCustomSourceType] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
@@ -52,7 +61,16 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
     source_type: source?.source_type ?? "", credibility: String(source?.credibility ?? 3), checked_at: localUTC(source?.checked_at),
     recovered_at: localUTC(event?.recovered_at), recovered_by_name: event?.recovered_by_name ?? "", story: event?.story ?? "", evidence: event?.evidence ?? "",
   });
-  const change = (name: keyof typeof values, value: string) => setValues(old => ({ ...old, [name]: value }));
+  const change = (name: keyof typeof values, value: string) => {
+    const next = { ...values, [name]: value };
+    setValues(next); saveDraft();
+    try { sessionStorage.setItem(`lostmidi:draft:${draftKey}:values`, JSON.stringify(next)); } catch { /* Storage may be disabled. */ }
+  };
+  const restore = () => {
+    restoreDraft();
+    try { const saved = JSON.parse(sessionStorage.getItem(`lostmidi:draft:${draftKey}:values`) ?? "null"); if (saved && typeof saved === "object") setValues(previous => ({ ...previous, ...saved })); } catch { /* Keep editable text draft. */ }
+  };
+  const discard = () => { discardDraft(); try { sessionStorage.removeItem(`lostmidi:draft:${draftKey}:values`); } catch { /* Storage may be disabled. */ } };
   const selectedSourceTypes = values.source_type.split(",").filter(Boolean);
   const setSourceTypes = (items: string[]) => change("source_type", items.join(","));
   const addCustomSourceType = () => {
@@ -67,8 +85,9 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
 
   // React resets native controls even when an action returns a handled error.
   // Keep the selected person intact; successful saves redirect and remount this form.
-  return <form action={action} onReset={event => event.preventDefault()} onSubmit={event => { if (pending) event.preventDefault(); }} className="min-w-0 space-y-6 rounded-xl border border-accent bg-white p-5 sm:p-6 [overflow-wrap:anywhere]">
+  return <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} onReset={event => event.preventDefault()} onSubmit={event => { if (pending) event.preventDefault(); }} className="min-w-0 space-y-6 rounded-xl border border-accent bg-white p-5 sm:p-6 [overflow-wrap:anywhere]">
     <h2 ref={heading} tabIndex={-1} className="text-lg font-semibold">{selection.record ? "编辑" : "新增"}{label}{selection.record ? ` · 编号 ${selection.record.id}` : ""}</h2>
+    <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restore} discard={discard} />
     <input type="hidden" name="midi_id" value={midiId} />
     <input type="hidden" name="revision" value={revision} />
     <input type="hidden" name="kind" value={selection.kind} />
@@ -119,7 +138,7 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
       </div>
     </div> : <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5">
       <button type="submit" name="operation" value="save" disabled={pending} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? `提交${label}审核` : `保存本条${label}`}</button>
-      <button type="button" disabled={pending} className={buttonClass} onClick={onCancel}>放弃本条编辑</button>
+      <button type="button" disabled={pending} className={buttonClass} onClick={() => { if (!dirty || window.confirm("有未保存的修改，确定放弃本条编辑吗？")) onCancel(); }}>放弃本条编辑</button>
       {selection.record && <button type="button" disabled={pending} className={`${buttonClass} text-red-800`} onClick={() => setConfirming(true)}>删除本条记录…</button>}
     </div>}
   </form>;

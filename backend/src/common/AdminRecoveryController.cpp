@@ -80,6 +80,22 @@ std::string encodedFilename(const std::string& value) {
     }
     return encoded;
 }
+drogon::HttpResponsePtr evidenceResponse(const drogon::orm::DbClientPtr& db, std::int64_t midiId, std::int64_t evidenceId) {
+    const auto rows = db->execSqlSync("SELECT original_filename,media_type,sha256,file_size,replace(encode(content,'base64'),chr(10),'') AS body FROM historical_evidence WHERE midi_id=$1 AND id=$2 AND EXISTS(SELECT 1 FROM midi_entries WHERE id=$1 AND deleted_at IS NULL)", midiId, evidenceId);
+    if (rows.empty()) throw ApiError(404, "EVIDENCE_NOT_FOUND", "Evidence file does not exist.");
+    const auto bytes = midi::decodeMidiContentBase64(rows[0]["body"].as<std::string>());
+    const auto expectedDigest = rows[0]["sha256"].as<std::string>();
+    if (bytes.size() != rows[0]["file_size"].as<std::uint32_t>() || storage::sha256(bytes) != expectedDigest)
+        throw ApiError(503, "EVIDENCE_INTEGRITY_FAILED", "Evidence file failed its integrity check.");
+    const auto filename = rows[0]["original_filename"].as<std::string>();
+    auto response = drogon::HttpResponse::newHttpResponse();
+    response->setContentTypeString(rows[0]["media_type"].as<std::string>());
+    response->addHeader("Content-Disposition", "attachment; filename=\"evidence-" + std::to_string(evidenceId) + "\"; filename*=UTF-8''" + encodedFilename(filename));
+    response->addHeader("X-Content-Type-Options", "nosniff");
+    response->addHeader("Content-Security-Policy", "sandbox");
+    response->setBody(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+    return response;
+}
 bool allowedMediaType(const std::string& type) {
     return type == "application/pdf" || type == "image/jpeg" || type == "image/png" || type == "text/plain";
 }
@@ -263,19 +279,13 @@ void ApiController::registerAdminRecoveryRoutes() {
             dispatchResponse(std::move(callback), [this, request, midiValue = std::move(midiValue), evidenceValue = std::move(evidenceValue)] {
                 auth_.require(request->getHeader("authorization"));
                 const auto midiId = idOf(midiValue); const auto evidenceId = idOf(evidenceValue);
-                const auto rows = db_->execSqlSync("SELECT original_filename,media_type,sha256,file_size,replace(encode(content,'base64'),chr(10),'') AS body FROM historical_evidence WHERE midi_id=$1 AND id=$2 AND EXISTS(SELECT 1 FROM midi_entries WHERE id=$1 AND deleted_at IS NULL)", midiId, evidenceId);
-                if (rows.empty()) throw ApiError(404, "EVIDENCE_NOT_FOUND", "Evidence file does not exist.");
-                const auto bytes = midi::decodeMidiContentBase64(rows[0]["body"].as<std::string>());
-                const auto expectedDigest = rows[0]["sha256"].as<std::string>();
-                if (bytes.size() != rows[0]["file_size"].as<std::uint32_t>() || storage::sha256(bytes) != expectedDigest)
-                    throw ApiError(503, "EVIDENCE_INTEGRITY_FAILED", "Evidence file failed its integrity check.");
-                const auto filename = rows[0]["original_filename"].as<std::string>();
-                auto response = drogon::HttpResponse::newHttpResponse();
-                response->setContentTypeString(rows[0]["media_type"].as<std::string>());
-                response->addHeader("Content-Disposition", "attachment; filename=\"evidence-" + std::to_string(evidenceId) + "\"; filename*=UTF-8''" + encodedFilename(filename));
-                response->addHeader("X-Content-Type-Options", "nosniff");
-                response->setBody(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
-                return response;
+                return evidenceResponse(db_, midiId, evidenceId);
+            });
+        }, {drogon::Get});
+    drogon::app().registerHandler("/api/v1/midis/{1}/evidence/{2}",
+        [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string midiValue, std::string evidenceValue) {
+            dispatchResponse(std::move(callback), [this, midiValue = std::move(midiValue), evidenceValue = std::move(evidenceValue)] {
+                return evidenceResponse(db_, idOf(midiValue), idOf(evidenceValue));
             });
         }, {drogon::Get});
 }

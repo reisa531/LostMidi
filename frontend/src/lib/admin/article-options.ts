@@ -1,24 +1,18 @@
-import "server-only";
+"use server";
 import { getCatalogEntries, getCatalogPeople } from "@/lib/api/catalog";
+import { adminRequest } from "./auth";
 
-export type ArticleOption = { id: string; label: string };
-export async function articleOptions() {
-  const [firstMidis, firstPeople] = await Promise.all([
-    getCatalogEntries({ page: 1, pageSize: 100, sort: "title" }),
-    getCatalogPeople({ page: 1, pageSize: 100 }),
-  ]);
-  const midiPages = Math.ceil(firstMidis.pagination.total / 100);
-  const peoplePages = Math.ceil(firstPeople.pagination.total / 100);
-  const moreMidis = [];
-  for (let start = 2; start <= midiPages; start += 4)
-    moreMidis.push(...await Promise.all(Array.from({ length: Math.min(4, midiPages - start + 1) }, (_, index) =>
-      getCatalogEntries({ page: start + index, pageSize: 100, sort: "title" }))));
-  const morePeople = [];
-  for (let start = 2; start <= peoplePages; start += 4)
-    morePeople.push(...await Promise.all(Array.from({ length: Math.min(4, peoplePages - start + 1) }, (_, index) =>
-      getCatalogPeople({ page: start + index, pageSize: 100 }))));
-  return {
-    midis: [firstMidis, ...moreMidis].flatMap(page => page.data.map(item => ({ id: item.id, label: `${item.title} · #${item.id}` }))),
-    people: [firstPeople, ...morePeople].flatMap(page => page.data.map(item => ({ id: item.id, label: `${item.display_name} · #${item.id}` }))),
-  };
+export async function searchArticleOptions(kind: "midi" | "person", query: string, page = 1) {
+  if ((kind !== "midi" && kind !== "person") || !Number.isInteger(page) || page < 1 || page > 1000000 ||
+      new TextEncoder().encode(query).length > 200) throw new Error("Invalid association search");
+  await adminRequest("/api/v1/admin/session");
+  const normalized = query.trim();
+  if (kind === "midi") {
+    const result = await getCatalogEntries({ page, pageSize: 20, sort: "title", q: normalized || undefined });
+    return { options: result.data.map(item => ({ id: item.id, label: `${item.title} · #${item.id}`, archived: item.archive_status === "archived" })),
+      total: result.pagination.total, page: result.pagination.page, pageSize: result.pagination.pageSize };
+  }
+  const result = await getCatalogPeople({ page, pageSize: 20, q: normalized || undefined });
+  return { options: result.data.map(item => ({ id: item.id, label: `${item.display_name} · #${item.id}`, archived: false })),
+    total: result.pagination.total, page: result.pagination.page, pageSize: result.pagination.pageSize };
 }

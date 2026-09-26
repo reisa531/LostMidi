@@ -1,13 +1,20 @@
 import Link from "next/link";
-import { notFound, permanentRedirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getMidiByPublicId, getMidiBySlug } from "@/lib/api/midi";
 import { ApiError } from "@/lib/api/client";
-import { Credits, Status, Section, Unavailable, ExternalSource, dateLabel, copyrightLabel, distributionLabel } from "@/components/archive";
+import { Status, Section, Unavailable, ExternalSource, dateLabel, copyrightLabel, distributionLabel, roleName } from "@/components/archive";
 import { MidiDownload } from "@/components/midi-download";
+import { UsageTerms } from "@/components/usage-terms";
+import type { EvidenceFile } from "@/lib/api/types";
 import type { Metadata } from "next";
 import { Markdown, markdownSummary } from "@/components/markdown";
-import { getMidiArticles } from "@/lib/api/articles";
-import { RelatedArticles } from "@/components/related-articles";
+import { Suspense } from "react";
+import { RelatedArticlesFor } from "@/components/related-articles";
+
+function EvidenceAttachments({ midiId, files }: { midiId: string; files: EvidenceFile[] }) {
+  if (!files.length) return null;
+  return <div className="rounded-lg border border-line bg-white/70 p-4"><p className="mb-2 text-xs font-medium text-muted">证据附件 · {files.length}</p><ul className="space-y-2">{files.map(file => <li key={file.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><a className="archive-link min-w-0 break-all" href={`/api/midis/${midiId}/evidence/${file.id}`}>{file.filename} ↓</a><span className="text-xs text-muted">{file.file_size.toLocaleString("zh-CN")} 字节</span></li>)}</ul></div>;
+}
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -30,9 +37,9 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     if (error instanceof ApiError) return <Unavailable />;
     throw error;
   }
-  if (stableId) permanentRedirect(`/midis/${detail.entry.slug}`);
-  const relatedArticles = await getMidiArticles(detail.entry.public_id);
+  if (slug !== detail.entry.slug) redirect(`/midis/${detail.entry.slug}`);
   const { entry, credits, historical_sources, recovery_events, files } = detail;
+  const authors = new Map(detail.people.map(person => [person.id, person]));
   const structuredData = {
     "@context": "https://schema.org", "@type": "MusicComposition", name: entry.title,
     description: entry.description ? markdownSummary(entry.description, 155) : undefined, dateCreated: entry.estimated_date ?? (entry.estimated_year ? String(entry.estimated_year) : undefined),
@@ -46,16 +53,25 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     <h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1>
     <div className="mb-7 flex items-center gap-4"><Status status={entry.archive_status} /><span className="text-sm text-muted">推测时间：{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</span></div>
     {entry.description ? <Markdown source={entry.description} className="mb-9" /> : <p className="mb-9 text-muted">尚无描述。</p>}
-    <Section title="人物与署名"><Credits credits={credits} /></Section>
-    <Section title="历史来源">{historical_sources.length ? historical_sources.map(source => <div className="min-w-0 [overflow-wrap:anywhere]" key={source.id}>
-      <h3 className="font-semibold">{source.website_name}</h3>
-      <p className="text-xs text-muted">首次记录 {dateLabel(source.first_seen_at)} · 最后记录 {dateLabel(source.last_seen_at)}</p>
+    <Section title="人物与署名">{credits.length ? <ul className="grid gap-3 sm:grid-cols-2">{credits.map(credit => {
+      const rights = authors.get(credit.person_id)?.profile.rights;
+      return <li key={`${credit.person_id}-${credit.role}`} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-white/70 px-4 py-3">
+        <Link className="archive-link min-w-0 break-words font-medium" href={`/people/${authors.get(credit.person_id)?.public_id ?? credit.person_id}`}>{credit.display_name}</Link>
+        <span className="text-xs text-muted">{roleName(credit.role)}</span>
+        {typeof rights === "string" && rights.trim() && <UsageTerms author={credit.display_name} terms={rights} />}
+      </li>;
+    })}</ul> : <p className="text-muted">作者尚待考证。</p>}</Section>
+    <Section title="历史来源">{historical_sources.length ? <><p className="text-xs text-muted">共 {historical_sources.length} 条线索；点击条目查看详情。</p><div className="space-y-3">{historical_sources.map(source => <details className="group min-w-0 rounded-lg border border-line bg-white/70 [overflow-wrap:anywhere]" key={source.id} open={historical_sources.length === 1}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"><span className="min-w-0 font-medium">{source.website_name}<span className="ml-3 text-xs font-normal text-muted">{dateLabel(source.first_seen_at)}{source.evidence_files?.length ? ` · ${source.evidence_files.length} 个附件` : ""}</span></span><span aria-hidden="true" className="shrink-0 text-accent transition-transform group-open:rotate-180">⌄</span></summary>
+      <div className="space-y-3 border-t border-line px-4 py-4"><p className="text-xs text-muted">首次记录 {dateLabel(source.first_seen_at)} · 最后记录 {dateLabel(source.last_seen_at)}</p>
       <div className="flex flex-wrap gap-5"><ExternalSource url={source.original_url} label="原始网址" /><ExternalSource url={source.wayback_url} label="历史快照" /></div>
       {source.notes ? <Markdown source={source.notes} /> : <p className="text-muted">暂无补充说明。</p>}
-    </div>) : <p className="text-muted">尚未登记历史来源。</p>}</Section>
+      <EvidenceAttachments midiId={entry.id} files={source.evidence_files ?? []} /></div>
+    </details>)}</div></> : <p className="text-muted">尚未登记历史来源。</p>}</Section>
     <Section title="寻回记录">{recovery_events.length ? recovery_events.map(event => <div className="min-w-0 border-l-2 border-line pl-5 [overflow-wrap:anywhere]" key={event.id}>
       <p className="mb-2 text-xs text-muted">{dateLabel(event.recovered_at)} · {event.recovered_by_name ?? "寻回人不详"}</p>
       <Markdown source={event.story} /><div className="mt-3"><p className="text-xs text-muted">证据说明</p>{event.evidence ? <Markdown source={event.evidence} /> : <p className="text-muted">尚未补充</p>}</div>
+      <div className="mt-4"><EvidenceAttachments midiId={entry.id} files={event.evidence_files ?? []} /></div>
     </div>) : <p className="text-muted">尚无寻回记录。</p>}</Section>
     <Section title="文件信息">{files.length ? <>
       <p className="text-muted">文件是否可下载以具体档案权限为准。公开分发不转让版权，使用时请遵守下方许可与署名要求。</p>
@@ -80,6 +96,6 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
       <div><dt className="text-muted">许可证</dt><dd>{entry.license ?? "尚未确认"}</dd></div>
       <div><dt className="text-muted">权利人</dt><dd>{entry.rights_holder ?? "尚未确认"}</dd></div>
     </dl></Section>
-    <RelatedArticles articles={relatedArticles} />
+    <Suspense fallback={<p className="text-sm text-muted">正在加载相关文章…</p>}><RelatedArticlesFor kind="midi" id={detail.entry.public_id} /></Suspense>
   </article>;
 }

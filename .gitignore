@@ -30,4 +30,27 @@ storage/*
 Thumbs.db
 
 .vercel
-.env*
+
+# Agent instructions, conversation exports and local planning
+AGENTS.md
+CLAUDE.md
+TASK.md
+.agents/
+.codex/
+/.local/
+/分析项目_*.md
+
+# Machine-specific settings, toolchains and backups
+.vscode/
+.conan/
+.conan2/
+generators/
+cmake-build-*/
+venv/
+.cache/
+coverage/
+*.dump
+*.sql.gz
+*.bak
+*.pem
+*.key

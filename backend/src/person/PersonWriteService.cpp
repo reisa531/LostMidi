@@ -43,7 +43,7 @@ PersonEdit PersonWriteService::save(std::int64_t id, PersonEdit edit) {
         if (edit.person.summary->empty()) edit.person.summary.reset();
     }
     if (edit.profileProvided) {
-        if (edit.person.profile.size() > 50000) invalid();
+        if (edit.person.profile.size() > 100000) invalid();
         Json::Value profile; Json::CharReaderBuilder reader; std::string errors; std::istringstream input(edit.person.profile);
         if (!Json::parseFromStream(reader, input, &profile, &errors) || !profile.isObject()) invalid();
         const std::set<std::string> allowedProfile{"pronunciation","otherNames","gender","birthText","birthCertainty","birthplace","residence","education","activePeriod","activeTime","country","roles","aliasDetails","sites","timeline","sources","sameAs","works","collaborators","rights"};
@@ -56,7 +56,7 @@ PersonEdit PersonWriteService::save(std::int64_t id, PersonEdit edit) {
             if ((value.isString() && (value.asString().size() > 20000 || value.asString().find('\0') != std::string::npos)) ||
                 (value.isArray() && value.size() > 100)) invalid();
             if (value.isArray()) for (const auto& item : value) {
-                if (item.isString() && (item.asString().size() > 2000 || item.asString().find('\0') != std::string::npos)) invalid();
+                if (item.isString() && (item.asString().size() > (key == "sameAs" ? 8192 : 2000) || item.asString().find('\0') != std::string::npos)) invalid();
                 if (!item.isString() && !item.isObject()) invalid();
                 if (item.isObject()) for (const auto& field : item.getMemberNames()) {
                     const auto& detail = item[field];

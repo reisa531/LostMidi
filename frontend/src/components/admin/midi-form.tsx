@@ -6,9 +6,11 @@ import type { MidiEntry } from "@/lib/api/types";
 import { saveMidiAction, type MidiSaveState } from "@/lib/admin/actions";
 import { createMidiWithFile, maxFileSize } from "@/lib/admin/files-actions";
 import { MarkdownField } from "@/components/admin/markdown-field";
+import { DraftNotice, useFormDraft } from "@/components/admin/use-form-draft";
 
 export function MidiForm({ entry, importEnabled = false, reviewRequired = false }: { entry?: MidiEntry; importEnabled?: boolean; reviewRequired?: boolean }) {
   const router = useRouter();
+  const { attachForm, dirty, hasDraft, saveDraft, clearDraft, discardDraft, restoreDraft } = useFormDraft(`midi:${entry?.id ?? "new"}:${entry?.revision ?? 0}`);
   const requestId = useRef("");
   const submitted = useRef<FormData | null>(null);
   const submitting = useRef(false);
@@ -29,10 +31,12 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       submitted.current = form;
       const next = !entry && form.has("file") ? await createMidiWithFile(form) : await saveMidiAction(previous, form);
       if (next.queued) {
+        clearDraft();
         router.push("/admin/changes?submitted=1");
         return next;
       }
       if (next.savedId) {
+        clearDraft();
         router.push(`/admin/midis/${next.savedId}/edit?saved=1`);
         router.refresh();
       }
@@ -61,7 +65,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
     if (file.size === 0) return "请选择一个非空文件。";
     return file.size > maxFileSize ? "文件过大；单个文件最大 15 MB（15,000,000 字节）。" : "";
   }
-  return <form action={action} onReset={event => event.preventDefault()} onSubmit={event => {
+  return <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} onReset={event => event.preventDefault()} onSubmit={event => {
     if (pending || submitting.current) { event.preventDefault(); return; }
     if (!state.retryOnly) {
       const error = fileError(fileInput.current?.files?.[0]);
@@ -71,10 +75,11 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
     submitting.current = true;
   }} aria-busy={pending} className="min-w-0 space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8">
     <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，批准后才会发布。" : entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传音乐文件；没有文件时仍可建立寻回档案。"}</p>
+    <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restoreDraft} discard={discardDraft} />
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
     <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>
-      <p className="text-xs leading-6 text-muted">Slug 使用小写字母、数字和词间连字符。更改后旧地址将失效。标题最多 300 UTF-8 字节，中文字符通常占 3 字节。</p>
+      <p className="text-xs leading-6 text-muted">Slug 使用小写字母、数字和词间连字符。更改后旧地址会转到新地址；历史使用过的 slug 不可分配给其他档案。标题最多 300 UTF-8 字节，中文字符通常占 3 字节。</p>
       <MarkdownField name="description" label="描述（支持 Markdown）" rows={7} value={values.description} onChange={value => change("description", value)} disabled={pending || state.retryOnly} />
       <input type="hidden" name="estimated_year" value={values.estimated_date ? values.estimated_date.slice(0, 4) : !entry?.estimated_date ? entry?.estimated_year?.toString() ?? "" : ""} />
       <div className="grid gap-6 md:grid-cols-2"><label className="block text-sm">推测时间 · 日期<input className={inputClass} type="date" name="estimated_date" value={values.estimated_date} onChange={event => change("estimated_date", event.target.value)} /></label>

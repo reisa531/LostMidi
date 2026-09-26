@@ -15,6 +15,6 @@ export function AdminNavigation({ superAdmin = false }: { superAdmin?: boolean }
         {active && <span aria-hidden="true" className="ml-auto hidden h-1.5 w-1.5 rounded-full bg-[#b9d5a5] lg:block" />}
       </Link>;
     });
-  return <><details className="group lg:hidden"><summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-lg border border-white/20 px-4 text-sm font-medium marker:hidden">工作台菜单 <span aria-hidden="true">☰</span></summary><nav aria-label="手机后台导航" className="mt-2 flex flex-col gap-1 border-t border-white/10 pt-2">{items}</nav></details>
+  return <><details key={pathname} className="group lg:hidden"><summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-lg border border-white/20 px-4 text-sm font-medium marker:hidden">工作台菜单 <span aria-hidden="true">☰</span></summary><nav aria-label="手机后台导航" className="mt-2 flex flex-col gap-1 border-t border-white/10 pt-2">{items}</nav></details>
     <nav aria-label="后台导航" className="hidden gap-1 lg:flex lg:flex-col">{items}</nav></>;
 }

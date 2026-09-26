@@ -80,12 +80,13 @@ protected:
         db_->execSqlSync("CREATE TABLE articles (public_id UUID)");
         db_->execSqlSync("CREATE TABLE article_midis (article_id UUID)");
         db_->execSqlSync("CREATE TABLE article_people (article_id UUID)");
+        db_->execSqlSync("CREATE TABLE midi_slug_history (slug TEXT PRIMARY KEY, midi_id BIGINT)");
         db_->execSqlSync("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY)");
         db_->execSqlSync("CREATE TABLE midi_import_objects (sha256 TEXT, storage_key TEXT, touched_at TIMESTAMPTZ, cleanup_attempts INTEGER, last_cleanup_attempt_at TIMESTAMPTZ)");
         db_->execSqlSync("CREATE TABLE midi_files (private_archive_confirmed BOOLEAN)");
         db_->execSqlSync("CREATE TABLE midi_creation_requests (request_id UUID, payload_sha256 TEXT, midi_id BIGINT REFERENCES midi_entries(id) ON DELETE SET NULL)");
         db_->execSqlSync("CREATE TABLE admin_audit_log (id BIGINT)");
-        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql'), ('009_catalog_search.sql'), ('010_recoverable_deletions.sql'), ('011_cleanup_retry_metadata.sql'), ('012_source_evidence.sql'), ('013_admin_users.sql'), ('014_public_ids.sql'), ('015_content_reviews.sql'), ('016_profile_and_estimated_date.sql'), ('017_multiple_source_types.sql'), ('018_freeform_source_type_labels.sql'), ('019_archive_status_and_registration.sql'), ('020_articles.sql')");
+        db_->execSqlSync("INSERT INTO schema_migrations VALUES ('004_optional_recovery_date.sql'), ('005_site_installation.sql'), ('006_midi_import_journal.sql'), ('007_midi_creation_requests.sql'), ('008_deleted_creation_receipts.sql'), ('009_catalog_search.sql'), ('010_recoverable_deletions.sql'), ('011_cleanup_retry_metadata.sql'), ('012_source_evidence.sql'), ('013_admin_users.sql'), ('014_public_ids.sql'), ('015_content_reviews.sql'), ('016_profile_and_estimated_date.sql'), ('017_multiple_source_types.sql'), ('018_freeform_source_type_labels.sql'), ('019_archive_status_and_registration.sql'), ('020_articles.sql'), ('021_midi_slug_history.sql')");
     }
     void TearDown() override {
         db_.reset();

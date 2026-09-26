@@ -132,23 +132,7 @@ midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
 }
 }
 void ApiController::registerAdminRoutes() {
-    drogon::app().registerHandler("/api/v1/admin/changes", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
-        dispatch(std::move(callback), [this, request] {
-            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
-            Json::Value result(Json::arrayValue);
-            const auto rows = actor.role == "super_admin"
-                ? db_->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE status IN ('pending','reviewing','failed') ORDER BY created_at,id LIMIT 200")
-                : db_->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE proposed_by=$1 ORDER BY created_at DESC,id DESC LIMIT 100", actor.username);
-            for (const auto& row : rows) {
-                Json::Value item; item["id"] = row["id"].as<std::string>(); item["type"] = row["request_type"].as<std::string>();
-                item["entity_id"] = nullable<std::int64_t>(row["entity_id"]) ? Json::Value(Json::Int64(*nullable<std::int64_t>(row["entity_id"]))) : Json::Value(Json::nullValue);
-                item["proposed_by"] = row["proposed_by"].as<std::string>(); item["payload"] = row["payload"].as<std::string>();
-                item["status"] = row["status"].as<std::string>(); item["review_note"] = nullable<std::string>(row["review_note"]).value_or("");
-                item["created_at"] = row["created_at"].as<std::string>(); result.append(item);
-            }
-            return result;
-        });
-    }, {drogon::Get});
+    registerAdminReviewQueueRoutes();
     drogon::app().registerHandler("/api/v1/admin/changes/{1}/review", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string requestId) {
         dispatch(std::move(callback), [this, request, requestId = std::move(requestId)] {
             const auto reviewer = auth_.requireSuperAdmin(request->getHeader("authorization"));

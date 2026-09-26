@@ -34,18 +34,18 @@ export async function inviteAdminAction(_previous: InviteState, form: FormData):
   } catch (error) { return { error: errorMessage(error) }; }
 }
 
-export async function updateAdminUserAction(form: FormData): Promise<void> {
-  await checkOrigin();
-  const id = String(form.get("id") ?? "");
-  if (!/^[0-9a-f-]{36}$/.test(id)) throw new ApiError(400, "INVALID_INPUT");
+export async function updateAdminUserAction(_previous: { error: string; success: boolean }, form: FormData) {
   try {
+    await checkOrigin();
+    const id = String(form.get("id") ?? "");
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw new ApiError(400, "INVALID_INPUT");
     await adminRequest(`/api/v1/admin/users/${id}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: String(form.get("role") ?? ""), status: String(form.get("status") ?? "") }),
     });
-  } catch (error) { throw new Error(errorMessage(error)); }
-  revalidatePath("/admin/users");
-  redirect("/admin/users");
+    revalidatePath("/admin/users");
+    return { error: "", success: true };
+  } catch (error) { return { error: errorMessage(error), success: false }; }
 }
 
 export type AcceptInviteState = { error: string };

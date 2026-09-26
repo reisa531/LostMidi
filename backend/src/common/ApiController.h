@@ -28,6 +28,7 @@ private:
     Json::Value submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
                                   std::int64_t entityId, const Json::Value& payload);
     void registerAdminRoutes();
+    void registerAdminReviewQueueRoutes();
     void registerAdminRecoveryRoutes();
     void registerInstallationRoutes();
     void registerAdminFileRoutes();

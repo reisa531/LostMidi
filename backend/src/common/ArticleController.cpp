@@ -95,10 +95,11 @@ Json::Value detail(const drogon::orm::DbClientPtr& db, const std::string& id, bo
     result["body_markdown"] = rows[0]["body_markdown"].as<std::string>();
     result["midis"] = Json::Value(Json::arrayValue);
     for (const auto& row : db->execSqlSync(
-        "SELECT m.id::text,m.public_id::text,m.slug,m.title FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id "
+        "SELECT m.id::text,m.public_id::text,m.slug,m.title,m.archive_status FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id "
         "WHERE am.article_id=$1::uuid AND ($2::boolean=FALSE OR m.deleted_at IS NULL) ORDER BY m.id", id, publicOnly)) {
         Json::Value item; item["id"] = row["id"].as<std::string>();
         item["public_id"] = row["public_id"].as<std::string>(); item["slug"] = row["slug"].as<std::string>(); item["title"] = row["title"].as<std::string>();
+        item["archive_status"] = row["archive_status"].as<std::string>();
         result["midis"].append(item);
     }
     result["people"] = Json::Value(Json::arrayValue);
@@ -137,40 +138,59 @@ void ApiController::registerArticleRoutes() {
     drogon::app().registerHandler("/api/v1/articles", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
             const int page = pageNumber(request);
+            int pageSize = 20;
+            const auto& params = request->getParameters();
+            if (const auto it = params.find("pageSize"); it != params.end()) {
+                const auto& value = it->second;
+                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), pageSize);
+                if (error != std::errc{} || end != value.data() + value.size() || pageSize < 1 || pageSize > 100)
+                    throw ApiError(400, "INVALID_INPUT", "Invalid page size.");
+            }
             Json::Value result; result["data"] = Json::Value(Json::arrayValue);
+            result["total"] = Json::Int64(db_->execSqlSync(
+                "SELECT count(*) AS total FROM articles a WHERE a.status='published' AND EXISTS("
+                "SELECT 1 FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id WHERE am.article_id=a.public_id AND m.deleted_at IS NULL)"
+            )[0]["total"].as<std::int64_t>());
             for (const auto& row : db_->execSqlSync(
-                "SELECT a.* FROM articles a WHERE a.status='published' AND EXISTS("
+                "SELECT a.public_id,a.title,a.status,a.author_username,a.revision,a.created_at,a.updated_at FROM articles a WHERE a.status='published' AND EXISTS("
                 "SELECT 1 FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id WHERE am.article_id=a.public_id AND m.deleted_at IS NULL) "
-                "ORDER BY a.updated_at DESC,a.public_id LIMIT 20 OFFSET $1", static_cast<std::int64_t>(page - 1) * 20))
+                "ORDER BY a.updated_at DESC,a.public_id LIMIT $1 OFFSET $2", pageSize, static_cast<std::int64_t>(page - 1) * pageSize))
                 result["data"].append(summary(row));
             result["page"] = page;
+            result["pageSize"] = pageSize;
             return result;
         });
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/articles/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string value) {
         dispatch(std::move(callback), [this, value = std::move(value)] { return detail(db_, articleId(value), true); });
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/v1/articles/by-midi/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string value) {
-        dispatch(std::move(callback), [this, value = std::move(value)] {
-            Json::Value result(Json::arrayValue);
+    drogon::app().registerHandler("/api/v1/articles/by-midi/{1}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string value) {
+        dispatch(std::move(callback), [this, request, value = std::move(value)] {
+            const auto page = pageNumber(request);
+            const auto id = articleId(value);
+            Json::Value result; result["data"] = Json::Value(Json::arrayValue); result["page"] = page; result["pageSize"] = 10;
+            result["total"] = Json::Int64(db_->execSqlSync("SELECT count(*) AS total FROM articles a JOIN article_midis am ON am.article_id=a.public_id JOIN midi_entries m ON m.id=am.midi_id WHERE m.public_id=$1::uuid AND m.deleted_at IS NULL AND a.status='published'", id)[0]["total"].as<std::int64_t>());
             for (const auto& row : db_->execSqlSync(
-                "SELECT a.* FROM articles a JOIN article_midis am ON am.article_id=a.public_id "
+                "SELECT a.public_id,a.title,a.status,a.author_username,a.revision,a.created_at,a.updated_at FROM articles a JOIN article_midis am ON am.article_id=a.public_id "
                 "JOIN midi_entries m ON m.id=am.midi_id WHERE m.public_id=$1::uuid AND m.deleted_at IS NULL "
-                "AND a.status='published' ORDER BY a.updated_at DESC,a.public_id LIMIT 50", articleId(value)))
-                result.append(summary(row));
+                "AND a.status='published' ORDER BY a.updated_at DESC,a.public_id LIMIT 10 OFFSET $2", id, static_cast<std::int64_t>(page - 1) * 10))
+                result["data"].append(summary(row));
             return result;
         });
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/v1/articles/by-person/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string value) {
-        dispatch(std::move(callback), [this, value = std::move(value)] {
-            Json::Value result(Json::arrayValue);
+    drogon::app().registerHandler("/api/v1/articles/by-person/{1}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string value) {
+        dispatch(std::move(callback), [this, request, value = std::move(value)] {
+            const auto page = pageNumber(request);
+            const auto id = articleId(value);
+            Json::Value result; result["data"] = Json::Value(Json::arrayValue); result["page"] = page; result["pageSize"] = 10;
+            result["total"] = Json::Int64(db_->execSqlSync("SELECT count(*) AS total FROM articles a JOIN article_people ap ON ap.article_id=a.public_id JOIN people p ON p.id=ap.person_id WHERE p.public_id=$1::uuid AND p.deleted_at IS NULL AND a.status='published' AND EXISTS(SELECT 1 FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id WHERE am.article_id=a.public_id AND m.deleted_at IS NULL)", id)[0]["total"].as<std::int64_t>());
             for (const auto& row : db_->execSqlSync(
-                "SELECT a.* FROM articles a JOIN article_people ap ON ap.article_id=a.public_id "
+                "SELECT a.public_id,a.title,a.status,a.author_username,a.revision,a.created_at,a.updated_at FROM articles a JOIN article_people ap ON ap.article_id=a.public_id "
                 "JOIN people p ON p.id=ap.person_id WHERE p.public_id=$1::uuid AND p.deleted_at IS NULL "
                 "AND a.status='published' AND EXISTS(SELECT 1 FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id "
                 "WHERE am.article_id=a.public_id AND m.deleted_at IS NULL) "
-                "ORDER BY a.updated_at DESC,a.public_id LIMIT 50", articleId(value)))
-                result.append(summary(row));
+                "ORDER BY a.updated_at DESC,a.public_id LIMIT 10 OFFSET $2", id, static_cast<std::int64_t>(page - 1) * 10))
+                result["data"].append(summary(row));
             return result;
         });
     }, {drogon::Get});
@@ -179,8 +199,14 @@ void ApiController::registerArticleRoutes() {
             const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (request->method() == drogon::Get) {
                 const int page = pageNumber(request);
-                Json::Value result; result["data"] = Json::Value(Json::arrayValue); result["page"] = page;
-                for (const auto& row : db_->execSqlSync("SELECT * FROM articles ORDER BY updated_at DESC,public_id LIMIT 50 OFFSET $1", static_cast<std::int64_t>(page - 1) * 50))
+                const auto& params = request->getParameters();
+                const auto status = params.contains("status") ? params.at("status") : std::string("all");
+                const auto q = params.contains("q") ? params.at("q") : std::string{};
+                if ((status != "all" && status != "draft" && status != "published") || q.size() > 200 || q.find('\0') != std::string::npos)
+                    throw ApiError(400, "INVALID_INPUT", "Invalid article filter.");
+                Json::Value result; result["data"] = Json::Value(Json::arrayValue); result["page"] = page; result["pageSize"] = 50;
+                result["total"] = Json::Int64(db_->execSqlSync("SELECT count(*) AS total FROM articles WHERE ($1='all' OR status=$1) AND ($2='' OR position(lower($2) in lower(title))>0)", status, q)[0]["total"].as<std::int64_t>());
+                for (const auto& row : db_->execSqlSync("SELECT public_id,title,status,author_username,revision,created_at,updated_at FROM articles WHERE ($1='all' OR status=$1) AND ($2='' OR position(lower($2) in lower(title))>0) ORDER BY updated_at DESC,public_id LIMIT 50 OFFSET $3", status, q, static_cast<std::int64_t>(page - 1) * 50))
                     result["data"].append(summary(row));
                 return result;
             }
