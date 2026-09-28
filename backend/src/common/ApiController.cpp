@@ -53,8 +53,16 @@ void ApiController::dispatchResponse(Callback callback, std::function<drogon::Ht
             response = work();
         } catch (const ApiError& error) {
             response = errorResponse(error.status, error.code, error.what());
-        } catch (const drogon::orm::DrogonDbException&) {
-            logEvent("database_error");
+        } catch (const drogon::orm::DrogonDbException& error) {
+            if (const auto* sql = dynamic_cast<const drogon::orm::SqlError*>(&error))
+                logEvent("database_sql_error", 0, sql->sqlState());
+            else if (dynamic_cast<const drogon::orm::ConversionError*>(&error))
+                logEvent("database_conversion_error");
+            else if (dynamic_cast<const drogon::orm::BrokenConnection*>(&error))
+                logEvent("database_connection_error");
+            else if (dynamic_cast<const drogon::orm::TimeoutError*>(&error))
+                logEvent("database_timeout_error");
+            else logEvent("database_error");
             response = errorResponse(503, "DATABASE_UNAVAILABLE", "The archive is temporarily unavailable.");
         } catch (...) {
             logEvent("unexpected_exception");
