@@ -70,7 +70,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
       {state.result.duplicate ? "当前档案已存在相同文件，已去重，未重复新增。" : "文件已成功上传并公开分发。"}
       <br />{state.result.filename} · 文件编号 {state.result.fileId} · 返回版本 {state.result.revision}
     </p>}
-    {!state.error && state.queued && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-7 text-amber-950">文件导入申请已提交，批准后才会公开分发。<Link className="ml-2 underline" href="/admin/changes">查看审核进度</Link></p>}
+    {!state.error && state.queued && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-7 text-amber-950">文件导入申请已提交，批准后才会公开分发。<Link className="ml-2 underline" href="/admin/submissions">查看申请进度</Link></p>}
     <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5">
       <button type="submit" disabled={busy || !enabled} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交，请勿重复操作…" : reviewRequired ? "提交文件审核" : "确认并公开上传"}</button>
       <button type="button" disabled={busy} onClick={() => { if (!submitting.current) startRefresh(() => router.refresh()); }} className="text-sm underline disabled:opacity-50">{refreshing ? "正在刷新…" : "刷新版本与文件列表"}</button>

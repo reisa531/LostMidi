@@ -8,7 +8,7 @@ export function RestoreButton({ type, id, reviewRequired = false }: { type: "mid
   const router = useRouter();
   const [state, action, pending] = useActionState<RestoreState, FormData>(async (previous, form) => {
     const result = await restoreTrashAction(previous, form);
-    if (!result.error && result.queuedId === id) router.push("/admin/changes?submitted=1");
+    if (!result.error && result.queuedId === id) router.push("/admin/submissions?submitted=1");
     else if (!result.error && result.restoredId === id) router.refresh();
     return result;
   }, { error: "" });

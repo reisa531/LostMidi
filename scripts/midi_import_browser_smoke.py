@@ -245,7 +245,7 @@ def main():
         submit = page.get_by_role('button', name='确认并公开上传', exact=True)
         file_id = re.search(r'/admin/midis/(\d+)/files', page.url).group(1)
         transfer_url = base + '/admin/file-transfer/' + file_id + '/files'
-        # Empty/+1 are rejected; the exact decimal 15 MB limit and arbitrary bytes are allowed.
+        # Empty/+1 are rejected; the exact decimal 20 MB limit and arbitrary bytes are allowed.
         upload.set_input_files({'name': 'empty.zip', 'mimeType': 'application/zip', 'buffer': b''})
         expect(page.locator('form').get_by_role('alert')).to_contain_text('非空')
         upload.set_input_files({'name': 'large.zip', 'mimeType': 'application/zip', 'buffer': b'x' * (MAX_FILE_SIZE + 1)})
@@ -463,7 +463,7 @@ def main():
         assert not errors, errors
         visitor_context.close()
         browser.close()
-    print('PASS: same-origin fetch, 15 MB/+1, >4.5 MB non-MIDI import/create, anonymous exact SHA/name download, retries, rights and mobile layout')
+    print('PASS: same-origin fetch, 20 MB/+1, >4.5 MB non-MIDI import/create, anonymous exact SHA/name download, retries, rights and mobile layout')
 
 
 if __name__ == '__main__':

@@ -32,7 +32,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       const next = !entry && form.has("file") ? await createMidiWithFile(form) : await saveMidiAction(previous, form);
       if (next.queued) {
         clearDraft();
-        router.push("/admin/changes?submitted=1");
+        router.push("/admin/submissions?submitted=1");
         return next;
       }
       if (next.savedId) {

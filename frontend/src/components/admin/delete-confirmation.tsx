@@ -24,7 +24,7 @@ export function DeleteConfirmation({ resource, id, revision, name, reviewRequire
     } finally { submitting.current = false; }
     // Navigate only after acknowledgement, outside the request error handler.
     if (!next.error && (next.deletedId === id || next.queuedId === id)) {
-      router.replace(next.queuedId === id ? "/admin/changes?submitted=1" : `${listPath}?deleted=1`);
+      router.replace(next.queuedId === id ? "/admin/submissions?submitted=1" : `${listPath}?deleted=1`);
       router.refresh();
     }
     return next;

@@ -57,7 +57,7 @@ export async function savePersonAction(_previous: { error: string }, form: FormD
         ...(id ? { revision: Number(form.get("revision")) } : {}) }),
     });
   } catch (error) { return { error: errorMessage(error) }; }
-  if ("request_id" in saved) return { error: "", target: "/admin/changes?submitted=1" };
+  if ("request_id" in saved) return { error: "", target: "/admin/submissions?submitted=1" };
   return { error: "", target: `/admin/people/${saved.person.id}/edit?saved=1` };
 }
 export async function loadPeopleAction(page: number) {
@@ -81,6 +81,6 @@ export async function saveCreditsAction(_previous: { error: string }, form: Form
     });
     queued = session.role === "admin" && "request_id" in result;
   } catch (error) { return { error: errorMessage(error) }; }
-  if (queued) redirect("/admin/changes?submitted=1");
+  if (queued) redirect("/admin/submissions?submitted=1");
   redirect(`/admin/midis/${id}/credits?saved=1`);
 }

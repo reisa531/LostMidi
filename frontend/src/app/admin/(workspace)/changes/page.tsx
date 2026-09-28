@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AdminPageHeader, AdminPanel } from "@/components/admin/ui";
 import { requireAdmin } from "@/lib/admin/auth";
 import { getChangeRequests } from "@/lib/admin/review-actions";
@@ -35,14 +36,18 @@ function reviewPayload(raw: unknown) {
 
 export default async function ChangeReviewPage({ searchParams }: { searchParams: Promise<{ submitted?: string; page?: string; status?: string }> }) {
   const admin = await requireAdmin();
+  if (admin.role !== "super_admin") redirect("/admin/submissions");
   const { submitted, page: rawPage, status: rawStatus } = await searchParams;
   const page = rawPage && /^[1-9]\d*$/.test(rawPage) && Number(rawPage) <= 1000000 ? Number(rawPage) : 1;
-  const status = ["all", "pending", "reviewing", "failed", "approved", "rejected", "stale"].includes(rawStatus ?? "") ? rawStatus! : admin.role === "super_admin" ? "pending" : "all";
-  const result = await getChangeRequests(page, status);
-  const requests = result.data;
+  const status = ["all", "pending", "reviewing", "failed", "approved", "rejected", "stale"].includes(rawStatus ?? "") ? rawStatus! : "pending";
+  const response = await getChangeRequests(page, status).catch(() => null);
+  const result = response && Array.isArray(response.data) && typeof response.pagination?.total === "number" ? response : null;
+  const requests = result?.data ?? [];
   return <>
-    <AdminPageHeader eyebrow="审核" title="内容审核" description={admin.role === "super_admin" ? "审核管理员提交的内容申请。批准后会执行申请并按对应权限公开。" : "查看自己提交的内容申请及审核结果。"} />
+    <AdminPageHeader eyebrow="审核" title="内容审核" description="审核管理员提交的内容申请。批准后会执行申请并按对应权限公开。" />
     {submitted === "1" && <p role="status" className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">申请已提交，超级管理员审核通过后才会执行。</p>}
+    {!result && <AdminPanel title="审核队列暂不可读取"><p role="alert" className="text-sm text-muted">请稍后重新加载页面；如果其他后台模块正常，请核对后端是否已更新到包含审核队列接口的版本。</p></AdminPanel>}
+    {result && <>
     <nav aria-label="审核状态" className="mb-5 flex flex-wrap gap-2 text-sm">{[["pending", "待审核"], ["reviewing", "执行中"], ["failed", "执行失败"], ["all", "全部"]].map(([value, label]) => <Link key={value} href={`/admin/changes?status=${value}`} aria-current={status === value ? "page" : undefined} className={`rounded-lg border px-3 py-2 ${status === value ? "border-accent bg-accent text-white" : "border-line"}`}>{label}</Link>)}</nav>
     <p className="mb-4 text-sm text-muted">共 {result.pagination.total} 项 · 第 {page} 页</p>
     <div className="space-y-4">
@@ -52,15 +57,16 @@ export default async function ChangeReviewPage({ searchParams }: { searchParams:
         return <AdminPanel key={request.id} title={labels[request.type] ?? request.type}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><p className="text-xs text-muted">提交者 {request.proposed_by} · {new Date(request.created_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · {statusLabels[request.status] ?? request.status}</p></div>
-            {admin.role === "super_admin" && request.status === "pending" && <ReviewForm id={request.id} />}
+            {request.status === "pending" && <ReviewForm id={request.id} />}
           </div>
-          <ReviewComparison type={request.type} entityId={request.entity_id} payload={payload} canCompare={admin.role === "super_admin" && request.status === "pending"} />
-          {request.status === "failed" && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>执行未成功。请根据审核备注核对原档案版本和字段；需要修改时请在原档案重新提交申请。</p>{admin.role === "super_admin" && <CloseFailedForm id={request.id} />}</div>}
+          <ReviewComparison type={request.type} entityId={request.entity_id} payload={payload} canCompare={request.status === "pending"} />
+          {request.status === "failed" && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>执行未成功。请根据审核备注核对原档案版本和字段；需要修改时请在原档案重新提交申请。</p><CloseFailedForm id={request.id} /></div>}
           <details className="mt-3"><summary className="cursor-pointer text-xs text-muted">查看原始申请字段</summary><pre className="mt-2 overflow-auto rounded bg-background p-4 text-xs leading-6">{JSON.stringify(payload, null, 2)}</pre></details>
           {request.review_note && <p className="mt-3 text-sm text-muted">审核备注：{request.review_note}</p>}
         </AdminPanel>;
       })}
     </div>
     <nav aria-label="审核分页" className="mt-6 flex gap-5 text-sm">{page > 1 && <Link href={`/admin/changes?status=${status}&page=${page - 1}`} className="underline">上一页</Link>}{page * result.pagination.pageSize < result.pagination.total && <Link href={`/admin/changes?status=${status}&page=${page + 1}`} className="underline">下一页</Link>}{page > 1 && !requests.length && <Link href={`/admin/changes?status=${status}`} className="underline">返回第一页</Link>}</nav>
+    </>}
   </>;
 }

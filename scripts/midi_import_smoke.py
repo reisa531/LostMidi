@@ -12,7 +12,7 @@ import urllib.request
 import uuid
 
 
-MAX_FILE_SIZE = 15_000_000  # Decimal MB, not MiB.
+MAX_FILE_SIZE = 20_000_000  # Decimal MB, not MiB.
 UNSAFE_FILENAMES = (
     '', '.', '..', '../file.mid', 'path/file.zip', '/file', 'path\\file', 'C:\\file.mid',
     ' file.mid', 'file.mid ', 'bad\x00.mid', 'bad\t.mid', 'bad\r.mid', 'bad\n.mid',
@@ -232,7 +232,7 @@ def main():
         assert boundary_file['original_filename'] == boundary['file']['filename']
         exact_download('/api/v1/midis/' + boundary['slug'] + '/files/' + boundary_file['id'] + '/download',
                        boundary['file']['filename'], boundary_bytes)
-        print('PASS: atomic arbitrary-file creation, 15,000,000-byte/255-byte-name boundaries, replay, ownership and restore')
+        print('PASS: atomic arbitrary-file creation, 20,000,000-byte/255-byte-name boundaries, replay, ownership and restore')
     first = request('/api/v1/admin/midis', 'POST', draft, token, expected=(201,))
     other = request('/api/v1/admin/midis', 'POST', {**draft, 'slug': draft['slug']+'-other'}, token, expected=(201,))
     path = '/api/v1/admin/midis/' + first['id'] + '/files'
@@ -323,7 +323,7 @@ def main():
     for revoked in download_paths:
         assert request(revoked, expected=(403,))['error']['code'] == 'DOWNLOAD_NOT_ALLOWED'
     assert not any(item['download_available'] for item in request('/api/v1/midis/' + draft['slug'])['files'])
-    print('PASS: arbitrary bytes, 1/15,000,000/+1 size bounds, safe UTF-8 names, cookie origin/auth, dedupe, exact SHA and revocation')
+    print('PASS: arbitrary bytes, 1/20,000,000/+1 size bounds, safe UTF-8 names, cookie origin/auth, dedupe, exact SHA and revocation')
 
 
 if __name__ == '__main__':

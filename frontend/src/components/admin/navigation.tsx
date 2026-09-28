@@ -6,7 +6,9 @@ import { adminNavigation } from "@/lib/admin/modules";
 
 export function AdminNavigation({ superAdmin = false }: { superAdmin?: boolean }) {
   const pathname = usePathname();
-  const links = [...adminNavigation, { href: "/admin/changes", label: "内容审核" }, ...(superAdmin ? [{ href: "/admin/users", label: "用户管理" }] : [])];
+  const links = [...adminNavigation, ...(superAdmin
+    ? [{ href: "/admin/changes", label: "内容审核" }, { href: "/admin/users", label: "用户管理" }]
+    : [{ href: "/admin/submissions", label: "我的申请" }])];
   const items = links.map(link => {
       const active = link.href === "/admin" ? pathname === link.href : pathname.startsWith(`${link.href}/`) || pathname === link.href;
       return <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined}

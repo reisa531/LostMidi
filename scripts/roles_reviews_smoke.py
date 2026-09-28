@@ -59,12 +59,14 @@ def main():
     admin_token = request("/api/v1/admin/login", "POST", {"username": username, "password": password})["token"]
     assert request("/api/v1/admin/session", token=admin_token)["role"] == "admin"
     assert request("/api/v1/admin/users", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
+    assert request("/api/v1/admin/changes", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
 
     origin = os.environ.get("ADMIN_ORIGIN", "http://localhost:3000")
     cookie_auth = {"Origin": origin, "Cookie": "lostmidi_admin=" + admin_token}
 
     def changes(token):
-        rows = request("/api/v1/admin/changes", token=token)
+        path = "/api/v1/admin/changes" if token == super_token else "/api/v1/admin/submissions"
+        rows = request(path, token=token)["data"]
         for item in rows:
             assert isinstance(item["payload"], str), "Review payload must remain a JSON string"
             payload = json.loads(item["payload"])

@@ -195,7 +195,7 @@ CTest 新增 installation 测试使用隔离 schema，测试数据库用户需�
 
 ## 新建档案同页上传（2026-09-24）
 
-`/admin/midis/new` 支持可选音乐文件与资料一次保存。单文件最大 15 MB，不限制扩展名，须确认公开分发权利。未选文件时可正常建档。`GET /api/v1/admin/session` 返回 `midi_import_enabled`；关闭导入时新建页隐藏文件输入，但后端仍独立验证开关。
+`/admin/midis/new` 支持可选音乐文件与资料一次保存。单文件最大 20 MB，不限制扩展名，须确认公开分发权利。未选文件时可正常建档。`GET /api/v1/admin/session` 返回 `midi_import_enabled`；关闭导入时新建页隐藏文件输入，但后端仍独立验证开关。
 
 `POST /api/v1/admin/midis` 在原资料字段外接受小写 UUID v4 的 `request_id`，及可选 `file: {filename, content_base64, rights_confirmed}`。附文件必须提供请求键，base64 必须为规范编码。成功或同内容重试均返回作品和 HTTP 201；更换内容复用已提交请求键返回 409。旧的无请求键纯资料请求仍兼容。
 
