@@ -59,6 +59,8 @@ def main():
     admin_token = request("/api/v1/admin/login", "POST", {"username": username, "password": password})["token"]
     assert request("/api/v1/admin/session", token=admin_token)["role"] == "admin"
     assert request("/api/v1/admin/users", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
+    assert request("/api/v1/admin/users/" + invitation["id"], "DELETE",
+                   {"confirm_username": username}, admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
     assert request("/api/v1/admin/changes", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
 
     origin = os.environ.get("ADMIN_ORIGIN", "http://localhost:3000")
@@ -268,7 +270,18 @@ def main():
                    headers={**file_headers, **cookie_auth})["error"]["code"] == "UNAUTHORIZED"
     assert request("/api/v1/admin/midis", "POST", combined, expected=401,
                    headers=cookie_auth)["error"]["code"] == "UNAUTHORIZED"
-    print("PASS: roles/revoked cookies; >1 MiB raw-file import/create approval and rejection; redacted review lists; 1 MiB evidence; deletion/restore")
+    assert request(user_path, "DELETE", {"confirm_username": "wrong"}, super_token,
+                   expected=400)["error"]["code"] == "DELETE_CONFIRMATION_REQUIRED"
+    assert request(user_path, "DELETE", {"confirm_username": username}, super_token)["deleted_id"] == invitation["id"]
+    assert all(user["id"] != invitation["id"] for user in request("/api/v1/admin/users", token=super_token))
+    captcha = request("/api/v1/admin/register/captcha")
+    assert len(captcha["id"]) == 64 and "<svg" in captcha["svg"] and "<text" not in captcha["svg"]
+    assert request("/api/v1/admin/register", "POST", {
+        "username": "captcha_" + marker[:12], "email": marker + "@example.test",
+        "password": password, "password_confirmation": password,
+        "captcha_id": captcha["id"], "captcha_answer": "G00000",
+    }, expected=400)["error"]["code"] == "CAPTCHA_INVALID"
+    print("PASS: roles/revoked cookies; review workflow; user deletion; image captcha validation")
 
 
 if __name__ == "__main__":

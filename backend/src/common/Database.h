@@ -116,5 +116,10 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
         "to_regclass('useful_links') IS NOT NULL AS links");
     if (!links[0]["applied"].as<bool>() || !links[0]["contributors"].as<bool>() || !links[0]["links"].as<bool>())
         throw ApiError(503, "DATABASE_NOT_READY", "Required contributor and link migration is not applied.");
+    const auto captcha = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='023_registration_captcha.sql') AS applied, "
+        "to_regclass('registration_captchas') IS NOT NULL AS captcha_table");
+    if (!captcha[0]["applied"].as<bool>() || !captcha[0]["captcha_table"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required registration captcha migration is not applied.");
 }
 }  // namespace lostmidi

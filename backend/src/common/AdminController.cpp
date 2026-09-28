@@ -9,6 +9,8 @@
 #include <span>
 #include <chrono>
 #include <mutex>
+#include <sstream>
+#include <cctype>
 
 namespace lostmidi {
 namespace {
@@ -478,18 +480,77 @@ void ApiController::registerAdminRoutes() {
             return result;
         });
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/admin/register/captcha", [this](const drogon::HttpRequestPtr&, Callback&& callback) {
+        dispatch(std::move(callback), [this] {
+            static std::mutex issueMutex;
+            static auto issueWindow = std::chrono::steady_clock::now();
+            static int issued = 0;
+            {
+                std::lock_guard lock(issueMutex);
+                const auto now = std::chrono::steady_clock::now();
+                if (now - issueWindow >= std::chrono::minutes(1)) { issueWindow = now; issued = 0; }
+                if (issued >= 60) throw ApiError(429, "CAPTCHA_RATE_LIMITED", "Too many captcha requests.");
+                ++issued;
+            }
+            const auto id = auth::randomToken();
+            const auto entropy = auth::randomToken();
+            const auto answer = entropy.substr(0, 6);
+            db_->execSqlSync("DELETE FROM registration_captchas WHERE expires_at<=CURRENT_TIMESTAMP");
+            db_->execSqlSync("INSERT INTO registration_captchas(id,answer_hash) VALUES($1,$2)", id, auth::digest(id + ":" + answer));
+            std::ostringstream svg;
+            svg << "<svg xmlns='http://www.w3.org/2000/svg' width='200' height='64' viewBox='0 0 200 64'>"
+                << "<rect width='200' height='64' rx='9' fill='#f3eee6'/>";
+            constexpr const char* segments[] = {
+                "M3 3 H18", "M19 5 V24", "M19 29 V48", "M3 50 H18",
+                "M1 29 V48", "M1 5 V24", "M3 26 H18"
+            };
+            constexpr const char* glyphs[] = {
+                "abcdef", "bc", "abged", "abgcd", "fgbc", "afgcd", "afgecd", "abc",
+                "abcdefg", "abfgcd", "abcefg", "fgcde", "afed", "bgcde", "afged", "afge"
+            };
+            for (int i = 0; i < 6; ++i) {
+                const int x = 16 + i * 29;
+                const int y = 4 + (entropy[6 + i] % 7);
+                const int angle = (entropy[12 + i] % 15) - 7;
+                const char character = answer[i];
+                const int digit = character <= '9' ? character - '0' : character - 'a' + 10;
+                svg << "<g transform='translate(" << x << " " << y << ") rotate(" << angle
+                    << " 10 26)' fill='none' stroke='#2e4550' stroke-width='3.2' stroke-linecap='round'>";
+                for (const char* segment = glyphs[digit]; *segment; ++segment)
+                    svg << "<path d='" << segments[*segment - 'a'] << "'/>";
+                svg << "</g>";
+            }
+            for (int i = 0; i < 4; ++i)
+                svg << "<path d='M0 " << (13 + i * 13) << " Q90 " << (20 + i * 9)
+                    << " 200 " << (12 + i * 11) << "' fill='none' stroke='#a6aba4' stroke-width='1'/>";
+            svg << "</svg>";
+            Json::Value result; result["id"] = id; result["svg"] = svg.str(); return result;
+        });
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/admin/register", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
             const auto body = bodyOf(request);
-            fieldsOf(body, {"username", "email", "password", "password_confirmation"});
+            fieldsOf(body, {"username", "email", "password", "password_confirmation", "captcha_id", "captcha_answer"});
             const auto username = stringOf(body, "username", 64);
             const auto email = stringOf(body, "email", 254);
             const auto password = stringOf(body, "password", 1024);
             const auto confirmation = stringOf(body, "password_confirmation", 1024);
+            const auto captchaId = stringOf(body, "captcha_id", 64);
+            auto captchaAnswer = stringOf(body, "captcha_answer", 6);
             if (!std::regex_match(username, std::regex("^[A-Za-z0-9_.-]{3,64}$")) ||
                 !std::regex_match(email, std::regex("^[^[:space:]@]+@[^[:space:]@]+\\.[^[:space:]@]+$")) ||
                 password.size() < 12 || password != confirmation)
                 throw ApiError(400, "INVALID_INPUT", "Check the username, email and matching password (at least 12 characters).");
+            if (!std::regex_match(captchaId, std::regex("^[0-9a-f]{64}$")) ||
+                !std::regex_match(captchaAnswer, std::regex("^[0-9a-fA-F]{6}$")))
+                throw ApiError(400, "CAPTCHA_INVALID", "Image verification code is invalid or expired.");
+            for (auto& character : captchaAnswer)
+                character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+            const auto captcha = db_->execSqlSync(
+                "DELETE FROM registration_captchas WHERE id=$1 AND expires_at>CURRENT_TIMESTAMP RETURNING answer_hash", captchaId);
+            if (captcha.empty() || !auth::constantTimeEqual(captcha[0]["answer_hash"].as<std::string>(),
+                    auth::digest(captchaId + ":" + captchaAnswer)))
+                throw ApiError(400, "CAPTCHA_INVALID", "Image verification code is invalid or expired.");
             if (auth_.isEnvironmentUsername(username))
                 throw ApiError(409, "USER_EXISTS", "Username or email is already registered.");
             if (db_->execSqlSync("SELECT 1 FROM site_installation WHERE id=1 AND installed_at IS NOT NULL").empty())
@@ -586,6 +647,31 @@ void ApiController::registerAdminRoutes() {
             const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization"));
             if (!std::regex_match(userId, std::regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")))
                 throw ApiError(400, "INVALID_INPUT", "A valid user id is required.");
+            if (request->method() == drogon::Delete) {
+                const auto body = bodyOf(request); fieldsOf(body, {"confirm_username"});
+                const auto confirmation = stringOf(body, "confirm_username", 64);
+                TransactionScope tx(db_);
+                tx.db->execSqlSync("SELECT pg_advisory_xact_lock(741032, 2)");
+                const auto current = tx.db->execSqlSync(
+                    "SELECT username,role,status FROM admin_users WHERE id=$1::uuid FOR UPDATE", userId);
+                if (current.empty()) throw ApiError(404, "USER_NOT_FOUND", "Administrator account does not exist.");
+                const auto username = current[0]["username"].as<std::string>();
+                if (confirmation != username) throw ApiError(400, "DELETE_CONFIRMATION_REQUIRED", "Type the username to confirm deletion.");
+                if (actor.userId == userId) throw ApiError(400, "CANNOT_DELETE_SELF", "You cannot delete your own account.");
+                if (current[0]["role"].as<std::string>() == "super_admin" &&
+                    current[0]["status"].as<std::string>() == "active") {
+                    const auto count = tx.db->execSqlSync(
+                        "SELECT count(*) AS n FROM admin_users WHERE role='super_admin' AND status='active'")[0]["n"].as<std::int64_t>();
+                    if (count <= 1 && !auth_.hasEnvironmentCredentials())
+                        throw ApiError(409, "LAST_SUPER_ADMIN", "At least one active super administrator must remain.");
+                }
+                Json::Value detail; detail["id"] = userId; detail["username"] = username;
+                tx.db->execSqlSync("INSERT INTO admin_user_audit(actor,action,detail) VALUES($1,'deleted',$2::jsonb)",
+                    actor.username, detail.toStyledString());
+                tx.db->execSqlSync("DELETE FROM admin_users WHERE id=$1::uuid", userId);
+                tx.commit();
+                Json::Value result; result["deleted_id"] = userId; result["username"] = username; return result;
+            }
             const auto body = bodyOf(request); fieldsOf(body, {"role", "status"});
             const auto role = stringOf(body, "role", 20); const auto status = stringOf(body, "status", 20);
             if ((role != "admin" && role != "super_admin") || (status != "invited" && status != "active" && status != "disabled"))
@@ -616,7 +702,7 @@ void ApiController::registerAdminRoutes() {
             tx.commit();
             Json::Value result; result["id"] = userId; result["username"] = username; result["role"] = role; result["status"] = status; return result;
         });
-    }, {drogon::Put});
+    }, {drogon::Put, drogon::Delete});
     drogon::app().registerHandler("/api/v1/admin/invitations/accept", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
             const auto body = bodyOf(request); fieldsOf(body, {"token", "password"});

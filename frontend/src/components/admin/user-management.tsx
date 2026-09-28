@@ -1,13 +1,29 @@
 "use client";
 
 import { useActionState } from "react";
-import { inviteAdminAction, updateAdminUserAction, type InviteState } from "@/lib/admin/user-actions";
+import { deleteAdminUserAction, inviteAdminAction, updateAdminUserAction, type InviteState } from "@/lib/admin/user-actions";
 
 type AdminUser = { id: string; username: string; email?: string; role: "super_admin" | "admin"; status: "invited" | "active" | "disabled"; created_by: string; created_at: string };
 const initial: InviteState = { error: "" };
 function UserUpdateForm({ user }: { user: AdminUser }) {
   const [state, action, pending] = useActionState(updateAdminUserAction, { error: "", success: false });
   return <form action={action} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={user.id} /><label className="sr-only" htmlFor={`role-${user.id}`}>调整 {user.username} 的身份</label><select id={`role-${user.id}`} name="role" defaultValue={user.role} className="rounded border border-line bg-white p-2 text-sm"><option value="admin">管理员</option><option value="super_admin">超级管理员</option></select><label className="sr-only" htmlFor={`status-${user.id}`}>调整 {user.username} 的状态</label><select id={`status-${user.id}`} name="status" defaultValue={user.status === "invited" ? "disabled" : user.status} className="rounded border border-line bg-white p-2 text-sm"><option value="active">已启用</option><option value="disabled">停用</option></select><button disabled={pending} className="rounded border border-line px-3 py-2 text-sm disabled:opacity-50">{pending ? "保存中…" : "保存"}</button>{state.error && <p role="alert" className="w-full text-xs text-red-800">{state.error}</p>}{state.success && <p role="status" className="w-full text-xs text-green-800">账号已更新。</p>}</form>;
+}
+function UserDeleteForm({ user }: { user: AdminUser }) {
+  const [state, action, pending] = useActionState(deleteAdminUserAction, { error: "", deleted: false });
+  if (state.deleted) return <p role="status" className="text-sm text-green-800">账号已删除。</p>;
+  return <details className="w-full text-sm">
+    <summary className="w-fit cursor-pointer rounded border border-red-200 px-3 py-2 text-red-800">删除账号</summary>
+    <form action={action} className="mt-3 rounded-lg border border-red-200 bg-red-50 p-4">
+      <input type="hidden" name="id" value={user.id} /><input type="hidden" name="username" value={user.username} />
+      <p className="text-red-950">删除后，该账号的会话和邀请立即失效。已有贡献记录仍保留用户名。</p>
+      <label className="mt-3 block">输入 <strong>{user.username}</strong> 确认删除
+        <input name="confirm_username" required autoComplete="off" className="mt-2 block w-full max-w-sm rounded border border-red-300 bg-white p-2" />
+      </label>
+      <button disabled={pending} className="mt-3 rounded bg-red-800 px-4 py-2 text-white disabled:opacity-50">{pending ? "删除中…" : "确认删除账号"}</button>
+      {state.error && <p role="alert" className="mt-2 text-red-800">{state.error}</p>}
+    </form>
+  </details>;
 }
 
 export function UserManagement({ users, currentUserId }: { users: AdminUser[]; currentUserId: string | null }) {
@@ -28,7 +44,8 @@ export function UserManagement({ users, currentUserId }: { users: AdminUser[]; c
       <h2 className="mb-4 font-semibold">用户账号 · {users.length}</h2>
       {users.length ? <ul className="divide-y divide-line">{users.map(user => <li key={user.id} className="flex flex-wrap items-center justify-between gap-4 py-4">
         <div><p className="font-medium">{user.username}{user.id === currentUserId && <span className="ml-2 text-xs text-muted">（当前账号）</span>}</p><p className="mt-1 text-xs text-muted">{user.email && <>{user.email} · </>}{user.role === "super_admin" ? "超级管理员" : "管理员"} · {user.status === "active" ? "已启用" : user.status === "invited" ? "等待接受邀请" : "已停用"} · 创建于 {new Date(user.created_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC</p></div>
-        <UserUpdateForm user={user} />
+        <div className="w-full space-y-2 lg:w-auto"><UserUpdateForm user={user} />
+          {user.id !== currentUserId && <UserDeleteForm user={user} />}</div>
       </li>)}</ul> : <p className="py-5 text-sm text-muted">暂无账号。</p>}
     </section>
   </div>;

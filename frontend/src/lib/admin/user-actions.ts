@@ -17,6 +17,8 @@ function errorMessage(error: unknown) {
     INVALID_INPUT: "用户名、角色或密码格式不正确。", FORBIDDEN: "只有超级管理员可以管理用户。",
     INVITATION_INVALID: "邀请链接无效或已过期。", LAST_SUPER_ADMIN: "至少需要保留一位启用的超级管理员。",
     INVITATION_REQUIRED: "该账号没有已设置的密码，请重新发出邀请。",
+    USER_NOT_FOUND: "账号已不存在，请刷新页面。", CANNOT_DELETE_SELF: "不能删除当前登录账号。",
+    DELETE_CONFIRMATION_REQUIRED: "请输入与账号一致的用户名以确认删除。",
   };
   return messages[error.code] ?? "服务暂时不可用，请稍后重试。";
 }
@@ -46,6 +48,23 @@ export async function updateAdminUserAction(_previous: { error: string; success:
     revalidatePath("/admin/users");
     return { error: "", success: true };
   } catch (error) { return { error: errorMessage(error), success: false }; }
+}
+
+export async function deleteAdminUserAction(_previous: { error: string; deleted: boolean }, form: FormData) {
+  try {
+    await checkOrigin();
+    const id = String(form.get("id") ?? "");
+    const username = String(form.get("username") ?? "");
+    const confirmation = String(form.get("confirm_username") ?? "");
+    if (!/^[0-9a-f-]{36}$/.test(id) || !/^[A-Za-z0-9_.-]{3,64}$/.test(username) || confirmation !== username)
+      throw new ApiError(400, "DELETE_CONFIRMATION_REQUIRED");
+    await adminRequest(`/api/v1/admin/users/${id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm_username: confirmation }),
+    });
+    revalidatePath("/admin/users");
+    return { error: "", deleted: true };
+  } catch (error) { return { error: errorMessage(error), deleted: false }; }
 }
 
 export type AcceptInviteState = { error: string };

@@ -22,6 +22,8 @@ function message(error: unknown) {
     ARCHIVE_SUPER_ADMIN_REQUIRED: "已归档档案及归档操作仅限超级管理员。",
     USER_EXISTS: "账号或邮箱已存在。",
     REGISTRATION_RATE_LIMITED: "注册请求过多，请一分钟后重试。",
+    CAPTCHA_INVALID: "图片验证码错误或已过期，请填写新验证码。",
+    CAPTCHA_RATE_LIMITED: "验证码请求过多，请一分钟后重试。",
   };
   return messages[error.code] ?? "服务暂时不可用，请稍后重试。";
 }
@@ -39,7 +41,7 @@ export async function loginAction(_previous: { error: string }, form: FormData) 
   } catch (error) { return { error: message(error) }; }
   redirect("/admin");
 }
-export type RegisterState = { error: string; registered?: boolean };
+export type RegisterState = { error: string; registered?: boolean; attempt?: number };
 export async function registerAction(_previous: RegisterState, form: FormData): Promise<RegisterState> {
   try {
     await checkOrigin();
@@ -47,15 +49,20 @@ export async function registerAction(_previous: RegisterState, form: FormData): 
     const email = String(form.get("email") ?? "");
     const password = String(form.get("password") ?? "");
     const passwordConfirmation = String(form.get("password_confirmation") ?? "");
+    const captchaId = String(form.get("captcha_id") ?? "");
+    const captchaAnswer = String(form.get("captcha_answer") ?? "");
     if (!/^[A-Za-z0-9_.-]{3,64}$/.test(username) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
       email.length > 254 || password.length < 12 || password !== passwordConfirmation)
-      return { error: "请检查账号、邮箱及至少 12 位且一致的密码。" };
+      return { error: "请检查账号、邮箱及至少 12 位且一致的密码。", attempt: (_previous.attempt ?? 0) + 1 };
+    if (!/^[0-9a-f]{64}$/.test(captchaId) || !/^[0-9a-fA-F]{6}$/.test(captchaAnswer))
+      return { error: "请输入图片中的六位验证码。", attempt: (_previous.attempt ?? 0) + 1 };
     await apiRequest("/api/v1/admin/register", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, password, password_confirmation: passwordConfirmation }),
+      body: JSON.stringify({ username, email, password, password_confirmation: passwordConfirmation,
+        captcha_id: captchaId, captcha_answer: captchaAnswer }),
     });
     return { error: "", registered: true };
-  } catch (error) { return { error: message(error) }; }
+  } catch (error) { return { error: message(error), attempt: (_previous.attempt ?? 0) + 1 }; }
 }
 export async function logoutAction() {
   try {
