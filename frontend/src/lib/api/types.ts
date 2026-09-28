@@ -14,7 +14,7 @@ export interface MidiList {
   pagination: { page: number; pageSize: number; total: number };
 }
 export interface MidiDetail {
-  entry: MidiEntry; credits: Credit[]; people: Person[];
+  entry: MidiEntry; credits: Credit[]; people: Person[]; contributors: string[];
   historical_sources: { id: string; website_name: string; original_url: string | null;
     first_seen_at: string | null; last_seen_at: string | null; wayback_url: string | null; notes: string | null;
     source_type: string; credibility: number; checked_at: string | null; evidence_files?: EvidenceFile[] }[];
@@ -45,7 +45,7 @@ export interface CatalogOverview {
 }
 export interface CatalogEntries { data: CatalogEntry[]; pagination: CatalogPagination }
 export interface CatalogPeople {
-  data: { id: string; public_id: string; display_name: string; biography: string | null; summary: string | null; updated_at: string; aliases: string[]; midi_count: number }[];
+  data: { id: string; public_id: string; display_name: string; biography: string | null; summary: string | null; avatar: string | null; updated_at: string; aliases: string[]; midi_count: number }[];
   pagination: CatalogPagination;
 }
 export interface CatalogGroup { key: string; label: string; entries: number; with_files: number; downloadable: number }

@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api/client";
 import { HistoryForm } from "@/components/admin/history-form";
 import { AdminPageHeader, AdminUnavailable } from "@/components/admin/ui";
 import { MidiSectionNav } from "@/components/admin/midi-section-nav";
+import { getUsefulLinks } from "@/lib/api/useful-links";
 
 export const metadata = { title: "来源与寻回" };
 
@@ -26,6 +27,7 @@ export default async function HistoryPage({ params, searchParams }: {
   if (failureStatus === 401) redirect("/admin/login");
   if (failureStatus === 404) notFound();
   if (!history) return <AdminUnavailable />;
+  const usefulLinks = await getUsefulLinks().catch(() => []);
   const { saved, deleted, evidence } = await searchParams;
   const reviewRequired = session.role === "admin";
   return <>
@@ -33,6 +35,6 @@ export default async function HistoryPage({ params, searchParams }: {
     <MidiSectionNav id={id} slug={history.entry.slug} current="history" />
     {session.role === "super_admin" && (saved === "1" || deleted === "1") && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">{deleted === "1" ? "本条记录已删除，公开详情已更新。" : "本条记录已保存并公开。"}</p>}
     {evidence === "uploaded" && session.role === "super_admin" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">证据附件已保存并公开。</p>}
-    <HistoryForm key={`${id}-${history.entry.revision}`} history={history} reviewRequired={reviewRequired} />
+    <HistoryForm key={`${id}-${history.entry.revision}`} history={history} reviewRequired={reviewRequired} usefulLinks={usefulLinks} />
   </>;
 }

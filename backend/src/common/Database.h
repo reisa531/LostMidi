@@ -110,5 +110,11 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
         "to_regclass('midi_slug_history') IS NOT NULL AS history");
     if (!slugHistory[0]["applied"].as<bool>() || !slugHistory[0]["history"].as<bool>())
         throw ApiError(503, "DATABASE_NOT_READY", "Required MIDI slug history migration is not applied.");
+    const auto links = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='022_contributors_and_links.sql') AS applied, "
+        "to_regclass('midi_contributors') IS NOT NULL AS contributors, "
+        "to_regclass('useful_links') IS NOT NULL AS links");
+    if (!links[0]["applied"].as<bool>() || !links[0]["contributors"].as<bool>() || !links[0]["links"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required contributor and link migration is not applied.");
 }
 }  // namespace lostmidi

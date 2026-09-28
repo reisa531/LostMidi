@@ -6,10 +6,18 @@ import type { EvidenceFile } from "@/lib/api/types";
 
 const previewable = new Set(["image/png", "image/jpeg", "text/plain"]);
 const maxPreviewBytes = 1024 * 1024;
+const textEncodings = [
+  ["utf-8", "UTF-8"], ["utf-16le", "UTF-16 LE"], ["utf-16be", "UTF-16 BE"],
+  ["gb18030", "简体中文 GB18030"], ["big5", "繁体中文 Big5"],
+  ["shift_jis", "日语 Shift_JIS"], ["euc-jp", "日语 EUC-JP"], ["iso-2022-jp", "日语 ISO-2022-JP"],
+  ["euc-kr", "韩语 EUC-KR"], ["windows-1252", "西欧 Windows-1252"],
+] as const;
 
 export function EvidenceAttachments({ midiId, files }: { midiId: string; files: EvidenceFile[] }) {
   const [selected, setSelected] = useState<EvidenceFile | null>(null);
   const [preview, setPreview] = useState<{ imageUrl?: string; text?: string } | null>(null);
+  const [textBytes, setTextBytes] = useState<ArrayBuffer | null>(null);
+  const [encoding, setEncoding] = useState("utf-8");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -31,7 +39,7 @@ export function EvidenceAttachments({ midiId, files }: { midiId: string; files: 
         const content = await response.arrayBuffer();
         if (content.byteLength > maxPreviewBytes) throw new Error("Preview too large");
         if (!active) return;
-        if (selected.media_type === "text/plain") setPreview({ text: new TextDecoder("utf-8").decode(content) });
+        if (selected.media_type === "text/plain") { setTextBytes(content); setPreview({ text: new TextDecoder("utf-8").decode(content) }); }
         else {
           imageUrl = URL.createObjectURL(new Blob([content], { type: selected.media_type }));
           setPreview({ imageUrl });
@@ -52,7 +60,7 @@ export function EvidenceAttachments({ midiId, files }: { midiId: string; files: 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); setSelected(null); return; }
       if (event.key !== "Tab" || !dialog.current) return;
-      const focusable = Array.from(dialog.current.querySelectorAll<HTMLElement>("button:not([disabled]),a[href]"));
+      const focusable = Array.from(dialog.current.querySelectorAll<HTMLElement>("button:not([disabled]),a[href],select:not([disabled])"));
       if (!focusable.length) return;
       if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable.at(-1)?.focus(); }
       else if (!event.shiftKey && document.activeElement === focusable.at(-1)) { event.preventDefault(); focusable[0].focus(); }
@@ -73,7 +81,7 @@ export function EvidenceAttachments({ midiId, files }: { midiId: string; files: 
   if (!files.length) return null;
   const open = (file: EvidenceFile, button: HTMLButtonElement) => {
     returnFocus.current = button;
-    setPreview(null); setError(false); setLoading(true); setSelected(file);
+    setPreview(null); setTextBytes(null); setEncoding("utf-8"); setError(false); setLoading(true); setSelected(file);
   };
   const retryPreview = () => { setPreview(null); setError(false); setLoading(true); setRetry(value => value + 1); };
   return <div className="rounded-lg border border-line bg-white/70 p-4">
@@ -97,7 +105,7 @@ export function EvidenceAttachments({ midiId, files }: { midiId: string; files: 
         <div className="min-h-0 overflow-auto p-4 sm:p-6">
           {loading && <p role="status" className="py-8 text-center text-sm text-muted">正在加载预览…</p>}
           {error && <div role="alert" className="space-y-3 py-8 text-center text-sm"><p>预览暂时无法显示，请重试或下载文件。</p><button type="button" onClick={retryPreview} className="archive-link">重新加载</button></div>}
-          {preview?.text !== undefined && <pre className="whitespace-pre-wrap break-words rounded-lg border border-line bg-white p-4 font-mono text-sm leading-6">{preview.text}</pre>}
+          {preview?.text !== undefined && <><label className="mb-3 block text-sm">文本编码<select value={encoding} onChange={event => { const next = event.target.value; setEncoding(next); if (textBytes) setPreview({ text: new TextDecoder(next).decode(textBytes) }); }} className="ml-3 rounded-lg border border-line bg-white px-3 py-2">{textEncodings.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><pre className="whitespace-pre-wrap break-words rounded-lg border border-line bg-white p-4 font-mono text-sm leading-6">{preview.text}</pre></>}
           {preview?.imageUrl && <Image src={preview.imageUrl} alt={selected.filename} width={1200} height={900} unoptimized className="mx-auto h-auto max-h-[72dvh] w-auto max-w-full object-contain" />}
         </div>
       </div>

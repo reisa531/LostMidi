@@ -34,6 +34,7 @@ inline Json::Value toJson(const Person& person) {
     json["display_name"] = person.displayName;
     json["biography"] = person.biography ? Json::Value(*person.biography) : Json::Value(Json::nullValue);
     json["summary"] = person.summary ? Json::Value(*person.summary) : Json::Value(Json::nullValue);
+    json["avatar"] = person.avatar ? Json::Value(*person.avatar) : Json::Value(Json::nullValue);
     json["updated_at"] = person.updatedAt;
     json["aliases"] = Json::Value(Json::arrayValue);
     for (const auto& alias : person.aliases) json["aliases"].append(alias);

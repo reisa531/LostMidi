@@ -89,7 +89,7 @@ export function ArticleForm({ article, role }: { article?: ArticleDetail; role: 
   const initialMidis: Option[] = article?.midis.map(item => ({ id: item.id, label: `${item.title} · #${item.id}`, archived: item.archive_status === "archived" })) ?? [];
   const initialPeople: Option[] = article?.people.map(item => ({ id: item.id, label: `${item.display_name} · #${item.id}`, archived: false })) ?? [];
   return <div className="space-y-8">{!canEdit && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">这篇文章关联已归档 MIDI，仅超级管理员可以修改或删除。</p>}
-    {canEdit && <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} className="space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8" onSubmit={event => { if (!midiIds.length) { event.preventDefault(); setFormError("请至少关联一条 MIDI 档案。"); } else setFormError(""); }}>
+    {canEdit && <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} className="space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8" onSubmit={event => { if (!midiIds.length) { event.preventDefault(); setFormError("请至少关联一条 音乐条目。"); } else setFormError(""); }}>
       <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restore} discard={discard} />
       {article && <><input type="hidden" name="id" value={article.id} /><input type="hidden" name="revision" value={article.revision} /></>}
       <input type="hidden" name="midi_ids" value={JSON.stringify(midiIds)} /><input type="hidden" name="person_ids" value={JSON.stringify(personIds)} />

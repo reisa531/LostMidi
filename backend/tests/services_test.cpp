@@ -230,9 +230,9 @@ TEST_F(StorageTest, ReadRejectsIncorrectExpectedSize) {
     expectReadUnavailable(objects, key, 2);
     expectReadUnavailable(objects, key, 4);
 }
-TEST_F(StorageTest, ReadAcceptsOneByteAndFifteenMB) {
+TEST_F(StorageTest, ReadAcceptsOneByteAndTwentyMB) {
     storage::LocalObjectStorage objects(directory);
-    for (const std::size_t size : {std::size_t{1}, std::size_t{15'000'000}}) {
+    for (const std::size_t size : {std::size_t{1}, std::size_t{20'000'000}}) {
         SCOPED_TRACE(size);
         std::string bytes(size, '\0');
         for (std::size_t i = 0; i < size; ++i) bytes[i] = static_cast<char>(i % 256);
@@ -249,7 +249,7 @@ TEST_F(StorageTest, ReadRejectsInvalidSizesBeforeReading) {
     const auto key = storage::sha256(bytesOf("a"));
     ASSERT_TRUE(objects.store(key, bytesOf("a")));
     EXPECT_THROW(objects.read(key, 0), std::invalid_argument);
-    EXPECT_THROW(objects.read(key, 15'000'001), std::invalid_argument);
+    EXPECT_THROW(objects.read(key, 20'000'001), std::invalid_argument);
     EXPECT_THROW(objects.read(key, std::numeric_limits<std::size_t>::max()), std::invalid_argument);
 }
 TEST_F(StorageTest, ReadRejectsInvalidKeys) {

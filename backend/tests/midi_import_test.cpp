@@ -35,9 +35,9 @@ TEST(FileValidation, AcceptsArbitraryNonemptyBytesWithoutParsing) {
     }
     apiError([] { midi::validateFileContent({}); }, 400, "INVALID_FILE");
 }
-TEST(FileValidation, InclusiveFifteenMillionByteBoundary) {
-    ASSERT_EQ(midi::maxImportBytes, 15'000'000u);
-    Bytes input(15'000'000, std::byte{0xff});
+TEST(FileValidation, InclusiveTwentyMillionByteBoundary) {
+    ASSERT_EQ(midi::maxImportBytes, 20'000'000u);
+    Bytes input(20'000'000, std::byte{0xff});
     EXPECT_NO_THROW(midi::validateFileContent(input));
     input.push_back(std::byte{0});
     apiError([&] { midi::validateFileContent(input); }, 413, "FILE_TOO_LARGE");
@@ -100,12 +100,12 @@ TEST(MidiCreationBase64, AcceptsOnlyCanonicalAlphabetPaddingAndPadBits) {
     apiError([&] { midi::decodeMidiContentBase64(std::string("AA\0A",4)); },400,"INVALID_FILE");
 }
 TEST(MidiCreationBase64, EnforcesDecimalSizeBoundaryWithCanonicalPadding) {
-    ASSERT_EQ(midi::maxImportBytes, 15'000'000u);
-    // 15,000,000 is divisible by three: the inclusive boundary has no padding.
-    const auto prefix = std::string(20'000'000 - 4, 'A');
-    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AA==").size(), 14'999'998u);
-    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AAA=").size(), 14'999'999u);
-    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AAAA"), Bytes(15'000'000, std::byte{0}));
+    ASSERT_EQ(midi::maxImportBytes, 20'000'000u);
+    // 20,000,000 bytes require one padding character at the inclusive boundary.
+    const auto prefix = std::string(26'666'668 - 4, 'A');
+    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AA==").size(), 19'999'999u);
+    EXPECT_EQ(midi::decodeMidiContentBase64(prefix + "AAA=").size(), 20'000'000u);
+    apiError([&] { midi::decodeMidiContentBase64(prefix + "AAAA"); },413,"FILE_TOO_LARGE");
     for (const auto* suffix : {"AAAAAA==", "AAAAAAA=", "AAAAAAAA"})
         apiError([&] { midi::decodeMidiContentBase64(prefix + suffix); },413,"FILE_TOO_LARGE");
     // Pad bits must remain canonical even at the maximum encoded length.
@@ -182,7 +182,7 @@ TEST(MidiImport, RejectsWithoutStorageOrRepositoryWrites) {
         apiError([&] { service.create(creationEntry(),creationId,midi::MidiCreationFile{name,binaryData(),true}); },400,"INVALID_FILE");
     }
     apiError([&] { service.import(1,1,"a.mid",{},true); },400,"INVALID_FILE");
-    const Bytes oversized(15'000'001);
+    const Bytes oversized(20'000'001);
     apiError([&] { service.import(1,1,"a.bin",oversized,true); },413,"FILE_TOO_LARGE");
     EXPECT_EQ(repo.reads,0); EXPECT_EQ(repo.writes,0); EXPECT_EQ(storage.writes,0);
     EXPECT_NO_THROW(disabled.get(1));
@@ -206,15 +206,15 @@ TEST(MidiImport, PreservesEveryExtensionAndRawBytesForImportAndCreation) {
     }
 }
 TEST(MidiImport, ImportAndCreationPreserveInclusiveLimit) {
-    ASSERT_EQ(midi::maxImportBytes,15'000'000u);
+    ASSERT_EQ(midi::maxImportBytes,20'000'000u);
     FakeRepository repo; FakeStorage storage; midi::MidiImportService service(repo,storage,true);
-    const midi::MidiCreationFile upload{"limit.bin",Bytes(15'000'000,std::byte{0xff}),true};
+    const midi::MidiCreationFile upload{"limit.bin",Bytes(20'000'000,std::byte{0xff}),true};
     const auto digest = storage::sha256(upload.bytes);
     service.import(42,7,upload.filename,upload.bytes,true);
-    EXPECT_EQ(repo.saved.fileSize,15'000'000u); EXPECT_EQ(repo.saved.sha256,digest);
+    EXPECT_EQ(repo.saved.fileSize,20'000'000u); EXPECT_EQ(repo.saved.sha256,digest);
     EXPECT_EQ(storage.stored,upload.bytes);
     service.create(creationEntry(),creationId,upload);
-    EXPECT_EQ(repo.saved.fileSize,15'000'000u); EXPECT_EQ(repo.saved.sha256,digest);
+    EXPECT_EQ(repo.saved.fileSize,20'000'000u); EXPECT_EQ(repo.saved.sha256,digest);
     EXPECT_EQ(storage.stored,upload.bytes);
 }
 TEST(MidiDownload, ConsentAndRestrictionsControlPublicAvailability) {
@@ -268,12 +268,12 @@ TEST(FileRegistration, PreservesRawFilesAndUsesSharedValidationBeforeRepositoryA
         apiError([&] { service.registerFile(42,name,binaryData()); },400,"INVALID_FILE");
     apiError([&] { service.registerFile(0,"raw",binaryData()); },400,"INVALID_FILE");
     apiError([&] { service.registerFile(42,"empty",{}); },400,"INVALID_FILE");
-    Bytes data(15'000'001,std::byte{0xff});
+    Bytes data(20'000'001,std::byte{0xff});
     apiError([&] { service.registerFile(42,"oversized",data); },413,"FILE_TOO_LARGE");
     EXPECT_EQ(repo.reads,0); EXPECT_EQ(repo.writes,0); EXPECT_EQ(storage.writes,0);
     data.pop_back();
     const auto result = service.registerFile(42,"limit",data);
-    EXPECT_EQ(result.file.fileSize,15'000'000u); EXPECT_EQ(result.file.sha256,storage::sha256(data));
+    EXPECT_EQ(result.file.fileSize,20'000'000u); EXPECT_EQ(result.file.sha256,storage::sha256(data));
     EXPECT_EQ(storage.stored,data);
 }
 class FileStorageTest : public ::testing::Test {
@@ -285,9 +285,9 @@ protected:
     }
 };
 TEST_F(FileStorageTest, InclusiveLimitRoundTripsAndRetriesWithoutOverwriting) {
-    ASSERT_EQ(midi::maxImportBytes,15'000'000u);
+    ASSERT_EQ(midi::maxImportBytes,20'000'000u);
     storage::LocalObjectStorage objects(directory);
-    for (const std::size_t size : {std::size_t{1},std::size_t{15'000'000}}) {
+    for (const std::size_t size : {std::size_t{1},std::size_t{20'000'000}}) {
         std::string content(size,'\0');
         for (std::size_t i = 0; i < size; ++i) content[i] = static_cast<char>(i % 256);
         const auto data = std::as_bytes(std::span(content)); const auto key = storage::sha256(data);
@@ -302,7 +302,7 @@ TEST_F(FileStorageTest, InclusiveLimitRoundTripsAndRetriesWithoutOverwriting) {
 }
 TEST_F(FileStorageTest, RejectsEmptyOversizedAndCorruptObjectsWithoutReplacingThem) {
     storage::LocalObjectStorage objects(directory);
-    const Bytes empty, oversized(15'000'001);
+    const Bytes empty, oversized(20'000'001);
     for (const auto* data : {&empty,&oversized}) {
         const auto key = storage::sha256(*data);
         EXPECT_THROW(objects.store(key,*data),std::invalid_argument);
@@ -325,7 +325,7 @@ TEST_F(FileStorageTest, RejectsEmptyOversizedAndCorruptObjectsWithoutReplacingTh
 TEST(S3Storage, RejectsInvalidContentAndSizesBeforeNetworkAccess) {
     const storage::S3Config config{"https://storage.invalid","us-east-1","bucket","test-access","test-secret","archive",true};
     storage::S3ObjectStorage objects(config);
-    const Bytes empty, oversized(15'000'001);
+    const Bytes empty, oversized(20'000'001);
     for (const auto* data : {&empty,&oversized}) {
         const auto key = storage::sha256(*data);
         EXPECT_THROW(objects.store(key,*data),std::invalid_argument);

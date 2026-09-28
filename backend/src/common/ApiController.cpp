@@ -5,6 +5,13 @@
 #include <regex>
 
 namespace lostmidi {
+void ApiController::recordContributor(std::int64_t midiId, const std::string& username) {
+    if (midiId < 1 || username.empty()) return;
+    db_->execSqlSync("INSERT INTO midi_contributors(midi_id,user_id,username) "
+        "VALUES($1,(SELECT id FROM admin_users WHERE username=$2),$2) "
+        "ON CONFLICT(midi_id,username) DO UPDATE SET last_contributed_at=CURRENT_TIMESTAMP",
+        midiId, username);
+}
 namespace {
 drogon::HttpResponsePtr errorResponse(int status, const std::string& code, const std::string& message) {
     Json::Value body;
@@ -146,11 +153,21 @@ void ApiController::registerRoutes() {
         dispatch(std::move(callback), [this, id = std::move(id)] {
             static const std::regex publicId("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
             if (!std::regex_match(id, publicId)) throw ApiError(400, "INVALID_PUBLIC_ID", "A valid public id is required.");
-            return toJson(midis_.getByPublicId(id));
+            auto json = toJson(midis_.getByPublicId(id));
+            json["contributors"] = Json::Value(Json::arrayValue);
+            for (const auto& row : db_->execSqlSync("SELECT username FROM midi_contributors WHERE midi_id=$1 ORDER BY first_contributed_at,username", std::stoll(json["entry"]["id"].asString())))
+                json["contributors"].append(row["username"].as<std::string>());
+            return json;
         });
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/midis/{1}", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string slug) {
-        dispatch(std::move(callback), [this, slug = std::move(slug)] { return toJson(midis_.getBySlug(slug)); });
+        dispatch(std::move(callback), [this, slug = std::move(slug)] {
+            auto json = toJson(midis_.getBySlug(slug));
+            json["contributors"] = Json::Value(Json::arrayValue);
+            for (const auto& row : db_->execSqlSync("SELECT username FROM midi_contributors WHERE midi_id=$1 ORDER BY first_contributed_at,username", std::stoll(json["entry"]["id"].asString())))
+                json["contributors"].append(row["username"].as<std::string>());
+            return json;
+        });
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/midis/{1}/files/{2}/download", [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string slug, std::string value) {
         if (downloadsPending_.fetch_add(1) >= 2) {

@@ -63,7 +63,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
   function fileError(file: File | undefined) {
     if (!file) return "";
     if (file.size === 0) return "请选择一个非空文件。";
-    return file.size > maxFileSize ? "文件过大；单个文件最大 15 MB（15,000,000 字节）。" : "";
+    return file.size > maxFileSize ? "文件过大；单个文件最大 20 MB（20,000,000 字节）。" : "";
   }
   return <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} onReset={event => event.preventDefault()} onSubmit={event => {
     if (pending || submitting.current) { event.preventDefault(); return; }
@@ -90,7 +90,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       {input("license", "许可证（最多 500 UTF-8 字节）")}{input("rights_holder", "权利人（最多 500 UTF-8 字节）")}</div>
       {!entry && !importEnabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，仍可创建档案资料。</p>}
       {!entry && importEnabled && <section className="min-w-0 space-y-4 rounded-lg border border-line bg-background p-4 sm:p-5">
-        <div><h2 className="font-semibold">音乐文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">不限文件格式，单个文件最大 15 MB（15,000,000 字节）。原始文件和资料一起保存，失败不会留下半成品档案。</p></div>
+        <div><h2 className="font-semibold">音乐文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">不限文件格式，单个文件最大 20 MB（20,000,000 字节）。原始文件和资料一起保存，失败不会留下半成品档案。</p></div>
         <label className="block text-sm">选择音乐文件<input ref={fileInput} name="file" type="file" aria-describedby="create-file-help" className={`${inputClass} min-w-0`} onChange={event => {
           const file = event.target.files?.[0];
           setHasFile(Boolean(file)); setClientError(fileError(file));

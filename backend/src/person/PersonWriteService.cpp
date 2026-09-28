@@ -3,6 +3,7 @@
 #include <set>
 #include <sstream>
 #include <json/json.h>
+#include <regex>
 
 namespace lostmidi::person {
 namespace {
@@ -46,14 +47,14 @@ PersonEdit PersonWriteService::save(std::int64_t id, PersonEdit edit) {
         if (edit.person.profile.size() > 100000) invalid();
         Json::Value profile; Json::CharReaderBuilder reader; std::string errors; std::istringstream input(edit.person.profile);
         if (!Json::parseFromStream(reader, input, &profile, &errors) || !profile.isObject()) invalid();
-        const std::set<std::string> allowedProfile{"pronunciation","otherNames","gender","birthText","birthCertainty","birthplace","residence","education","activePeriod","activeTime","country","roles","aliasDetails","sites","timeline","sources","sameAs","works","collaborators","rights"};
+        const std::set<std::string> allowedProfile{"pronunciation","otherNames","gender","birthText","birthCertainty","birthplace","residence","education","activePeriod","activeTime","country","roles","aliasDetails","sites","timeline","sources","sameAs","works","collaborators","rights","avatar","contact"};
         for (const auto& key : profile.getMemberNames()) {
             const auto& value = profile[key];
             if (!allowedProfile.contains(key)) invalid();
             const bool arrayKey = key == "otherNames" || key == "roles" || key == "aliasDetails" || key == "sites" || key == "timeline" || key == "sources" || key == "sameAs" || key == "works" || key == "collaborators";
             if (arrayKey != value.isArray() && !value.isNull() && !(key == "activePeriod" && value.isObject())) invalid();
             if (!arrayKey && key != "activePeriod" && !value.isNull() && !value.isString()) invalid();
-            if ((value.isString() && (value.asString().size() > 20000 || value.asString().find('\0') != std::string::npos)) ||
+            if ((value.isString() && (value.asString().size() > (key == "avatar" ? 90000 : 20000) || value.asString().find('\0') != std::string::npos)) ||
                 (value.isArray() && value.size() > 100)) invalid();
             if (value.isArray()) for (const auto& item : value) {
                 if (item.isString() && (item.asString().size() > (key == "sameAs" ? 8192 : 2000) || item.asString().find('\0') != std::string::npos)) invalid();
@@ -67,6 +68,12 @@ PersonEdit PersonWriteService::save(std::int64_t id, PersonEdit edit) {
                 }
             }
         }
+        if (!profile["avatar"].isNull()) {
+            static const std::regex avatarPattern(R"(^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$)");
+            if (!profile["avatar"].isString() || profile["avatar"].asString().size() > 90000 ||
+                !std::regex_match(profile["avatar"].asString(), avatarPattern)) invalid();
+        }
+        if (!profile["contact"].isNull() && (!profile["contact"].isString() || profile["contact"].asString().size() > 2000)) invalid();
         for (const auto& key : {"otherNames","roles","sameAs","aliasDetails","sites","timeline","sources","works","collaborators"})
             if (!profile[key].isNull() && !profile[key].isArray()) invalid();
         if (!profile["sameAs"].isNull() && profile["sameAs"].size() > 50) invalid();
@@ -98,7 +105,7 @@ CreditEdit PersonWriteService::saveCredits(std::int64_t id, const CreditEdit& ed
     std::set<std::pair<std::int64_t, std::string>> unique;
     for (const auto& credit : edit.credits) {
         positive(credit.personId);
-        if (credit.role != "composer" && credit.role != "arranger" && credit.role != "sequencer" && credit.role != "contributor") invalid();
+        if (credit.role != "composer" && credit.role != "arranger" && credit.role != "sequencer") invalid();
         if (!unique.emplace(credit.personId, credit.role).second) invalid();
     }
     return repository_.saveCredits(id, edit);

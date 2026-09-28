@@ -38,7 +38,7 @@ export function MidiDownload({ slug, id, filename }: { slug: string; id: string;
       const lengthHeader = response.headers.get("Content-Length");
       const length = Number(lengthHeader);
       if (response.status !== 200 || response.headers.get("Content-Type")?.toLowerCase() !== "application/octet-stream"
-        || !lengthHeader || !/^[1-9][0-9]{0,7}$/.test(lengthHeader) || length > 15_000_000) {
+        || !lengthHeader || !/^[1-9][0-9]{0,7}$/.test(lengthHeader) || length > 20_000_000) {
         void response.body?.cancel().catch(() => {});
         throw new Error("Invalid download response");
       }

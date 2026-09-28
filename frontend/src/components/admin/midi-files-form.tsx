@@ -34,7 +34,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
 
   function fileError(file: File | undefined) {
     if (!file || file.size === 0) return "请选择一个非空文件。";
-    if (file.size > limit) return `文件过大；最多 ${limit.toLocaleString("zh-CN")} 字节（不超过 15 MB）。`;
+    if (file.size > limit) return `文件过大；最多 ${limit.toLocaleString("zh-CN")} 字节（不超过 20 MB）。`;
     return "";
   }
 
@@ -55,7 +55,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
       <label className="block text-sm">音乐文件 *
         <input ref={fileInput} type="file" name="file" required aria-describedby="midi-file-help" onChange={event => setClientError(fileError(event.target.files?.[0]))} className="mt-2 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2.5 text-sm" />
       </label>
-      <p id="midi-file-help" className="text-xs leading-6 text-muted">不限文件格式，单个文件最大 15 MB（15,000,000 字节）。保留原始文件名和内容，不解析或转码；每次上传一个文件。</p>
+      <p id="midi-file-help" className="text-xs leading-6 text-muted">不限文件格式，单个文件最大 20 MB（20,000,000 字节）。保留原始文件名和内容，不解析或转码；每次上传一个文件。</p>
       <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" required className="mt-2 shrink-0" />我确认有权公开分发此文件；上传后该文件可被任何人公开读取与下载。</label>
     </fieldset>
     {clientError && <p role="alert" className="text-sm text-red-900">{clientError}</p>}

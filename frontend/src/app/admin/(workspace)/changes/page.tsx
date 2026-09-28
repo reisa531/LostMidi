@@ -6,8 +6,8 @@ import { CloseFailedForm, ReviewForm } from "@/components/admin/review-form";
 import { ReviewComparison } from "@/components/admin/review-comparison";
 
 const labels: Record<string, string> = {
-  "midi.create": "新增 MIDI 档案", "midi.update": "修改 MIDI 档案", "person.create": "新增人物",
-  "midi.delete": "删除 MIDI 档案", "midi.restore": "恢复 MIDI 档案", "person.update": "修改人物",
+  "midi.create": "新增音乐条目", "midi.update": "修改音乐条目", "person.create": "新增人物",
+  "midi.delete": "删除音乐条目", "midi.restore": "恢复音乐条目", "person.update": "修改人物",
   "person.delete": "删除人物", "person.restore": "恢复人物", "credits.update": "修改作品署名",
   "history.source.create": "新增历史来源", "history.source.update": "修改历史来源", "history.source.delete": "删除历史来源",
   "history.event.create": "新增寻回记录", "history.event.update": "修改寻回记录", "history.event.delete": "删除寻回记录",

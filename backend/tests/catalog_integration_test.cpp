@@ -123,7 +123,7 @@ TEST(CatalogContract, JsonHasOnlyThePublicContractAndStringIds) {
     EXPECT_TRUE(json["sources"].isArray()); publicOnly(json);
     catalog::Person person; person.id = entry.id;
     const auto personJson = catalog::toJson(person);
-    EXPECT_EQ(keys(personJson), (std::set<std::string>{"id", "public_id", "display_name", "biography", "summary", "updated_at", "aliases", "midi_count"}));
+    EXPECT_EQ(keys(personJson), (std::set<std::string>{"id", "public_id", "display_name", "biography", "summary", "avatar", "updated_at", "aliases", "midi_count"}));
     EXPECT_TRUE(personJson["biography"].isNull()); EXPECT_TRUE(personJson["aliases"].isArray());
     EXPECT_EQ(personJson["id"].asString(), "9007199254740993");
     const auto group = catalog::toJson(catalog::Group{"", "未署名", 2, 1, 0});

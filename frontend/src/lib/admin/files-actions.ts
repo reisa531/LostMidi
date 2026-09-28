@@ -1,7 +1,7 @@
 import type { MidiDetail, MidiEntry } from "@/lib/api/types";
 import type { MidiSaveState } from "./actions";
 
-export const maxFileSize = 15_000_000;
+export const maxFileSize = 20_000_000;
 export type MidiFileImportState = {
   error: string;
   unauthorized?: boolean;
@@ -16,13 +16,13 @@ class TransferError extends Error {
 const messages: Record<string, string> = {
   INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
   INVALID_INPUT: "字段格式或长度不符合要求，请核对档案资料。",
-  FILE_TOO_LARGE: "文件过大；单个文件最大 15 MB（15,000,000 字节）。",
+  FILE_TOO_LARGE: "文件过大；单个文件最大 20 MB（20,000,000 字节）。",
   INVALID_FILE: "请选择非空文件，文件名不能包含路径、控制字符或首尾空格。",
   RIGHTS_CONFIRMATION_REQUIRED: "请先确认你有权公开分发此文件。",
   STORAGE_UNAVAILABLE: "存储服务暂时不可用。请先核对已存记录，再决定是否重试。",
   IMPORT_DISABLED: "文件导入尚未启用或已暂停；可以移除文件，仅保存文字资料。",
   SERVER_BUSY: "服务繁忙，请先核对已存记录，再稍后重试。",
-  MIDI_NOT_FOUND: "该作品档案已不存在，请返回作品列表核对。",
+  MIDI_NOT_FOUND: "该音乐条目已不存在，请返回作品列表核对。",
   SLUG_CONFLICT: "此 slug 已被使用，请换一个。",
   IDEMPOTENCY_CONFLICT: "本次请求已保存过不同内容。请在新页面核对档案列表，不要重复建档。",
   CREATION_DELETED: "本次创建请求对应的档案已删除，请重新打开新增页创建。",

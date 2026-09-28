@@ -118,7 +118,7 @@ bool S3ObjectStorage::exists(const std::string& key) const {
 std::string S3ObjectStorage::read(const std::string& key, std::size_t expectedSize) const {
     checkKey(key);
     if (expectedSize == 0 || expectedSize > midi::maxImportBytes)
-        throw std::invalid_argument("Object size must be between 1 and 15,000,000 bytes (15 MB).");
+        throw std::invalid_argument("Object size must be between 1 and 20,000,000 bytes (20 MB).");
     try {
         const auto metadata = request(drogon::Head, key);
         if (metadata->statusCode() != 200) {
@@ -151,7 +151,7 @@ void S3ObjectStorage::verify(const std::string& key, std::size_t size) const {
 bool S3ObjectStorage::store(const std::string& key, std::span<const std::byte> bytes) {
     checkKey(key);
     if (bytes.empty() || bytes.size() > midi::maxImportBytes || sha256(bytes) != key)
-        throw std::invalid_argument("Object content must match its key and be between 1 and 15,000,000 bytes (15 MB).");
+        throw std::invalid_argument("Object content must match its key and be between 1 and 20,000,000 bytes (20 MB).");
     // PostgreSQL locks coordinate managed writers; conditional PUT also prevents
     // overwriting an object created by another client between HEAD and PUT.
     if (exists(key)) { verify(key, bytes.size()); return false; }

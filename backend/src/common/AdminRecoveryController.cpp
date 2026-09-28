@@ -157,7 +157,7 @@ void ApiController::registerAdminRecoveryRoutes() {
                 const auto body = bodyOf(request);
                 if (actor.role == "admin") return submitAdminChange(actor, "history.source.create", idOf(id), body);
                 const auto result = recoveryWriter_.saveSource(idOf(id), 0, revisionOf(body), sourceOf(body));
-                logEvent("historical_source_created");
+                recordContributor(idOf(id), actor.username); logEvent("historical_source_created");
                 return toJson(result);
             }, 201);
         }, {drogon::Post});
@@ -170,12 +170,12 @@ void ApiController::registerAdminRecoveryRoutes() {
                     fieldsOf(body, {"revision"});
                     if (actor.role == "admin") { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.delete", idOf(id), body); }
                     const auto result = recoveryWriter_.deleteSource(idOf(id), idOf(sourceId), revisionOf(body));
-                    logEvent("historical_source_deleted");
+                    recordContributor(idOf(id), actor.username); logEvent("historical_source_deleted");
                     return toJson(result);
                 }
                 if (actor.role == "admin") { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.update", idOf(id), body); }
                 const auto result = recoveryWriter_.saveSource(idOf(id), idOf(sourceId), revisionOf(body), sourceOf(body));
-                logEvent("historical_source_updated");
+                recordContributor(idOf(id), actor.username); logEvent("historical_source_updated");
                 return toJson(result);
             });
         }, {drogon::Put, drogon::Delete});
@@ -186,7 +186,7 @@ void ApiController::registerAdminRecoveryRoutes() {
                 const auto body = bodyOf(request);
                 if (actor.role == "admin") return submitAdminChange(actor, "history.event.create", idOf(id), body);
                 const auto result = recoveryWriter_.saveEvent(idOf(id), 0, revisionOf(body), eventOf(body));
-                logEvent("recovery_event_created");
+                recordContributor(idOf(id), actor.username); logEvent("recovery_event_created");
                 return toJson(result);
             }, 201);
         }, {drogon::Post});
@@ -199,12 +199,12 @@ void ApiController::registerAdminRecoveryRoutes() {
                     fieldsOf(body, {"revision"});
                     if (actor.role == "admin") { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.delete", idOf(id), body); }
                     const auto result = recoveryWriter_.deleteEvent(idOf(id), idOf(eventId), revisionOf(body));
-                    logEvent("recovery_event_deleted");
+                    recordContributor(idOf(id), actor.username); logEvent("recovery_event_deleted");
                     return toJson(result);
                 }
                 if (actor.role == "admin") { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.update", idOf(id), body); }
                 const auto result = recoveryWriter_.saveEvent(idOf(id), idOf(eventId), revisionOf(body), eventOf(body));
-                logEvent("recovery_event_updated");
+                recordContributor(idOf(id), actor.username); logEvent("recovery_event_updated");
                 return toJson(result);
             });
         }, {drogon::Put, drogon::Delete});
@@ -262,6 +262,7 @@ void ApiController::registerAdminRecoveryRoutes() {
                 saved[0]["original_filename"].as<std::string>(), saved[0]["media_type"].as<std::string>(),
                 saved[0]["sha256"].as<std::string>(), saved[0]["file_size"].as<std::uint32_t>(), saved[0]["created_at"].as<std::string>()});
             result["revision"] = Json::Int64(nextRevision); result["duplicate"] = duplicate;
+            if (!duplicate) recordContributor(midiId, actor.username);
             logEvent(duplicate ? "historical_evidence_duplicate" : "historical_evidence_uploaded");
             return result;
         }, 201);

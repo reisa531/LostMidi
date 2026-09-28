@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   // Docker opts into standalone output; Vercel and next start use the default build.
   output: process.env.NEXT_OUTPUT_STANDALONE === "true" ? "standalone" : undefined,
   poweredByHeader: false,
-  experimental: { serverActions: { bodySizeLimit: "2mb" }, proxyClientMaxBodySize: 21_000_000, proxyTimeout: 120_000 },
+  experimental: { serverActions: { bodySizeLimit: "2mb" }, proxyClientMaxBodySize: 29_000_000, proxyTimeout: 120_000 },
   async rewrites() {
     const base = process.env.BACKEND_API_URL;
     if (!base) return [];

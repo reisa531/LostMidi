@@ -61,7 +61,7 @@ void ApiController::registerAdminFileRoutes() {
             if (request->getHeader("content-type") != "application/octet-stream") throw ApiError(415, "INVALID_FILE", "An application/octet-stream body is required.");
             const auto body = request->body();
             if (body.empty()) throw ApiError(400, "INVALID_FILE", "Files must not be empty.");
-            if (body.size() > midi::maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "Files must not exceed 15 MB.");
+            if (body.size() > midi::maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "Files must not exceed 20 MB.");
             if (!importer_.enabled()) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled.");
             const auto filename = filenameOf(request->getHeader("x-file-name"));
             const auto rightsConfirmed = request->getHeader("x-rights-confirmed") == "true";
@@ -75,6 +75,7 @@ void ApiController::registerAdminFileRoutes() {
                 return submitAdminChange(actor, "file.import", midiId, payload);
             }
             const auto result = importer_.import(midiId, revision, filename, bytes, rightsConfirmed);
+            recordContributor(midiId, actor.username);
             json["file"] = toJson(result.file); json["duplicate"] = result.duplicate; json["revision"] = Json::Int64(result.revision);
             logEvent(result.duplicate ? "midi_file_duplicate" : "midi_file_imported"); return json;
         });

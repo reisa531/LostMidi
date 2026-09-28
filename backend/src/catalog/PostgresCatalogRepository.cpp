@@ -179,7 +179,7 @@ PageResult<Person> PostgresCatalogRepository::people(const PersonQuery& query) {
     result.page = page;
     result.total = snapshot.exec("SELECT count(*) AS total FROM people p WHERE p.deleted_at IS NULL AND ($1::text='' OR p.display_name ILIKE $1 ESCAPE '!' "
         "OR EXISTS(SELECT 1 FROM person_aliases a WHERE a.person_id=p.id AND a.alias ILIKE $1 ESCAPE '!'))", search)[0]["total"].as<std::int64_t>();
-    for (const auto& row : snapshot.exec("SELECT id,public_id,display_name,biography,summary,updated_at FROM people p WHERE p.deleted_at IS NULL AND ($1::text='' OR p.display_name ILIKE $1 ESCAPE '!' "
+    for (const auto& row : snapshot.exec("SELECT id,public_id,display_name,biography,summary,updated_at,profile->>'avatar' AS avatar FROM people p WHERE p.deleted_at IS NULL AND ($1::text='' OR p.display_name ILIKE $1 ESCAPE '!' "
         "OR EXISTS(SELECT 1 FROM person_aliases a WHERE a.person_id=p.id AND a.alias ILIKE $1 ESCAPE '!')) "
         "ORDER BY display_name COLLATE \"C\",id LIMIT $2 OFFSET $3",
         search, static_cast<std::int64_t>(page.size), page.offset())) {
@@ -190,6 +190,7 @@ PageResult<Person> PostgresCatalogRepository::people(const PersonQuery& query) {
         person.biography = nullable<std::string>(row["biography"]);
         person.summary = nullable<std::string>(row["summary"]);
         person.updatedAt = row["updated_at"].as<std::string>();
+        person.avatar = nullable<std::string>(row["avatar"]);
         result.data.push_back(std::move(person));
     }
     if (!result.data.empty()) {

@@ -30,7 +30,7 @@ std::string creationFingerprint(const MidiEntry& entry, const std::optional<Midi
 }
 std::vector<std::byte> decodeMidiContentBase64(const std::string& encoded) {
     if (encoded.size() > ((maxImportBytes + 2) / 3) * 4)
-        throw ApiError(413, "FILE_TOO_LARGE", "Files must be at most 15 MB (15,000,000 bytes).");
+        throw ApiError(413, "FILE_TOO_LARGE", "Files must be at most 20 MB (20,000,000 bytes).");
     const auto invalid = [] { throw ApiError(400, "INVALID_FILE", "content_base64 must be canonical base64."); };
     if (encoded.empty() || encoded.size() % 4 != 0) invalid();
     const auto value = [](char c) -> int {
@@ -43,7 +43,7 @@ std::vector<std::byte> decodeMidiContentBase64(const std::string& encoded) {
     };
     const std::size_t padding = encoded.back() == '=' ? (encoded[encoded.size() - 2] == '=' ? 2 : 1) : 0;
     const auto size = encoded.size() / 4 * 3 - padding;
-    if (size > maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "Files must be at most 15 MB (15,000,000 bytes).");
+    if (size > maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "Files must be at most 20 MB (20,000,000 bytes).");
     std::vector<std::byte> result; result.reserve(size);
     for (std::size_t i = 0; i < encoded.size(); i += 4) {
         const auto a = value(encoded[i]), b = value(encoded[i + 1]);

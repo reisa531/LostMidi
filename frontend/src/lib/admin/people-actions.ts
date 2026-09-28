@@ -21,7 +21,7 @@ function errorMessage(error: unknown) {
     INVALID_INPUT: "请检查必填项、文字长度和重复的昵称或署名。",
     STALE_PERSON: "人物资料已被其他页面修改，请保留当前输入，重新打开编辑页后合并修改。",
     STALE_ENTRY: "作品资料已被其他页面修改，请保留当前输入，重新打开页面后合并修改。",
-    UNKNOWN_PERSON: "所选人物已不存在，请重新选择。", PERSON_NOT_FOUND: "人物资料已不存在。", MIDI_NOT_FOUND: "作品档案已不存在。",
+    UNKNOWN_PERSON: "所选人物已不存在，请重新选择。", PERSON_NOT_FOUND: "人物资料已不存在。", MIDI_NOT_FOUND: "音乐条目已不存在。",
   };
   return error instanceof ApiError ? messages[error.code] ?? "服务暂时不可用，请稍后重试。" : "请求失败，请稍后重试。";
 }
@@ -38,8 +38,12 @@ export async function savePersonAction(_previous: { error: string }, form: FormD
     const current = id ? await adminRequest<PersonEdit>(`/api/v1/admin/people/${id}`) : null;
     if (current && current.person.revision !== Number(form.get("revision"))) throw new ApiError(409, "STALE_PERSON");
     const existing = current?.person.profile ?? {};
+    const avatar = String(form.get("avatar") ?? "");
+    if (avatar.length > 90000 || (avatar && !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(avatar))) throw new ApiError(400, "INVALID_INPUT");
     const profile = {
       ...existing,
+      avatar: avatar || null,
+      contact: String(form.get("contact") ?? "").trim() || null,
       country: String(form.get("country") ?? "").trim() || null,
       activeTime: String(form.get("active_time") ?? "").trim() || null,
       rights: String(form.get("rights") ?? "").trim() || null,

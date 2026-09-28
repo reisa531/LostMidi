@@ -279,6 +279,9 @@ void ApiController::registerAdminRoutes() {
                         applied["evidence"] = toJson(recovery::EvidenceFile{existing[0]["id"].as<std::int64_t>(), existing[0]["original_filename"].as<std::string>(), existing[0]["media_type"].as<std::string>(), existing[0]["sha256"].as<std::string>(), existing[0]["file_size"].as<std::uint32_t>(), existing[0]["created_at"].as<std::string>()});
                     }
                     else throw ApiError(422, "REVIEW_TYPE_UNSUPPORTED", "This request type cannot be approved through the review panel.");
+                    if (type == "midi.create") recordContributor(std::stoll(applied["id"].asString()), proposedBy);
+                    else if (type == "midi.update" || type == "credits.update" || type.starts_with("history.") || type == "file.import" || type == "evidence.upload")
+                        recordContributor(entity, proposedBy);
                     db_->execSqlSync("UPDATE admin_change_requests SET status='approved',review_note=$2,reviewed_by=$3,reviewed_at=CURRENT_TIMESTAMP,result=$4::jsonb WHERE id=$1::uuid", requestId, note, reviewer.username, applied.toStyledString());
                 } catch (const ApiError& error) {
                     const auto status = (error.code == "STALE_ENTRY" || error.code == "STALE_PERSON") ? "stale" : "failed";
@@ -398,6 +401,7 @@ void ApiController::registerAdminRoutes() {
             const auto body = bodyOf(request);
             if (actor.role == "admin") return submitAdminChange(actor, "credits.update", idOf(id), body);
             const auto result = personWriter_.saveCredits(idOf(id), creditsOf(body));
+            recordContributor(idOf(id), actor.username);
             logEvent("midi_credits_updated"); return toJson(result);
         });
     }, {drogon::Get, drogon::Put});
@@ -666,6 +670,7 @@ void ApiController::registerAdminRoutes() {
                     return submitAdminChange(actor, "midi.create", 0, body);
                 }
                 const auto entry = writer_.create(entryOf(body, false));
+                recordContributor(entry.id, actor.username);
                 logEvent("midi_created"); return toJson(entry);
             }
             if (actor.role == "admin") {
@@ -697,6 +702,7 @@ void ApiController::registerAdminRoutes() {
             }
             if (actor.role != "super_admin") throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a super administrator.");
             const auto entry = importer_.create(entryOf(body, false), requestId, upload);
+            recordContributor(entry.id, actor.username);
             logEvent("midi_created"); return toJson(entry);
         }, 201);
     }, {drogon::Post});
@@ -715,6 +721,7 @@ void ApiController::registerAdminRoutes() {
             const auto body = bodyOf(request);
             if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "midi.update", idOf(id), body);
             const auto entry = writer_.update(idOf(id), entryOf(body, true));
+            recordContributor(entry.id, actorPrincipal.username);
             logEvent("midi_updated"); return toJson(entry);
         });
     }, {drogon::Get, drogon::Put, drogon::Delete});

@@ -10,6 +10,7 @@ import { ExternalSource } from "@/components/archive";
 import { MarkdownField } from "@/components/admin/markdown-field";
 import { DraftNotice, useFormDraft } from "@/components/admin/use-form-draft";
 import { Markdown } from "@/components/markdown";
+import type { UsefulLink } from "@/lib/api/useful-links";
 
 type Selection = { kind: "source"; record?: HistoricalSource } | { kind: "event"; record?: RecoveryEvent };
 const inputClass = "mt-2 block w-full min-w-0 max-w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm";
@@ -37,8 +38,8 @@ function UTCInput({ name, label, value, onChange }: { name: string; label: strin
   </label>;
 }
 
-function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequired }: {
-  midiId: string; revision: number; selection: Selection; onCancel: () => void; reviewRequired: boolean;
+function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequired, usefulLinks }: {
+  midiId: string; revision: number; selection: Selection; onCancel: () => void; reviewRequired: boolean; usefulLinks: UsefulLink[];
 }) {
   const router = useRouter();
   const draftKey = `history:${midiId}:${selection.kind}:${selection.record?.id ?? "new"}:${revision}`;
@@ -96,6 +97,7 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
     <fieldset disabled={pending || confirming} className="min-w-0 space-y-5 disabled:opacity-60"><legend className="sr-only">{label}资料</legend>
       {selection.kind === "source" ? <>
         <label className="block text-sm">网站名称 *<input name="website_name" className={inputClass} required maxLength={300} value={values.website_name} onChange={event => change("website_name", event.target.value)} /><span className="mt-2 block text-xs text-muted">最多 300 UTF-8 字节，中文字符通常占 3 字节。</span></label>
+        {usefulLinks.length > 0 && <label className="block text-sm">从常用网址快速填写<select className={inputClass} defaultValue="" onChange={event => { const link = usefulLinks.find(item => item.id === event.target.value); if (link) { const next = { ...values, website_name: link.title, original_url: link.url }; setValues(next); saveDraft(); try { sessionStorage.setItem(`lostmidi:draft:${draftKey}:values`, JSON.stringify(next)); } catch { /* Storage may be disabled. */ } } }}><option value="">选择网址…</option>{usefulLinks.map(link => <option key={link.id} value={link.id}>{link.title}</option>)}</select></label>}
         <div className="grid min-w-0 gap-5 lg:grid-cols-2">
           <label className="block min-w-0 text-sm">原始网址（可留空）<input type="url" name="original_url" className={inputClass} maxLength={4096} value={values.original_url} onChange={event => change("original_url", event.target.value)} /></label>
           <label className="block min-w-0 text-sm">存档网址（可留空）<input type="url" name="wayback_url" className={inputClass} maxLength={4096} value={values.wayback_url} onChange={event => change("wayback_url", event.target.value)} /></label>
@@ -144,12 +146,12 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
   </form>;
 }
 
-export function HistoryForm({ history, reviewRequired = false }: { history: HistoryEdit; reviewRequired?: boolean }) {
+export function HistoryForm({ history, reviewRequired = false, usefulLinks = [] }: { history: HistoryEdit; reviewRequired?: boolean; usefulLinks?: UsefulLink[] }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const busy = selection !== null;
   return <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
     <p className="text-sm leading-7 text-muted" role="status">{busy ? "正在编辑一条记录。请先保存或放弃本条编辑，再操作其他记录。其他记录暂不可编辑。" : `每次仅编辑一条历史来源或寻回记录；${reviewRequired ? "管理员提交后由超级管理员审核。" : "超级管理员保存后立即公开。"}来源、寻回、署名与基础资料共用版本，请勿在多个页面同时修改。`}</p>
-    {selection && <HistoryRecordForm key={`${selection.kind}-${selection.record?.id ?? "new"}`} midiId={history.entry.id} revision={history.entry.revision} selection={selection} reviewRequired={reviewRequired} onCancel={() => setSelection(null)} />}
+    {selection && <HistoryRecordForm key={`${selection.kind}-${selection.record?.id ?? "new"}`} midiId={history.entry.id} revision={history.entry.revision} selection={selection} reviewRequired={reviewRequired} usefulLinks={usefulLinks} onCancel={() => setSelection(null)} />}
     <section aria-labelledby="history-sources" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-sources" className="text-lg font-semibold">历史来源</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "source" })} className={buttonClass}>新增历史来源</button></div>
       {history.historical_sources.length ? <ul className="space-y-6">{history.historical_sources.map(source => <li key={source.id} className="min-w-0 space-y-3 border-t border-line pt-5">

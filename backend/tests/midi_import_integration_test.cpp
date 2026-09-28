@@ -401,20 +401,20 @@ TEST_F(ImportPostgres, ImportAndCreationPreserveEveryExtensionAndArbitraryBinary
     }
     EXPECT_EQ(repo->filesFor(first).size(),names.size());
 }
-TEST_F(ImportPostgres, InclusiveFifteenMillionByteImportAndBase64CreationRoundTrip) {
-    ASSERT_EQ(midi::maxImportBytes,15'000'000u);
+TEST_F(ImportPostgres, InclusiveTwentyMillionByteImportAndBase64CreationRoundTrip) {
+    ASSERT_EQ(midi::maxImportBytes,20'000'000u);
     ObservedStorage observed(*objects); midi::MidiImportService imports(*repo,observed,true);
-    std::vector<std::byte> content(15'000'000,std::byte{0xff});
+    std::vector<std::byte> content(20'000'000,std::byte{0xff});
     const auto saved = imports.import(first,1,"limit.bin",content,true);
-    EXPECT_EQ(saved.file.fileSize,15'000'000u); EXPECT_EQ(saved.file.sha256,storage::sha256(content));
+    EXPECT_EQ(saved.file.fileSize,20'000'000u); EXPECT_EQ(saved.file.sha256,storage::sha256(content));
     EXPECT_EQ(objects->read(saved.file.storageKey,content.size()),std::string(content.size(),'\xff'));
     content.push_back(std::byte{0});
     apiError([&] { imports.import(first,saved.revision,"too-large.wav",content,true); },413,"FILE_TOO_LARGE");
     midi::MidiCreationFile uploaded{"limit.flac",midi::decodeMidiContentBase64(std::string(20'000'000,'A')),true};
-    ASSERT_EQ(uploaded.bytes.size(),15'000'000u);
+    ASSERT_EQ(uploaded.bytes.size(),20'000'000u);
     const auto created = imports.create(entry(),requestA,uploaded);
     const auto files = repo->filesFor(created.id); ASSERT_EQ(files.size(),1u);
-    EXPECT_EQ(files[0].fileSize,15'000'000u); EXPECT_EQ(files[0].sha256,storage::sha256(uploaded.bytes));
+    EXPECT_EQ(files[0].fileSize,20'000'000u); EXPECT_EQ(files[0].sha256,storage::sha256(uploaded.bytes));
     EXPECT_EQ(files[0].originalFilename,uploaded.filename); EXPECT_TRUE(files[0].publicDistributionConfirmed);
     person::PostgresPersonRepository people(db); recovery::PostgresRecoveryRepository historyRepository(db);
     recovery::RecoveryService history(historyRepository); midi::MidiService downloads(*repo,people,history);

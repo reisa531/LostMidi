@@ -61,7 +61,7 @@ function errorMessage(error: unknown) {
       INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
       INVALID_INPUT: "请检查必填项、UTF-8 字节长度、网址和 UTC 日期；首次记录时间不能晚于最后记录时间。",
       UNKNOWN_PERSON: "所选寻回人已不存在。请刷新人物列表并重新选择，或选择「人物不详」。",
-      MIDI_NOT_FOUND: "作品档案已不存在。当前输入已保留，请先核对作品列表。",
+      MIDI_NOT_FOUND: "音乐条目已不存在。当前输入已保留，请先核对作品列表。",
       SOURCE_NOT_FOUND: "这条历史来源已不存在。请保留输入，重新打开页面核对，不要直接重复提交。",
       RECOVERY_EVENT_NOT_FOUND: "这条寻回记录已不存在。请保留输入，重新打开页面核对，不要直接重复提交。",
     };

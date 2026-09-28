@@ -16,7 +16,7 @@ export default async function AdminArticlesPage({ searchParams }: { searchParams
   let result: { data: ArticleSummary[]; page: number; pageSize: number; total: number };
   try { result = await adminRequest<typeof result>(`/api/v1/admin/articles?${new URLSearchParams({ page: String(page), q, status })}`); }
   catch (error) { if (error instanceof ApiError) return <AdminUnavailable />; throw error; }
-  return <><AdminPageHeader eyebrow="工作台 / 文章" title="文章管理" description="管理员可撰写 Markdown 文章，关联 MIDI 档案与人物。草稿仅在后台显示。" />
+  return <><AdminPageHeader eyebrow="工作台 / 文章" title="文章管理" description="管理员可撰写 Markdown 文章，关联 音乐条目与人物。草稿仅在后台显示。" />
     <AdminPanel title={`文章 · ${result.total}`} action={<Link className="rounded bg-accent px-4 py-2 text-sm text-white" href="/admin/articles/new">新建文章</Link>}>
       <form method="get" className="mb-4 flex flex-wrap gap-2"><input type="search" name="q" defaultValue={q} placeholder="搜索文章标题" aria-label="搜索文章标题" className="min-w-40 flex-1 rounded border border-line px-3 py-2.5 text-sm" /><select name="status" defaultValue={status} aria-label="发布状态" className="rounded border border-line bg-white px-3 py-2.5 text-sm"><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option></select><button className="rounded bg-accent px-4 py-2.5 text-sm text-white">筛选</button>{(q || status !== "all") && <Link className="self-center text-sm underline" href="/admin/articles">清除</Link>}</form>
       {result.data.length ? <ul className="divide-y divide-line">{result.data.map(article => <li key={article.id} className="flex flex-wrap items-center justify-between gap-3 py-4">

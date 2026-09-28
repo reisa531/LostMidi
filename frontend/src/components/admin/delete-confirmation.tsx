@@ -14,7 +14,7 @@ export function DeleteConfirmation({ resource, id, revision, name, reviewRequire
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const listPath = `/admin/${resource}`;
-  const label = resource === "midis" ? "MIDI 档案" : "人物";
+  const label = resource === "midis" ? "音乐条目" : "人物";
   const [state, action, pending] = useActionState<DeleteState, FormData>(async (previous, form) => {
     let next: DeleteState;
     try {

@@ -8,6 +8,7 @@ import type { Metadata } from "next";
 import { Markdown, markdownHeadings, markdownSummary } from "@/components/markdown";
 import { Suspense } from "react";
 import { RelatedArticlesFor } from "@/components/related-articles";
+import { PersonAvatar } from "@/components/person-avatar";
 
 type Collaborator = { name: string; personId: string; source: string; publicId?: string };
 async function resolveCollaborators(profile: Record<string, unknown>): Promise<Collaborator[]> {
@@ -68,7 +69,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const headings = markdownHeadings(detail.person.biography ?? "");
   const neighbors = [detail.previous, detail.next].filter(Boolean);
   return <article className="mx-auto max-w-6xl"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} /><p className="eyebrow"><Link href="/people" className="archive-link">人物</Link> / 档案</p>
-    <h1 className="my-6 font-serif text-4xl">{detail.person.display_name}</h1><p className="mb-8 max-w-3xl text-lg leading-8 text-muted">{summary}</p>
+    <div className="my-6 flex items-center gap-5"><PersonAvatar avatar={profile.avatar} name={detail.person.display_name} size={96} /><h1 className="font-serif text-4xl">{detail.person.display_name}</h1></div><p className="mb-8 max-w-3xl text-lg leading-8 text-muted">{summary}</p>
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem]"><div className="min-w-0 space-y-8">
     <section aria-labelledby="bio-title"><h2 id="bio-title" className="mb-4 font-serif text-2xl">人物简介</h2>{detail.person.biography ? <Markdown source={detail.person.biography} /> : <p className="text-muted">人物生平尚待补充。</p>}</section>
     {headings.length > 0 && <nav aria-label="简介目录" className="rounded-xl border border-line bg-white/70 p-5"><h2 className="mb-3 font-semibold">本页目录</h2><ol className="space-y-2">{headings.map(item => <li key={item.id}><a className="archive-link" href={`#${item.id}`}>{item.title}</a></li>)}</ol></nav>}
@@ -79,6 +80,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     {Array.isArray(profile.works) && profile.works.length > 0 && <Section title="对外署名作品"><ul className="space-y-3">{profile.works.map((item, index) => { if (typeof item !== "object" || !item) return null; const work = item as Record<string, unknown>, title = String(work.title ?? "作品"), internal = typeof work.midiId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(work.midiId); return <li key={index}>{internal ? <Link className="archive-link" href={`/midis/${work.midiId}`}>{title}</Link> : typeof work.url === "string" ? <a className="archive-link" href={work.url} target="_blank" rel="noopener noreferrer">{title}</a> : title} {String(work.role ?? "")}</li>; })}</ul></Section>}
     {collaborators.length > 0 && <Section title="合作者"><ul className="flex flex-wrap gap-2">{collaborators.map((item, index) => <li key={index} className="rounded-full border border-line bg-white/70 px-3 py-1.5">{item.publicId ? <Link className="archive-link" href={`/people/${item.publicId}`}>{item.name}</Link> : <span>{item.name}</span>}{item.source && <span className="ml-2 text-xs text-muted">{item.source}</span>}</li>)}</ul></Section>}
     {sameAs.length > 0 && <Section title="相关链接"><ul className="space-y-2">{sameAs.map(url => <li key={url}><a className="archive-link break-all" href={url} target="_blank" rel="noopener noreferrer">{url}</a></li>)}</ul></Section>}
+    {typeof profile.contact === "string" && profile.contact.trim() && <Section title="联系方式"><p className="whitespace-pre-wrap break-words">{profile.contact}</p></Section>}
     <Section title="相关作品">{midiGroups.length ? <><p className="mb-3 text-xs text-muted">共 {midiGroups.length} 部，展示前 20 部。</p><ul className="space-y-4">{midiGroups.slice(0, 20).map(m => <li key={m.id}>
       <Link className="archive-link" href={`/midis/${m.slug}`}>{m.title}</Link><span className="ml-3 text-muted">{m.roles.map(roleName).join("、")}</span>
     </li>)}</ul>{midiGroups.length > 20 && <Link href={`/search?person=${encodeURIComponent(detail.person.id)}`} className="mt-4 inline-block archive-link">查看全部相关作品 →</Link>}</> : <div className="space-y-2"><p className="text-muted">尚无作品署名记录。</p><Link href={`/search?person=${encodeURIComponent(detail.person.id)}`} className="archive-link">按此人物筛选 MIDI 目录 →</Link></div>}</Section>

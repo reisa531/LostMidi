@@ -35,6 +35,7 @@ struct Person {
     std::vector<std::string> aliases;
     std::int64_t midiCount = 0;
     std::string publicId;
+    std::optional<std::string> avatar;
 };
 struct Group {
     std::string key;

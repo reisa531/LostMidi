@@ -5,7 +5,7 @@
 namespace lostmidi::midi {
 void validateFileContent(std::span<const std::byte> bytes) {
     if (bytes.empty()) throw ApiError(400, "INVALID_FILE", "A nonempty file is required.");
-    if (bytes.size() > maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "Files must be at most 15 MB (15,000,000 bytes).");
+    if (bytes.size() > maxImportBytes) throw ApiError(413, "FILE_TOO_LARGE", "Files must be at most 20 MB (20,000,000 bytes).");
 }
 void validateFilename(const std::string& filename) {
     const auto bad = [] { throw ApiError(400, "INVALID_FILE", "A valid UTF-8 filename of at most 255 bytes without path separators, control characters, or leading/trailing whitespace is required."); };

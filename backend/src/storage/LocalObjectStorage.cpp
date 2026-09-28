@@ -36,7 +36,7 @@ fs::path LocalObjectStorage::checkedPath(const std::string& key) const {
 
 bool LocalObjectStorage::store(const std::string& key, std::span<const std::byte> bytes) {
     if (bytes.empty() || bytes.size() > midi::maxImportBytes)
-        throw std::invalid_argument("Object size must be between 1 and 15,000,000 bytes (15 MB).");
+        throw std::invalid_argument("Object size must be between 1 and 20,000,000 bytes (20 MB).");
     std::lock_guard lock(mutex_);
     const auto path = checkedPath(key);
     if (sha256(bytes) != key) throw std::invalid_argument("Object key does not match its content.");
@@ -84,7 +84,7 @@ bool LocalObjectStorage::exists(const std::string& key) const {
 
 std::string LocalObjectStorage::read(const std::string& key, std::size_t expectedSize) const {
     if (expectedSize == 0 || expectedSize > midi::maxImportBytes)
-        throw std::invalid_argument("Object size must be between 1 and 15,000,000 bytes (15 MB).");
+        throw std::invalid_argument("Object size must be between 1 and 20,000,000 bytes (20 MB).");
     try {
         std::lock_guard lock(mutex_);
         const auto path = checkedPath(key);

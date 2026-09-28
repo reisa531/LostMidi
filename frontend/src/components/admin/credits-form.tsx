@@ -6,7 +6,7 @@ import type { CreditEdit, PeopleList } from "@/lib/admin/people";
 
 export function CreditsForm({ midiId, entry, people, reviewRequired = false }: { midiId: string; entry: CreditEdit; people: PeopleList; reviewRequired?: boolean }) {
   const [state, action, pending] = useActionState(saveCreditsAction, { error: "" });
-  const [rows, setRows] = useState(entry.credits.map(credit => ({ person_id: credit.person_id, role: credit.role })));
+  const [rows, setRows] = useState(entry.credits.filter(credit => credit.role !== "contributor").map(credit => ({ person_id: credit.person_id, role: credit.role })));
   const [choices, setChoices] = useState(people.data.map(person => ({ id: person.id, name: person.display_name })));
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(people.pagination.total);
@@ -26,7 +26,7 @@ export function CreditsForm({ midiId, entry, people, reviewRequired = false }: {
     <fieldset disabled={pending} className="space-y-4 disabled:opacity-60"><legend className="sr-only">作品署名</legend>
       {rows.map((row, index) => <div key={index} className="flex flex-wrap items-end gap-3 border-b border-line pb-4">
         <label className="min-w-48 flex-1 text-sm">人物<select required name="person_id" className="mt-2 block w-full rounded border border-line p-3" value={row.person_id} onChange={e => setRows(old => old.map((item, i) => i === index ? { ...item, person_id: e.target.value } : item))}><option value="">请选择人物</option>{Array.from(options, ([id, name]) => <option key={id} value={id}>{name}（编号 {id}）</option>)}</select></label>
-        <label className="text-sm">角色<select name="role" className="mt-2 block rounded border border-line p-3" value={row.role} onChange={e => setRows(old => old.map((item, i) => i === index ? { ...item, role: e.target.value } : item))}>{[["composer", "作曲"], ["arranger", "编曲"], ["sequencer", "音序制作"], ["contributor", "贡献者"]].map(([role, label]) => <option value={role} key={role}>{label}</option>)}</select></label>
+        <label className="text-sm">角色<select name="role" className="mt-2 block rounded border border-line p-3" value={row.role} onChange={e => setRows(old => old.map((item, i) => i === index ? { ...item, role: e.target.value } : item))}>{[["composer", "作曲"], ["arranger", "编曲"], ["sequencer", "音序制作"]].map(([role, label]) => <option value={role} key={role}>{label}</option>)}</select></label>
         <button type="button" className="p-3 text-sm text-red-800 underline" aria-label={`移除第 ${index + 1} 条署名`} onClick={() => setRows(old => old.filter((_, i) => i !== index))}>移除</button>
       </div>)}
       {!rows.length && <p className="text-sm text-muted">尚未设置署名。</p>}

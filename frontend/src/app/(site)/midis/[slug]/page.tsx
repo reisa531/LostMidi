@@ -33,7 +33,8 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     throw error;
   }
   if (slug !== detail.entry.slug) redirect(`/midis/${detail.entry.slug}`);
-  const { entry, credits, historical_sources, recovery_events, files } = detail;
+  const { entry, historical_sources, recovery_events, files } = detail;
+  const credits = detail.credits.filter(credit => credit.role !== "contributor");
   const authors = new Map(detail.people.map(person => [person.id, person]));
   const structuredData = {
     "@context": "https://schema.org", "@type": "MusicComposition", name: entry.title,
@@ -56,6 +57,7 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
         {typeof rights === "string" && rights.trim() && <UsageTerms author={credit.display_name} terms={rights} />}
       </li>;
     })}</ul> : <p className="text-muted">作者尚待考证。</p>}</Section>
+    <Section title="档案贡献者"><p className="text-muted">提交或完善这条音乐档案的后台用户。</p>{detail.contributors?.length ? <ul className="flex flex-wrap gap-2">{detail.contributors.map(username => <li key={username} className="rounded-full border border-line bg-white px-3 py-1 text-sm">{username}</li>)}</ul> : <p className="text-muted">暂无可核实的用户贡献记录。</p>}</Section>
     <Section title="历史来源">{historical_sources.length ? <><p className="text-xs text-muted">共 {historical_sources.length} 条线索；点击条目查看详情。</p><div className="space-y-3">{historical_sources.map(source => <details className="group min-w-0 rounded-lg border border-line bg-white/70 [overflow-wrap:anywhere]" key={source.id} open={historical_sources.length === 1}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"><span className="min-w-0 font-medium">{source.website_name}<span className="ml-3 text-xs font-normal text-muted">{dateLabel(source.first_seen_at)}{source.evidence_files?.length ? ` · ${source.evidence_files.length} 个附件` : ""}</span></span><span aria-hidden="true" className="shrink-0 text-accent transition-transform group-open:rotate-180">⌄</span></summary>
       <div className="space-y-3 border-t border-line px-4 py-4"><p className="text-xs text-muted">首次记录 {dateLabel(source.first_seen_at)} · 最后记录 {dateLabel(source.last_seen_at)}</p>

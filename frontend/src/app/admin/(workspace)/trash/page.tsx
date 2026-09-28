@@ -25,7 +25,7 @@ export default async function TrashPage({ searchParams }: { searchParams: Promis
   return <><AdminPageHeader eyebrow="档案 / 回收站" title="回收站与操作记录" description={admin.role === "admin" ? "可提交恢复申请，由超级管理员审核；最近的删除与恢复操作会记录在这里。" : "已删除记录会保留原始关联和文件，可在此恢复；最近的删除与恢复操作也会记录在这里。"} />
     <AdminPanel title={`保留中的记录 · ${result.pagination.total}`}>
       {result.data.length ? <ul className="divide-y divide-line">{result.data.map(item => <li key={`${item.entity_type}-${item.entity_id}`} className="flex flex-wrap items-center justify-between gap-4 py-4">
-        <div className="min-w-0"><p className="break-words font-medium">{item.entity_label}</p><p className="mt-1 text-xs text-muted">{item.entity_type === "midi" ? "MIDI 档案" : "人物"} · 编号 {item.entity_id} · {new Date(item.deleted_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · 操作人 {item.deleted_by}</p></div>
+        <div className="min-w-0"><p className="break-words font-medium">{item.entity_label}</p><p className="mt-1 text-xs text-muted">{item.entity_type === "midi" ? "音乐条目" : "人物"} · 编号 {item.entity_id} · {new Date(item.deleted_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · 操作人 {item.deleted_by}</p></div>
         <div className="flex flex-wrap items-end gap-3"><RestoreButton type={item.entity_type} id={item.entity_id} reviewRequired={admin.role === "admin"} />{admin.role === "super_admin" && <PurgeButton type={item.entity_type} id={item.entity_id} />}</div>
       </li>)}</ul> : <p className="py-8 text-center text-sm text-muted">{page > 1 ? "本页没有记录，请返回第一页。" : "回收站为空。"}</p>}
     </AdminPanel>

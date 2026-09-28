@@ -34,6 +34,7 @@ private:
     void registerAdminFileRoutes();
     void registerCatalogRoutes();
     void registerArticleRoutes();
+    void recordContributor(std::int64_t midiId, const std::string& username);
     auth::SessionPrincipal requireFilePrincipal(const drogon::HttpRequestPtr& request);
     midi::MidiService& midis_;
     person::PersonService& people_;
