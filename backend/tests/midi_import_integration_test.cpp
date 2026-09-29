@@ -50,11 +50,11 @@ protected:
     std::int64_t first = 0, second = 0;
     void SetUp() override {
         const char* url = std::getenv("LOSTMIDI_TEST_DATABASE_URL");
-        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a disposable database migrated through 011.";
+        if (!url || !*url) GTEST_SKIP() << "Set LOSTMIDI_TEST_DATABASE_URL to a disposable database migrated through 025.";
         owner = drogon::orm::DbClient::newPgClient(url,1); owner->setTimeout(10.0);
         schema = "import_test_"+auth::randomToken().substr(0,24);
         owner->execSqlSync("CREATE SCHEMA "+schema); created = true;
-        for (const auto* table : {"midi_entries","midi_files","midi_import_objects","midi_creation_requests","admin_audit_log"})
+        for (const auto* table : {"midi_entries","midi_files","midi_private_files","midi_import_objects","midi_creation_requests","admin_audit_log"})
             owner->execSqlSync("CREATE TABLE "+schema+"."+table+" (LIKE public."+table+" INCLUDING ALL)");
         std::string connection = url;
         if (connection.starts_with("postgres://") || connection.starts_with("postgresql://"))
@@ -62,6 +62,7 @@ protected:
         else connection += " options='-csearch_path="+schema+"'";
         db = drogon::orm::DbClient::newPgClient(connection,4); db->setTimeout(10.0);
         db->execSqlSync("ALTER TABLE midi_files ADD FOREIGN KEY(midi_id) REFERENCES midi_entries(id) ON DELETE CASCADE");
+        db->execSqlSync("ALTER TABLE midi_private_files ADD FOREIGN KEY(file_id) REFERENCES midi_files(id) ON DELETE CASCADE");
         db->execSqlSync("ALTER TABLE midi_creation_requests ADD FOREIGN KEY(midi_id) REFERENCES midi_entries(id) ON DELETE SET NULL");
         db->execSqlSync("CREATE TRIGGER midi_entries_updated_at BEFORE UPDATE ON midi_entries FOR EACH ROW EXECUTE FUNCTION public.set_midi_entry_updated_at()");
         first = db->execSqlSync("INSERT INTO midi_entries(slug,title,distribution_permission) VALUES('first','First','restricted') RETURNING id")[0][0].as<std::int64_t>();
@@ -295,15 +296,12 @@ TEST_F(ImportPostgres, CreationConcurrentDifferentRequestsSameHashHaveOneOwner) 
     create.create(entry(x=="created" ? "race-a" : "race-b"),x=="created" ? requestA : requestB,upload());
     counts(3,1,1,0); EXPECT_EQ(observed.writes.load(),1); EXPECT_EQ(observed.removals.load(),0);
 }
-TEST_F(ImportPostgres, CreationInvalidDisabledAndUnconfirmedFilesPerformNoWrites) {
+TEST_F(ImportPostgres, CreationInvalidAndDisabledFilesPerformNoWrites) {
     const auto input=entry(); const auto uploaded=upload();
     ObservedStorage observed(*objects); midi::MidiImportService create(*repo,observed,true), disabled(*repo,observed,false);
     apiError([&] { disabled.create(input,requestA,uploaded); },503,"IMPORT_DISABLED");
     apiError([&] { disabled.import(first,1,uploaded.filename,uploaded.bytes,true); },503,"IMPORT_DISABLED");
-    auto invalid=uploaded; invalid.rightsConfirmed=false;
-    apiError([&] { create.create(input,requestA,invalid); },400,"RIGHTS_CONFIRMATION_REQUIRED");
-    apiError([&] { create.import(first,1,uploaded.filename,uploaded.bytes,false); },400,"RIGHTS_CONFIRMATION_REQUIRED");
-    invalid=uploaded;
+    auto invalid=uploaded;
     for (const auto& name : std::vector<std::string>{"", ".", "..", "../bad.mid", "a/b.mp3", "a\\b.flac",
             " a.wav", "a.ogg ", "a\t.bin", std::string("a\0b",3), std::string(256,'a'), "\xc0\xaf.bin", "\xed\xa0\x80.bin"}) {
         SCOPED_TRACE(name); invalid.filename=name;
@@ -320,6 +318,21 @@ TEST_F(ImportPostgres, CreationInvalidDisabledAndUnconfirmedFilesPerformNoWrites
     apiError([&] { create.create(metadata,requestA,uploaded); },400,"INVALID_INPUT");
     apiError([&] { create.create(input,"not-a-uuid",uploaded); },400,"INVALID_INPUT");
     counts(2,0,0,0); EXPECT_EQ(observed.writes.load(),0); EXPECT_EQ(observed.removals.load(),0);
+}
+TEST_F(ImportPostgres, PrivateFilesCanBeImportedAndCreatedWithoutPublicDownload) {
+    auto incoming = upload(); incoming.filename = "private.flac"; incoming.rightsConfirmed = false;
+    const auto imported = service->import(first, 1, incoming.filename, incoming.bytes, false);
+    EXPECT_FALSE(imported.file.publicDistributionConfirmed);
+    EXPECT_FALSE(db->execSqlSync("SELECT private_archive_confirmed FROM midi_files WHERE id=$1", imported.file.id)[0][0].as<bool>());
+    EXPECT_FALSE(objects->exists(imported.file.storageKey));
+    EXPECT_EQ(db->execSqlSync("SELECT octet_length(content) FROM midi_private_files WHERE file_id=$1", imported.file.id)[0][0].as<std::size_t>(), incoming.bytes.size());
+    auto secondFile = incoming; secondFile.bytes.push_back(std::byte{0x42});
+    const auto createdEntry = service->create(entry("private-created"), requestA, secondFile);
+    const auto files = repo->filesFor(createdEntry.id);
+    ASSERT_EQ(files.size(), 1u);
+    EXPECT_FALSE(files[0].publicDistributionConfirmed);
+    EXPECT_FALSE(objects->exists(files[0].storageKey));
+    EXPECT_EQ(db->execSqlSync("SELECT octet_length(content) FROM midi_private_files WHERE file_id=$1", files[0].id)[0][0].as<std::size_t>(), secondFile.bytes.size());
 }
 TEST_F(ImportPostgres, CreationReceiptConstraintsRetainDeletedIdentity) {
     EXPECT_THROW(db->execSqlSync("INSERT INTO midi_creation_requests VALUES($1::uuid,$2,$3)",requestA,std::string(64,'A'),first),drogon::orm::DrogonDbException);
@@ -517,10 +530,10 @@ TEST_F(ImportPostgres, ConcurrentIdenticalAndCompetingRevisionImports) {
 }
 TEST_F(ImportPostgres, StorageAndSqlFailuresRetainJournalAndAllowRetry) {
     auto f=file(); const auto content=data();
-    EXPECT_THROW(repo->importFile(f,1,[&] { EXPECT_TRUE(journal(f.sha256)); objects->store(f.storageKey,content); throw std::runtime_error("injected storage timeout"); }),std::runtime_error);
+    EXPECT_THROW(repo->importFile(f,1,content,[&] { EXPECT_TRUE(journal(f.sha256)); objects->store(f.storageKey,content); throw std::runtime_error("injected storage timeout"); }),std::runtime_error);
     EXPECT_TRUE(journal(f.sha256)); EXPECT_TRUE(repo->filesFor(first).empty()); EXPECT_EQ(repo->findById(first)->revision,1);
     f.fileSize=0; // Real SQL CHECK failure after storage succeeds.
-    EXPECT_THROW(repo->importFile(f,1,[&] { objects->store(f.storageKey,content); }),drogon::orm::DrogonDbException);
+    EXPECT_THROW(repo->importFile(f,1,content,[&] { objects->store(f.storageKey,content); }),drogon::orm::DrogonDbException);
     EXPECT_TRUE(journal(f.sha256)); EXPECT_TRUE(repo->filesFor(first).empty()); EXPECT_EQ(repo->findById(first)->revision,1);
     const auto saved=service->import(first,1,"retry.mid",content,true);
     EXPECT_FALSE(saved.duplicate); EXPECT_EQ(saved.revision,2); EXPECT_FALSE(journal(f.sha256));

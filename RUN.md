@@ -4,6 +4,8 @@
 
 本文指导 Vercel 前后端独立项目、旧 VPS / Compose 单机方案、更新和数据维护。架构与原生编译细节见 [README](README.md)，数据库规则见 [数据库说明](docs/database.md)。命令默认在**仓库根目录**执行；代码块标注了 Shell，服务器维护部分使用 Bash。
 
+当前版本的音乐文件上传复选框为可选：不勾选仍会保存文件，但访客不能下载，内容仅保存在 PostgreSQL 的 `midi_private_files`；勾选后才写入可匿名读取的对象桶。后台文件列表支持切换此权限和移除文件，证据附件列表支持删除。普通管理员提交这些操作后由超级管理员审核。生产升级必须先应用 `025_file_and_evidence_management.sql`，再部署新版后端；旧版文档中“上传即公开分发”的描述仅适用于历史版本。
+
 ## 1. 部署方式与边界
 
 生产架构为 **Vercel 容器 + Neon Free** 后端及独立 Vercel 前端项目。当前工作区包含迁移至 021；发布前须按第 7.2 节核对实际线上版本、备份并安全迁移已有库，不能以空库安装流程替代。历史部署记录中的迁移编号不代表当前线上状态。
@@ -201,7 +203,7 @@ sudo install -d -o 10001 -g 10001 -m 0750 ./storage
 | `S3_PATH_STYLE` | `true` / `false`，默认 `true`，需验证供应商兼容性 |
 | `S3_PUBLIC_DISTRIBUTION_CONFIRMED` | 模板默认 `false`；确认上传对象将公开分发（允许匿名读取）后再设 `true` |
 
-`S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 仅是操作者 ACK，**不是权限校验**。本项目产品决策为“上传即同意公开分发”：对象存入后允许任何人匿名读取，桶策略对 `Principal:*` 开放 `GetObject`/`ListBucket`/`GetBucketLocation`。密钥按专用前缀授予对象读/写/删除权限；实现不列桶、不扫目录。已对真实雨云 ROS（Ceph RGW）桶联调验证：签名读写、`PUT` 携 `Content-Type`（必须纳入 SigV4 签名头，否则 RGW 返回 `403 AccessDenied`）、`If-None-Match: *` 条件写入返回 `412`、Range GET 与 DELETE 均正常；客户端不会在出错后回退到无条件覆盖写入。TLS 证书验证保持开启；运行镜像已通过 `SSL_CERT_FILE` 指向系统 CA，原生环境应配置可信 CA，不关闭验证。
+`S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 仅是操作者 ACK，**不是权限校验**。本项目产品决策为“上传时可选择公开分发”：对象存入后允许任何人匿名读取，桶策略对 `Principal:*` 开放 `GetObject`/`ListBucket`/`GetBucketLocation`。密钥按专用前缀授予对象读/写/删除权限；实现不列桶、不扫目录。已对真实雨云 ROS（Ceph RGW）桶联调验证：签名读写、`PUT` 携 `Content-Type`（必须纳入 SigV4 签名头，否则 RGW 返回 `403 AccessDenied`）、`If-None-Match: *` 条件写入返回 `412`、Range GET 与 DELETE 均正常；客户端不会在出错后回退到无条件覆盖写入。TLS 证书验证保持开启；运行镜像已通过 `SSL_CERT_FILE` 指向系统 CA，原生环境应配置可信 CA，不关闭验证。
 
 只有在隔离测试库 + 独立测试前缀验证后，才为正式后端设置真实 S3 配置、`STORAGE_BACKEND=s3` 与 `MIDI_IMPORT_ENABLED=true`。选择 S3 时即使导入关闭也需要完整 S3 配置与公开分发确认；未准备好时保留 `local` + 导入关闭。改变 backend/bucket/prefix 不会搬迁已有对象，数据库与存储定位必须一致；不要让测试库与生产共用对象命名空间。
 
@@ -214,11 +216,11 @@ sudo install -d -o 10001 -g 10001 -m 0750 ./storage
 - `Content-Type: application/octet-stream`
 - `X-File-Name: encodeURIComponent(原文件名)`
 - `X-Entry-Revision: 当前档案 revision`
-- `X-Rights-Confirmed: true`（确认有权公开分发此文件）
+- `X-Rights-Confirmed: true|false`（是否允许访客下载此文件）
 
-每次上传单个非空文件，**不限扩展名或音乐格式，最大 20 MB（20,000,000 字节，含边界）**，保留原始内容，不解析或转码。浏览器经 `/admin/file-transfer/uploads/` 的同域 rewrite 分成最多 10 个、每个不超过 2 MB 的请求，避开 Vercel Function 的 4.5 MB 请求体上限；后端暂存分块并校验总大小与 SHA-256 后才保存文件或提交审核。未完成的暂存上传在 24 小时后清理；纯文字操作仍使用 `2mb` 的 Server Action。后端仅在上传接口接受 HttpOnly 管理 Cookie，并精确校验 `ADMIN_ORIGIN`，不会把会话或存储密钥交给浏览器脚本。前后端均须配置同一个 `ADMIN_ORIGIN`；`BACKEND_API_URL` 须在前端构建时可用，变更后重新构建。上传即同意公开分发，不修改版权、分发许可或归档状态；普通管理员上传仍须审核。
+每次上传单个非空文件，**不限扩展名或音乐格式，最大 20 MB（20,000,000 字节，含边界）**，保留原始内容，不解析或转码。浏览器经 `/admin/file-transfer/uploads/` 的同域 rewrite 分成最多 10 个、每个不超过 2 MB 的请求，避开 Vercel Function 的 4.5 MB 请求体上限；后端暂存分块并校验总大小与 SHA-256 后才保存文件或提交审核。未完成的暂存上传在 24 小时后清理；纯文字操作仍使用 `2mb` 的 Server Action。后端仅在上传接口接受 HttpOnly 管理 Cookie，并精确校验 `ADMIN_ORIGIN`，不会把会话或存储密钥交给浏览器脚本。前后端均须配置同一个 `ADMIN_ORIGIN`；`BACKEND_API_URL` 须在前端构建时可用，变更后重新构建。上传时可选择公开分发，不修改版权、分发许可或归档状态；普通管理员上传仍须审核。
 
-访客下载通过站内 `GET /api/midis/{slug}/files/{id}/download` 的同域外部 rewrite 转发到后端 `GET /api/v1/midis/{slug}/files/{id}/download`，不经过 Next.js 下载函数，不携带管理员会话。成功返回 `application/octet-stream` 附件及 UTF-8 原文件名，禁止内容嗅探；逐次核对数据库中的文件归属、分发确认、长度和 SHA-256，local 与 S3 均适用，最大 15 MB。没有上传确认的旧记录不开放下载；条目的 `restricted` / `metadata_only` 优先禁止下载，其他状态仍需文件确认。`MIDI_IMPORT_ENABLED=false` 只暂停新增上传，不关闭已获准文件的下载。
+访客下载通过站内 `GET /api/midis/{slug}/files/{id}/download` 的同域外部 rewrite 转发到后端 `GET /api/v1/midis/{slug}/files/{id}/download`，不经过 Next.js 下载函数，不携带管理员会话。成功返回 `application/octet-stream` 附件及 UTF-8 原文件名，禁止内容嗅探；逐次核对数据库中的文件归属、分发确认、长度和 SHA-256，local 与 S3 均适用，最大 20 MB。没有上传确认的旧记录不开放下载；条目的 `restricted` / `metadata_only` 优先禁止下载，其他状态仍需文件确认。`MIDI_IMPORT_ENABLED=false` 只暂停新增上传，不关闭已获准文件的下载。
 
 下载响应与错误均 `no-store`；错误区分 403（不允许分发）、404（文件或档案不存在）、503（存储不可用/服务繁忙），页面保留重试入口。S3 的路径、签名和凭据不传到浏览器。站内分发限制不能撤销桶本身的匿名访问策略；如需彻底撤回已公开对象，须另行在存储服务侧处理权限。
 
@@ -258,7 +260,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-本分支当前应用需要全部迁移至 `024_chunked_file_uploads.sql`。009 增加 PostgreSQL trigram 搜索索引；010 增加回收站和审计；011 增加对象清理重试信息；012 增加来源类型、人工可信度、核验时间和数据库内证据附件；013 增加多管理员及邀请；014 为作品和人物增加稳定公开 UUID；015 增加内容审核队列；016 增加人物资料和推测日期；017–018 支持来源类型多选及自定义文本标签；019 增加新归档状态、账号注册及编号复用；020 增加文章；021 保留 MIDI 历史 slug；022–023 增加贡献者、常用网址和注册验证码；024 增加音乐文件分块暂存。证据附件为最多 1 MiB 的 PDF、JPEG、PNG 或纯文本，SHA-256 校验，下载须后台会话。关闭文件上传也不能跳过后续迁移。
+本分支当前应用需要全部迁移至 `025_file_and_evidence_management.sql`。009 增加 PostgreSQL trigram 搜索索引；010 增加回收站和审计；011 增加对象清理重试信息；012 增加来源类型、人工可信度、核验时间和数据库内证据附件；013 增加多管理员及邀请；014 为作品和人物增加稳定公开 UUID；015 增加内容审核队列；016 增加人物资料和推测日期；017–018 支持来源类型多选及自定义文本标签；019 增加新归档状态、账号注册及编号复用；020 增加文章；021 保留 MIDI 历史 slug；022–023 增加贡献者、常用网址和注册验证码；024 增加音乐文件分块暂存；025 增加非公开音乐文件存储及文件管理审核。证据附件为最多 1 MiB 的 PDF、JPEG、PNG 或纯文本，SHA-256 校验，下载须后台会话。关闭文件上传也不能跳过后续迁移。
 
 ## 5. 部署验收
 

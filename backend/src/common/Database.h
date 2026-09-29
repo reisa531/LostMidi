@@ -127,5 +127,10 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
         "to_regclass('file_upload_chunks') IS NOT NULL AS chunks");
     if (!uploads[0]["applied"].as<bool>() || !uploads[0]["uploads"].as<bool>() || !uploads[0]["chunks"].as<bool>())
         throw ApiError(503, "DATABASE_NOT_READY", "Required chunked upload migration is not applied.");
+    const auto management = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='025_file_and_evidence_management.sql') AS applied, "
+        "to_regclass('midi_private_files') IS NOT NULL AS private_files");
+    if (!management[0]["applied"].as<bool>() || !management[0]["private_files"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required file management migration is not applied.");
 }
 }  // namespace lostmidi

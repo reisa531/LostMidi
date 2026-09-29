@@ -61,6 +61,7 @@ inline Json::Value toJson(const midi::MidiFile& f) {
     j["file_size"] = Json::UInt64(f.fileSize);
     j["discovered_at"] = jsonOptional(f.discoveredAt);
     j["created_at"] = f.createdAt;
+    j["public_download_enabled"] = f.publicDistributionConfirmed;
     return j;
 }
 template <typename T>

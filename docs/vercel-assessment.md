@@ -35,9 +35,9 @@
 
 后端变量参考根 [`.env.production.example`](../.env.production.example)，只在后端项目设置数据库、管理员/安装令牌与存储参数；不上传真实 `.env`，不使用 `NEXT_PUBLIC_`。保持 `STORAGE_BACKEND=local`、`MIDI_IMPORT_ENABLED=false` 可作为未接桶时的安全状态，但容器 `/tmp/lostmidi-storage` **不持久，不能用于云端归档**。
 
-接入已有桶时需填写 `S3_ENDPOINT`（HTTPS、无路径）、真实 `S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`；已暴露的旧密钥必须撤销并更换。`S3_REGION` 默认 `us-east-1`，`S3_PREFIX` 默认 `lostmidi`（非空目录段仅含字母、数字、`_`、`-`，以 `/` 分隔，无空段），`S3_PATH_STYLE` 默认 `true`。产品决策为“上传即同意公开分发”，对象允许匿名读取；确认无误后设 `S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 和 `STORAGE_BACKEND=s3`，再启用 `MIDI_IMPORT_ENABLED=true`。ACK 不等于权限校验。已对真实雨云 ROS（Ceph RGW）桶联调验证签名读写、条件 PUT（`412`）、Range GET 与 DELETE，并修复了 PUT 必须签名 `Content-Type`（否则 `403 AccessDenied`）的兼容性问题；后台页不提供公开 URL 或下载试听。
+接入已有桶时需填写 `S3_ENDPOINT`（HTTPS、无路径）、真实 `S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`；已暴露的旧密钥必须撤销并更换。`S3_REGION` 默认 `us-east-1`，`S3_PREFIX` 默认 `lostmidi`（非空目录段仅含字母、数字、`_`、`-`，以 `/` 分隔，无空段），`S3_PATH_STYLE` 默认 `true`。产品决策为“上传时可选择公开分发”，对象允许匿名读取；确认无误后设 `S3_PUBLIC_DISTRIBUTION_CONFIRMED=true` 和 `STORAGE_BACKEND=s3`，再启用 `MIDI_IMPORT_ENABLED=true`。ACK 不等于权限校验。已对真实雨云 ROS（Ceph RGW）桶联调验证签名读写、条件 PUT（`412`）、Range GET 与 DELETE，并修复了 PUT 必须签名 `Content-Type`（否则 `403 AccessDenied`）的兼容性问题；后台页不提供公开 URL 或下载试听。
 
-导入与清理完整契约见 [RUN.md](../RUN.md)：管理员单文件最大 20 MB，浏览器按 2 MB 分块上传，纯文字 Server Action 上限 `2mb`；上传即同意公开分发（对象允许匿名读取）。对象清理需显式 `lostmidi_api --cleanup-imports`，只处理超过 24 小时无引用 journal、每次最多 100 条，不列桶不扫目录，须同一数据库/backend/bucket/prefix。
+导入与清理完整契约见 [RUN.md](../RUN.md)：管理员单文件最大 20 MB，浏览器按 2 MB 分块上传，纯文字 Server Action 上限 `2mb`；上传时可选择公开分发（对象允许匿名读取）。对象清理需显式 `lostmidi_api --cleanup-imports`，只处理超过 24 小时无引用 journal、每次最多 100 条，不列桶不扫目录，须同一数据库/backend/bucket/prefix。
 
 ## 2. 一键创建副本并部署前端
 

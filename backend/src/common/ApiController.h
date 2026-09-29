@@ -28,7 +28,10 @@ private:
     Json::Value submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
                                   std::int64_t entityId, const Json::Value& payload);
     Json::Value completeStagedCreate(const auth::SessionPrincipal& actor, Json::Value entry,
-                                     const std::string& filename, const std::vector<std::byte>& bytes);
+                                     const std::string& filename, const std::vector<std::byte>& bytes, bool publicDownload);
+    Json::Value manageMidiFile(std::int64_t midiId, std::int64_t fileId, std::int64_t revision,
+                               std::optional<bool> publicDownload);
+    Json::Value deleteEvidence(std::int64_t midiId, std::int64_t evidenceId, std::int64_t revision);
     void registerAdminRoutes();
     void registerAdminReviewQueueRoutes();
     void registerAdminRecoveryRoutes();

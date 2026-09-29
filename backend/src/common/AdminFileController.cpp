@@ -1,6 +1,7 @@
 #include "common/ApiController.h"
 #include "common/Json.h"
 #include "common/FileEncoding.h"
+#include "common/Transaction.h"
 #include "common/Log.h"
 #include "midi/MidiImportService.h"
 #include "storage/IObjectStorage.h"
@@ -33,7 +34,81 @@ void validUploadId(const std::string& id) {
 }
 constexpr std::size_t chunkSize = 2'000'000;
 }
+Json::Value ApiController::manageMidiFile(std::int64_t midiId, std::int64_t fileId, std::int64_t revision,
+    std::optional<bool> publicDownload) {
+    if (midiId < 1 || fileId < 1 || revision < 1) throw ApiError(400, "INVALID_INPUT", "Positive ids and revision are required.");
+    std::string key, restoreContent;
+    bool removedPublic = false, createdPublic = false;
+    try {
+        TransactionScope tx(db_);
+        const auto parent = tx.db->execSqlSync("SELECT revision FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", midiId);
+        if (parent.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "Music entry does not exist.");
+        if (parent[0]["revision"].as<std::int64_t>() != revision) throw ApiError(409, "STALE_ENTRY", "Music entry changed elsewhere.");
+        const auto file = tx.db->execSqlSync("SELECT private_archive_confirmed,storage_key,sha256,file_size FROM midi_files WHERE midi_id=$1 AND id=$2 FOR UPDATE", midiId, fileId);
+        if (file.empty()) throw ApiError(404, "FILE_NOT_FOUND", "File does not belong to this music entry.");
+        key = file[0]["storage_key"].as<std::string>();
+        const auto digest = file[0]["sha256"].as<std::string>();
+        const auto size = file[0]["file_size"].as<std::size_t>();
+        const bool wasPublic = file[0]["private_archive_confirmed"].as<bool>();
+        Json::Value result; result["file_id"] = std::to_string(fileId);
+        if (publicDownload) {
+            if (wasPublic != *publicDownload) {
+                if (*publicDownload) {
+                    const auto privateRows = tx.db->execSqlSync("SELECT replace(encode(content,'base64'),chr(10),'') AS content FROM midi_private_files WHERE file_id=$1 FOR UPDATE", fileId);
+                    if (privateRows.empty()) throw ApiError(503, "STORAGE_UNAVAILABLE", "Private file content is unavailable.");
+                    const auto bytes = midi::decodeMidiContentBase64(privateRows[0]["content"].as<std::string>());
+                    if (bytes.size() != size || storage::sha256(bytes) != digest) throw ApiError(503, "STORAGE_UNAVAILABLE", "Private file integrity check failed.");
+                    createdPublic = objects_.store(key, bytes);
+                    tx.db->execSqlSync("DELETE FROM midi_private_files WHERE file_id=$1", fileId);
+                } else {
+                    restoreContent = objects_.read(key, size);
+                    tx.db->execSqlSync("INSERT INTO midi_private_files(file_id,content) VALUES($1,decode($2,'base64'))", fileId,
+                        base64(std::as_bytes(std::span(restoreContent.data(), restoreContent.size()))));
+                    objects_.remove(key); removedPublic = true;
+                }
+                tx.db->execSqlSync("UPDATE midi_files SET private_archive_confirmed=$3 WHERE midi_id=$1 AND id=$2", midiId, fileId, *publicDownload);
+                const auto updated = tx.db->execSqlSync("UPDATE midi_entries SET updated_at=updated_at WHERE id=$1 RETURNING revision", midiId);
+                result["revision"] = Json::Int64(updated[0]["revision"].as<std::int64_t>());
+            } else result["revision"] = Json::Int64(revision);
+            result["public_download_enabled"] = *publicDownload;
+        } else {
+            if (wasPublic) { restoreContent = objects_.read(key, size); objects_.remove(key); removedPublic = true; }
+            tx.db->execSqlSync("DELETE FROM midi_files WHERE midi_id=$1 AND id=$2", midiId, fileId);
+            const auto updated = tx.db->execSqlSync("UPDATE midi_entries SET updated_at=updated_at WHERE id=$1 RETURNING revision", midiId);
+            result["revision"] = Json::Int64(updated[0]["revision"].as<std::int64_t>());
+            result["deleted"] = true;
+        }
+        tx.commit();
+        return result;
+    } catch (...) {
+        try {
+            if (removedPublic) objects_.store(key, std::as_bytes(std::span(restoreContent.data(), restoreContent.size())));
+            if (createdPublic) objects_.remove(key);
+        } catch (...) { logEvent("midi_file_storage_compensation_failed"); }
+        throw;
+    }
+}
 void ApiController::registerAdminFileRoutes() {
+    drogon::app().registerHandler("/api/v1/admin/midis/{1}/files/{2}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string midiText, std::string fileText) {
+        dispatch(std::move(callback), [this, request, midiText = std::move(midiText), fileText = std::move(fileText)] {
+            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+            const auto midiId = positiveId(midiText), fileId = positiveId(fileText);
+            const auto body = request->getJsonObject();
+            if (!body || !body->isObject() || !(*body)["revision"].isInt64() || (*body)["revision"].asInt64() < 1 ||
+                (request->method() == drogon::Put && !(*body)["public_download_enabled"].isBool()))
+                throw ApiError(400, "INVALID_INPUT", "A revision and valid download setting are required.");
+            const auto revision = (*body)["revision"].asInt64();
+            Json::Value payload; payload["revision"] = Json::Int64(revision); payload["file_id"] = std::to_string(fileId);
+            const auto visibility = request->method() == drogon::Put;
+            if (visibility) payload["public_download_enabled"] = (*body)["public_download_enabled"].asBool();
+            if (actor.role == "admin") return submitAdminChange(actor, visibility ? "file.visibility" : "file.delete", midiId, payload);
+            auto result = manageMidiFile(midiId, fileId, revision,
+                visibility ? std::optional<bool>(payload["public_download_enabled"].asBool()) : std::nullopt);
+            recordContributor(midiId, actor.username);
+            logEvent(visibility ? "midi_file_visibility_changed" : "midi_file_deleted");
+            return result;
+        });
+    }, {drogon::Put, drogon::Delete});
     drogon::app().registerHandler("/api/v1/admin/uploads/{1}/chunks/{2}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string uploadId, std::string indexText) {
         dispatch(std::move(callback), [this, request, uploadId = std::move(uploadId), indexText = std::move(indexText)] {
             const auto actor = requireFilePrincipal(request);
@@ -71,12 +146,13 @@ void ApiController::registerAdminFileRoutes() {
             validUploadId(uploadId);
             const auto body = request->getJsonObject();
             if (!body || !body->isObject() || !(*body)["size"].isUInt() || !(*body)["chunks"].isUInt() ||
-                !(*body)["sha256"].isString() || !(*body)["filename"].isString() || (*body)["rights_confirmed"] != true)
+                !(*body)["sha256"].isString() || !(*body)["filename"].isString() || !(*body)["rights_confirmed"].isBool())
                 throw ApiError(400, "INVALID_INPUT", "Invalid upload metadata.");
             const auto size = (*body)["size"].asUInt();
             const auto count = (*body)["chunks"].asUInt();
             const auto digest = (*body)["sha256"].asString();
             const auto filename = (*body)["filename"].asString();
+            const auto publicDownload = (*body)["rights_confirmed"].asBool();
             if (size == 0 || size > midi::maxImportBytes || count != (size + chunkSize - 1) / chunkSize ||
                 digest.size() != 64 || digest.find_first_not_of("0123456789abcdef") != std::string::npos)
                 throw ApiError(400, "INVALID_INPUT", "Invalid upload size or checksum.");
@@ -109,7 +185,7 @@ void ApiController::registerAdminFileRoutes() {
                     throw ApiError(400, "INVALID_FILE", "Upload checksum does not match.");
                 Json::Value result;
                 if ((*body)["mode"] == "create") {
-                    result = completeStagedCreate(actor, (*body)["entry"], filename, bytes);
+                    result = completeStagedCreate(actor, (*body)["entry"], filename, bytes, publicDownload);
                 } else if ((*body)["mode"] == "import") {
                     if (!(*body)["id"].isString() || !(*body)["revision"].isString())
                         throw ApiError(400, "INVALID_INPUT", "An entry id and revision are required.");
@@ -117,10 +193,10 @@ void ApiController::registerAdminFileRoutes() {
                     const auto revision = positiveId((*body)["revision"].asString());
                     if (actor.role == "admin") {
                         Json::Value payload; payload["revision"] = Json::Int64(revision); payload["filename"] = filename;
-                        payload["content_base64"] = base64(bytes); payload["rights_confirmed"] = true;
+                        payload["content_base64"] = base64(bytes); payload["rights_confirmed"] = publicDownload;
                         result = submitAdminChange(actor, "file.import", midiId, payload);
                     } else {
-                        const auto imported = importer_.import(midiId, revision, filename, bytes, true);
+                        const auto imported = importer_.import(midiId, revision, filename, bytes, publicDownload);
                         recordContributor(midiId, actor.username);
                         result["file"] = toJson(imported.file); result["duplicate"] = imported.duplicate;
                         result["revision"] = Json::Int64(imported.revision);
@@ -152,7 +228,11 @@ void ApiController::registerAdminFileRoutes() {
             Json::Value json;
             if (request->method() == drogon::Get) {
                 const auto editor = importer_.get(midiId);
-                json["entry"] = toJson(editor.entry); json["files"] = jsonArray(editor.files);
+                json["entry"] = toJson(editor.entry); json["files"] = Json::Value(Json::arrayValue);
+                for (const auto& file : editor.files) {
+                    auto item = toJson(file); item["download_available"] = midi::downloadAllowed(editor.entry, file);
+                    json["files"].append(item);
+                }
                 json["max_file_size"] = Json::UInt64(midi::maxImportBytes); json["enabled"] = importer_.enabled(); return json;
             }
             if (request->getHeader("content-type") != "application/octet-stream") throw ApiError(415, "INVALID_FILE", "An application/octet-stream body is required.");
@@ -166,9 +246,8 @@ void ApiController::registerAdminFileRoutes() {
             const auto bytes = std::as_bytes(std::span(body.data(), body.size()));
             if (actor.role == "admin") {
                 midi::validateFilename(filename); midi::validateFileContent(bytes);
-                if (!rightsConfirmed) throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
                 Json::Value payload; payload["revision"] = Json::Int64(revision); payload["filename"] = filename;
-                payload["content_base64"] = base64(bytes); payload["rights_confirmed"] = true;
+                payload["content_base64"] = base64(bytes); payload["rights_confirmed"] = rightsConfirmed;
                 return submitAdminChange(actor, "file.import", midiId, payload);
             }
             const auto result = importer_.import(midiId, revision, filename, bytes, rightsConfirmed);

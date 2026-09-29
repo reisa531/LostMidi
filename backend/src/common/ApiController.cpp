@@ -90,7 +90,7 @@ Json::Value ApiController::submitAdminChange(const auth::SessionPrincipal& actor
     if ((type == "midi.create" || type == "midi.update") && payload["archive_status"] == "archived")
         throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a super administrator may archive an entry.");
     const bool midiChange = type.starts_with("midi.") || type.starts_with("history.") ||
-        type == "credits.update" || type == "evidence.upload" || type == "file.import";
+        type == "credits.update" || type.starts_with("evidence.") || type.starts_with("file.");
     std::optional<std::string> entityPublicId;
     if (entityId > 0) {
         const auto rows = midiChange

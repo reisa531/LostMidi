@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { ApiError } from "@/lib/api/client";
 import { adminRequest } from "./auth";
 
@@ -160,4 +161,21 @@ export async function uploadEvidenceAction(form: FormData): Promise<never> {
   } catch (error) { throw errorMessage(error); }
   if (queued) redirect("/admin/submissions?submitted=1");
   redirect(`/admin/midis/${midiId}/history?evidence=uploaded`);
+}
+
+export type EvidenceDeleteState = { error: string; queued?: boolean; done?: boolean };
+export async function deleteEvidenceAction(_: EvidenceDeleteState, form: FormData): Promise<EvidenceDeleteState> {
+  try {
+    if (!process.env.ADMIN_ORIGIN || (await headers()).get("origin") !== process.env.ADMIN_ORIGIN)
+      throw new InputError("请求来源不正确，请从后台页面重试。");
+    const midiId = idOf(text(form, "midi_id"));
+    const evidenceId = idOf(text(form, "evidence_id"));
+    const revision = Number(idOf(text(form, "revision")));
+    if (!Number.isSafeInteger(revision)) throw new InputError("条目版本无效，请刷新页面。");
+    const result = await adminRequest<{ status?: string; request_id?: string }>(
+      `/api/v1/admin/midis/${midiId}/evidence/${evidenceId}`,
+      { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision }) });
+    revalidatePath(`/admin/midis/${midiId}/history`);
+    return result.status === "pending" && result.request_id ? { error: "", queued: true } : { error: "", done: true };
+  } catch (error) { return { error: errorMessage(error) }; }
 }

@@ -1,12 +1,12 @@
 # Lost MIDI Archive
 
-一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前代码包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、管理员后台、档案管理，以及默认关闭的管理员单文件 MIDI 导入（local / S3，上传即同意公开分发）。历史来源可标注类型、人工可信度和核验时间，并管理受鉴权保护的证据附件。
+一个关于早期网络 MIDI 的数字档案与网络考古项目。记录作品、人物、历史来源和寻回过程，让文件与它的来历一起保存。当前代码包含公开查询 REST API、服务端渲染页面、一次性安装与站点配置、管理员后台和档案管理。音乐文件可选择是否开放访客下载；未开放的文件保存在受保护的数据库中。历史来源可标注类型、人工可信度和核验时间，并管理受鉴权保护的证据附件。
 
 这是学习项目：优先选择清楚、正确、能测试的实现。仓库保留原有 [GPLv3 LICENSE](LICENSE)。示例完全虚构，不包含真实音乐或可下载的 MIDI。
 
 部署与运维请从 [RUN.md](RUN.md) 开始；本批改动的部署顺序与验收项见 [发布验收清单](docs/release-checklist.md)。
 
-前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。部署当前工作区前须备份并运行 `database/migrate.sh` 应用全部迁移至 `024_chunked_file_uploads.sql`；其中 024 为 20 MB 音乐文件上传提供分块暂存表。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
+前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。部署当前工作区前须备份并运行 `database/migrate.sh` 应用全部迁移至 `025_file_and_evidence_management.sql`；024 为 20 MB 音乐文件上传提供分块暂存表，025 增加非公开文件存储及文件管理审核类型。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
 前端根布局已接入 `@vercel/analytics/next`。在 Vercel 项目中启用 Web Analytics 后，部署前端并访问站点即可开始采集页面浏览；本地开发数据不会替代生产访问数据。
 
@@ -16,7 +16,7 @@
 
 公开更新日志位于 `/changelog`。每次版本推送必须新增对应日志并同步版本号；首次克隆后运行 `node scripts/install-release-hook.mjs` 安装推送检查，详细规则见 [更新发布](RUN.md#72-更新发布)。日志随应用部署，不依赖额外数据库或外部服务。
 
-新增 MIDI 档案时可直接选择文件并确认公开分发，一次保存资料与文件；也可仅建资料。单个文件上限为 15 MB，不限制音乐文件格式。校验失败保留输入，网络中断可安全重试同一请求。关闭导入时隐藏文件输入，资料建档仍可用。编辑页可将档案或人物移入回收站，并在后台恢复；关联作品、历史记录和文件对象会保留。站内搜索支持作品、slug、人物、别名与历史来源，作品和人物结果分别分页；Sitemap 按每片最多一万条分片列出目录详情。实施范围见 [路线图](docs/roadmap.md)。
+新增音乐条目时可直接选择文件并决定是否允许访客下载，一次保存资料与文件；也可仅建资料。单个文件上限为 20 MB，不限制音乐文件格式。未开放下载的文件仅存于受保护的数据库，不进入公开对象桶。后台可管理文件列表、下载权限和证据附件。校验失败保留输入，网络中断可安全重试同一请求。关闭导入时隐藏文件输入，资料建档仍可用。编辑页可将档案或人物移入回收站，并在后台恢复；关联作品、历史记录和文件对象会保留。站内搜索支持作品、slug、人物、别名与历史来源，作品和人物结果分别分页；Sitemap 按每片最多一万条分片列出目录详情。实施范围见 [路线图](docs/roadmap.md)。
 
 ## 历史交付：删除功能（2026-09-25）
 
@@ -281,7 +281,7 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 
 对象与数据库不能共用事务。新导入在写存储前先持久化 journal，以同 digest 的数据库 advisory lock 串行化导入与清理。显式 `lostmidi_api --cleanup-imports` 只处理超过 24 小时且无引用的 journal，每次最多 100 条，不列桶、不扫目录；必须使用相同数据库与存储 backend/bucket/prefix（local 使用相同路径），禁止拿生产清理做测试。操作边界见 [RUN.md](RUN.md)。
 
-本地存储接受 SHA-256 key，拒绝路径穿越和对象符号链接；目录由后端独占管理。S3 使用已有桶及专用前缀，密钥仅在后端配置。`S3_PUBLIC_DISTRIBUTION_CONFIRMED` 是人工 ACK，不证明权限正确；产品决策为上传即同意公开分发，对象允许匿名读取。已对真实雨云 ROS（Ceph RGW）桶联调验证：签名读写、PUT 必须携带并签名 `Content-Type`（否则 RGW 返回 `403 AccessDenied`）、`If-None-Match: *` 条件写入返回 `412`、Range GET 与 DELETE 均正常。云 `/tmp` 不能代替持久存储。
+本地存储接受 SHA-256 key，拒绝路径穿越和对象符号链接；目录由后端独占管理。S3 使用已有桶及专用前缀，密钥仅在后端配置。`S3_PUBLIC_DISTRIBUTION_CONFIRMED` 是人工 ACK，不证明权限正确；产品决策为上传时可选择公开分发，对象允许匿名读取。已对真实雨云 ROS（Ceph RGW）桶联调验证：签名读写、PUT 必须携带并签名 `Content-Type`（否则 RGW 返回 `403 AccessDenied`）、`If-None-Match: *` 条件写入返回 `412`、Range GET 与 DELETE 均正常。云 `/tmp` 不能代替持久存储。
 
 ## API
 
@@ -306,7 +306,7 @@ main.cpp 是组合入口，通过普通对象、引用和共享数据库客户�
 | GET /api/v1/admin/midis/{id}/files | Bearer 管理员读取文件管理数据 |
 | POST /api/v1/admin/midis/{id}/files | Bearer 管理员单文件上传并确认公开分发，默认关闭；新文件原子递增父 revision |
 
-导入 POST 使用 `application/octet-stream` 原始字节，带 `X-File-Name=encodeURIComponent(文件名)`、`X-Entry-Revision`、`X-Rights-Confirmed=true`。接受单个非空原始文件，不限制扩展名或音乐格式，最大 15 MB（15,000,000 字节）；文件上传和下载通过同域外部 rewrite 直达后端，避开 Vercel Function 请求体上限。前后端须同时配置精确 `ADMIN_ORIGIN`，前端构建时须提供 `BACKEND_API_URL`；普通文字操作仍用 Server Action。同档案同内容幂等、跨档案 `409 FILE_OWNERSHIP_CONFLICT`；上传需确认有权公开分发，不改变版权、分发许可或归档状态。公开详情页提供无需登录的下载入口，经站内接口返回原文件名及 `application/octet-stream` 附件，不暴露对象路径或 S3 凭据；不提供试听。只有已记录分发确认且条目未标为 `restricted` / `metadata_only` 的文件可下载，每次校验大小与 SHA-256，存储异常返回 503。
+导入 POST 使用 `application/octet-stream` 原始字节，带 `X-File-Name=encodeURIComponent(文件名)`、`X-Entry-Revision`、`X-Rights-Confirmed=true`。接受单个非空原始文件，不限制扩展名或音乐格式，最大 20 MB（20,000,000 字节）；文件上传和下载通过同域外部 rewrite 直达后端，避开 Vercel Function 请求体上限。前后端须同时配置精确 `ADMIN_ORIGIN`，前端构建时须提供 `BACKEND_API_URL`；普通文字操作仍用 Server Action。同档案同内容幂等、跨档案 `409 FILE_OWNERSHIP_CONFLICT`；上传需确认有权公开分发，不改变版权、分发许可或归档状态。公开详情页提供无需登录的下载入口，经站内接口返回原文件名及 `application/octet-stream` 附件，不暴露对象路径或 S3 凭据；不提供试听。只有已记录分发确认且条目未标为 `restricted` / `metadata_only` 的文件可下载，每次校验大小与 SHA-256，存储异常返回 503。
 
 page 为 1–1000000，pageSize 为 1–100，默认 1 / 20。无效参数返回 400；超出末页返回空 data 和原 total。slug 最多 160 个小写字母、数字和词间连字符；人物 ID 为正数 BIGINT 范围。
 

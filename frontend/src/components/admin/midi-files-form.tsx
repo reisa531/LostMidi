@@ -48,7 +48,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
     <h2 className="text-lg font-semibold">导入单个音乐文件</h2>
     <input type="hidden" name="id" value={midiId} />
     <input type="hidden" name="revision" value={currentRevision} />
-    <p className="text-sm leading-7 text-muted">上传即表示确认有权公开分发。{reviewRequired ? "文件会先提交审核，批准后存入公开对象存储。" : "文件会存入对象存储并可被任何人公开读取。"}不会修改作品的归档状态或权利字段。文件、署名、来源与基础资料共用版本，请勿同时在其他页面修改。</p>
+    <p className="text-sm leading-7 text-muted">{reviewRequired ? "文件先提交审核，批准后保存。" : "文件保存后会列在当前条目中。"}下方复选框决定访客能否下载；不勾选仍可上传。文件、署名、来源与基础资料共用版本，请勿同时在其他页面修改。</p>
     {!enabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，已有文件仍可查看。</p>}
     <fieldset disabled={busy || !enabled} className="min-w-0 space-y-5 disabled:opacity-60">
       <legend className="sr-only">公开分发文件</legend>
@@ -56,7 +56,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
         <input ref={fileInput} type="file" name="file" required aria-describedby="midi-file-help" onChange={event => setClientError(fileError(event.target.files?.[0]))} className="mt-2 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2.5 text-sm" />
       </label>
       <p id="midi-file-help" className="text-xs leading-6 text-muted">不限文件格式，单个文件最大 20 MB（20,000,000 字节）。保留原始文件名和内容，不解析或转码；每次上传一个文件。</p>
-      <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" required className="mt-2 shrink-0" />我确认有权公开分发此文件；上传后该文件可被任何人公开读取与下载。</label>
+      <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" className="mt-2 shrink-0" />允许访客下载此文件（仅在确认有权公开分发时勾选）。</label>
     </fieldset>
     {clientError && <p role="alert" className="text-sm text-red-900">{clientError}</p>}
     {state.error && <div role="alert" className="space-y-2 rounded-lg bg-red-50 p-4 text-sm leading-7 text-red-900">
@@ -67,12 +67,12 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
       </div>
     </div>}
     {!state.error && state.result && <p role="status" className="rounded-lg bg-green-50 p-4 text-sm leading-7 text-green-900">
-      {state.result.duplicate ? "当前档案已存在相同文件，已去重，未重复新增。" : "文件已成功上传并公开分发。"}
+      {state.result.duplicate ? "当前条目已存在相同文件，已去重，未重复新增。" : "文件已成功上传，下载权限见下方文件列表。"}
       <br />{state.result.filename} · 文件编号 {state.result.fileId} · 返回版本 {state.result.revision}
     </p>}
-    {!state.error && state.queued && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-7 text-amber-950">文件导入申请已提交，批准后才会公开分发。<Link className="ml-2 underline" href="/admin/submissions">查看申请进度</Link></p>}
+    {!state.error && state.queued && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-7 text-amber-950">文件导入申请已提交，审核通过后保存。<Link className="ml-2 underline" href="/admin/submissions">查看申请进度</Link></p>}
     <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5">
-      <button type="submit" disabled={busy || !enabled} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交，请勿重复操作…" : reviewRequired ? "提交文件审核" : "确认并公开上传"}</button>
+      <button type="submit" disabled={busy || !enabled} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交，请勿重复操作…" : reviewRequired ? "提交文件审核" : "上传文件"}</button>
       <button type="button" disabled={busy} onClick={() => { if (!submitting.current) startRefresh(() => router.refresh()); }} className="text-sm underline disabled:opacity-50">{refreshing ? "正在刷新…" : "刷新版本与文件列表"}</button>
       <span className="text-xs text-muted">当前版本 {currentRevision}</span>
     </div>

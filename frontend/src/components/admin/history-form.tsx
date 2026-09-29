@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
-import { saveHistoryAction } from "@/lib/admin/history-actions";
-import { uploadEvidenceAction } from "@/lib/admin/history-actions";
+import { saveHistoryAction, uploadEvidenceAction, deleteEvidenceAction, type EvidenceDeleteState } from "@/lib/admin/history-actions";
 import type { HistoricalSource, HistoryEdit, RecoveryEvent } from "@/lib/admin/history";
 import { ExternalSource } from "@/components/archive";
 import { MarkdownField } from "@/components/admin/markdown-field";
@@ -175,12 +174,28 @@ export function HistoryForm({ history, reviewRequired = false, usefulLinks = [] 
   </div>;
 }
 
+function EvidenceDeleteForm({ midiId, evidenceId, revision, reviewRequired }: { midiId: string; evidenceId: string; revision: number; reviewRequired: boolean }) {
+  const router = useRouter();
+  const [state, action, pending] = useActionState<EvidenceDeleteState, FormData>(deleteEvidenceAction, { error: "" });
+  useEffect(() => { if (state.done) router.refresh(); }, [state.done, router]);
+  return <form action={action} onSubmit={event => {
+    if (!window.confirm("确定删除此证据附件？删除后访客和管理员都无法再下载。")) event.preventDefault();
+  }} className="inline-block ml-3">
+    <input type="hidden" name="midi_id" value={midiId} /><input type="hidden" name="evidence_id" value={evidenceId} />
+    <input type="hidden" name="revision" value={revision} />
+    <button type="submit" disabled={pending} className="text-red-800 underline disabled:opacity-50">删除附件</button>
+    {state.error && <span role="alert" className="ml-2 text-red-800">{state.error}</span>}
+    {state.queued && <span role="status" className="ml-2 text-amber-900">{reviewRequired ? "已提交审核" : "申请已提交"}</span>}
+  </form>;
+}
+
 function EvidenceFiles({ midiId, revision, kind, recordId, files, reviewRequired }: { midiId: string; revision: number; kind: "source" | "event"; recordId: string; reviewRequired: boolean; files: { id: string; filename: string; sha256: string; file_size: number; created_at: string }[] }) {
   return <div className="space-y-3 rounded-lg bg-surface p-4">
     <h4 className="text-sm font-semibold">证据附件</h4>
     {files.length ? <ul className="space-y-2 text-sm">{files.map(file => <li key={file.id} className="break-all">
       <a className="underline" href={`/api/admin/midis/${midiId}/evidence/${file.id}`}>{file.filename}</a>
       <span className="ml-2 text-xs text-muted">{file.file_size.toLocaleString("zh-CN")} 字节 · SHA-256 {file.sha256}</span>
+      <EvidenceDeleteForm midiId={midiId} evidenceId={file.id} revision={revision} reviewRequired={reviewRequired} />
     </li>)}</ul> : <p className="text-xs text-muted">尚无附件。附件仅限登录管理员下载。</p>}
     <form action={uploadEvidenceAction} className="flex flex-wrap items-end gap-3">
       <input type="hidden" name="midi_id" value={midiId} /><input type="hidden" name="revision" value={revision} />

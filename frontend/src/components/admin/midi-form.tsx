@@ -100,7 +100,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
           if (rightsInput.current) rightsInput.current.checked = false;
           setHasFile(false); setClientError("");
         }}>移除文件，仅保存资料</button>}
-        <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" required={hasFile} className="mt-2 shrink-0" />我确认有权公开分发此文件；上传后该文件可被任何人公开读取与下载。</label>
+        <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" className="mt-2 shrink-0" />允许访客下载此文件（仅在确认有权公开分发时勾选；不勾选也可上传）。</label>
         {hasFile && <p className="text-xs leading-6 text-muted">上传不会自动改变归档状态或分发许可，请按实际情况填写。</p>}
       </section>}
     </fieldset>

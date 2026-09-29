@@ -16,7 +16,8 @@ const labels: Record<string, string> = {
   "person.create": "新增人物", "person.update": "修改人物", "person.delete": "删除人物", "person.restore": "恢复人物",
   "credits.update": "修改作品署名", "history.source.create": "新增历史来源", "history.source.update": "修改历史来源", "history.source.delete": "删除历史来源",
   "history.event.create": "新增寻回记录", "history.event.update": "修改寻回记录", "history.event.delete": "删除寻回记录",
-  "evidence.upload": "上传历史证据附件", "file.import": "导入音乐文件",
+  "evidence.upload": "上传历史证据附件", "evidence.delete": "删除历史证据附件",
+  "file.import": "导入音乐文件", "file.visibility": "修改文件下载权限", "file.delete": "移除音乐文件",
 };
 
 export default async function SubmissionsPage({ searchParams }: { searchParams: Promise<{ submitted?: string; page?: string; status?: string }> }) {

@@ -12,7 +12,8 @@ const fieldLabels: Record<string, string> = {
   last_seen_at: "最后记录时间", source_type: "来源类型", credibility: "人工可信度",
   checked_at: "最近核验时间", notes: "备注", recovered_at: "寻回时间",
   recovered_by_name: "寻回人", story: "寻回经过", evidence: "证据说明",
-  credits: "作品署名", filename: "文件名", rights_confirmed: "公开分发确认",
+  credits: "作品署名", filename: "文件名", rights_confirmed: "允许访客下载",
+  file_id: "音乐文件编号", evidence_id: "证据附件编号", public_download_enabled: "允许访客下载",
   country: "国家", activeTime: "活动时间", sameAs: "相关链接", collaborators: "合作者",
 };
 const ignoredFields = new Set(["revision", "request_id", "record_id", "content_base64"]);

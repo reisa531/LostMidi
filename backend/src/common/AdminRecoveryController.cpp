@@ -142,6 +142,20 @@ recovery::RecoveryEvent eventOf(const Json::Value& json) {
 }
 }  // namespace
 
+Json::Value ApiController::deleteEvidence(std::int64_t midiId, std::int64_t evidenceId, std::int64_t revision) {
+    TransactionScope tx(db_);
+    const auto parent = tx.db->execSqlSync("SELECT revision FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", midiId);
+    if (parent.empty()) throw ApiError(404, "MIDI_NOT_FOUND", "Music entry does not exist.");
+    if (parent[0]["revision"].as<std::int64_t>() != revision) throw ApiError(409, "STALE_ENTRY", "Music entry changed elsewhere.");
+    const auto deleted = tx.db->execSqlSync("DELETE FROM historical_evidence WHERE midi_id=$1 AND id=$2 RETURNING id", midiId, evidenceId);
+    if (deleted.empty()) throw ApiError(404, "EVIDENCE_NOT_FOUND", "Evidence attachment does not belong to this entry.");
+    const auto updated = tx.db->execSqlSync("UPDATE midi_entries SET updated_at=updated_at WHERE id=$1 RETURNING revision", midiId);
+    Json::Value result; result["deleted_id"] = std::to_string(evidenceId);
+    result["revision"] = Json::Int64(updated[0]["revision"].as<std::int64_t>());
+    tx.commit();
+    return result;
+}
+
 void ApiController::registerAdminRecoveryRoutes() {
     drogon::app().registerHandler("/api/v1/admin/midis/{1}/history",
         [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string id) {
@@ -277,12 +291,25 @@ void ApiController::registerAdminRecoveryRoutes() {
         }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/midis/{1}/evidence/{2}",
         [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string midiValue, std::string evidenceValue) {
-            dispatchResponse(std::move(callback), [this, request, midiValue = std::move(midiValue), evidenceValue = std::move(evidenceValue)] {
-                auth_.require(request->getHeader("authorization"));
-                const auto midiId = idOf(midiValue); const auto evidenceId = idOf(evidenceValue);
-                return evidenceResponse(db_, midiId, evidenceId);
+            if (request->method() == drogon::Get) {
+                dispatchResponse(std::move(callback), [this, request, midiValue = std::move(midiValue), evidenceValue = std::move(evidenceValue)] {
+                    auth_.require(request->getHeader("authorization"));
+                    return evidenceResponse(db_, idOf(midiValue), idOf(evidenceValue));
+                });
+                return;
+            }
+            dispatch(std::move(callback), [this, request, midiValue = std::move(midiValue), evidenceValue = std::move(evidenceValue)] {
+                const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+                const auto midiId = idOf(midiValue), evidenceId = idOf(evidenceValue);
+                const auto body = bodyOf(request);
+                const auto revision = revisionOf(body);
+                Json::Value payload; payload["revision"] = Json::Int64(revision); payload["evidence_id"] = std::to_string(evidenceId);
+                if (actor.role == "admin") return submitAdminChange(actor, "evidence.delete", midiId, payload);
+                auto result = deleteEvidence(midiId, evidenceId, revision);
+                recordContributor(midiId, actor.username); logEvent("historical_evidence_deleted");
+                return result;
             });
-        }, {drogon::Get});
+        }, {drogon::Get, drogon::Delete});
     drogon::app().registerHandler("/api/v1/midis/{1}/evidence/{2}",
         [this](const drogon::HttpRequestPtr&, Callback&& callback, std::string midiValue, std::string evidenceValue) {
             dispatchResponse(std::move(callback), [this, midiValue = std::move(midiValue), evidenceValue = std::move(evidenceValue)] {

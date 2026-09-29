@@ -17,13 +17,14 @@ public:
     bool insertIfAbsent(const MidiFile& file) override;
     MidiEntry create(const MidiEntry& entry) override;
     MidiEntry createWithRequest(const MidiEntry& entry, const std::string& requestId,
-        const std::string& payloadSha256, const std::optional<MidiFile>& file,
+        const std::string& payloadSha256, const std::optional<MidiFile>& file, std::span<const std::byte> bytes,
         const std::function<void()>& persist) override;
     MidiEntry update(std::int64_t id, const MidiEntry& entry) override;
     void remove(std::int64_t id, std::int64_t revision, const std::string& actor) override;
     std::optional<MidiEntry> findById(std::int64_t id) override;
     FileEditor fileEditor(std::int64_t id) override;
-    FileImportResult importFile(const MidiFile& file, std::int64_t revision, const std::function<void()>& persist) override;
+    FileImportResult importFile(const MidiFile& file, std::int64_t revision,
+        std::span<const std::byte> bytes, const std::function<void()>& persist) override;
     std::size_t cleanupImports(const std::function<void(const std::string&)>& remove) override;
 private:
     drogon::orm::DbClientPtr db_;

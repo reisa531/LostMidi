@@ -65,13 +65,13 @@ public:
     midi::MidiEntry created;
     std::string requestId, fingerprint;
     midi::MidiEntry createWithRequest(const midi::MidiEntry& entry, const std::string& key,
-        const std::string& digest, const std::optional<midi::MidiFile>& file, const std::function<void()>& persist) override {
+        const std::string& digest, const std::optional<midi::MidiFile>& file, std::span<const std::byte>, const std::function<void()>& persist) override {
         ++writes; created = entry; created.id = 42; requestId = key; fingerprint = digest;
         if (file) { saved = *file; saved.midiId = created.id; persist(); }
         return created;
     }
     midi::FileEditor fileEditor(std::int64_t id) override { ++reads; midi::FileEditor result; result.entry.id = id; return result; }
-    midi::FileImportResult importFile(const midi::MidiFile& file, std::int64_t revision, const std::function<void()>& persist) override {
+    midi::FileImportResult importFile(const midi::MidiFile& file, std::int64_t revision, std::span<const std::byte>, const std::function<void()>& persist) override {
         ++writes; saved = file; persist(); return {file,false,revision+1};
     }
     std::size_t cleanupImports(const std::function<void(const std::string&)>&) override { return 0; }
@@ -122,9 +122,7 @@ TEST(MidiCreation, RejectsInvalidRequestsBeforeAnyRepositoryOrStorageAccess) {
     auto invalid = entry; invalid.title = " ";
     apiError([&] { service.create(invalid,creationId,file); },400,"INVALID_INPUT");
     apiError([&] { disabled.create(entry,creationId,file); },503,"IMPORT_DISABLED");
-    auto upload = file; upload.rightsConfirmed = false;
-    apiError([&] { service.create(entry,creationId,upload); },400,"RIGHTS_CONFIRMATION_REQUIRED");
-    upload = file; upload.filename = "../a.mid";
+    auto upload = file; upload.filename = "../a.mid";
     apiError([&] { service.create(entry,creationId,upload); },400,"INVALID_FILE");
     upload = file; upload.bytes.clear();
     apiError([&] { service.create(entry,creationId,upload); },400,"INVALID_FILE");
@@ -173,7 +171,6 @@ TEST(MidiImport, RejectsWithoutStorageOrRepositoryWrites) {
     FakeRepository repo; FakeStorage storage;
     midi::MidiImportService disabled(repo,storage,false), service(repo,storage,true);
     apiError([&] { disabled.import(1,1,"a.mid",binaryData(),true); },503,"IMPORT_DISABLED");
-    apiError([&] { service.import(1,1,"a.mid",binaryData(),false); },400,"RIGHTS_CONFIRMATION_REQUIRED");
     apiError([&] { service.import(0,1,"a.mid",binaryData(),true); },400,"INVALID_INPUT");
     apiError([&] { service.import(1,0,"a.mid",binaryData(),true); },400,"INVALID_INPUT");
     for (const auto& name : unsafeFilenames) {
@@ -186,6 +183,16 @@ TEST(MidiImport, RejectsWithoutStorageOrRepositoryWrites) {
     apiError([&] { service.import(1,1,"a.bin",oversized,true); },413,"FILE_TOO_LARGE");
     EXPECT_EQ(repo.reads,0); EXPECT_EQ(repo.writes,0); EXPECT_EQ(storage.writes,0);
     EXPECT_NO_THROW(disabled.get(1));
+}
+TEST(MidiImport, UncheckedDownloadSettingKeepsUploadedFilesPrivate) {
+    FakeRepository repo; FakeStorage storage; midi::MidiImportService service(repo,storage,true);
+    const auto bytes = binaryData();
+    const auto imported = service.import(1,1,"private.flac",bytes,false);
+    EXPECT_FALSE(imported.file.publicDistributionConfirmed);
+    EXPECT_FALSE(repo.saved.publicDistributionConfirmed);
+    service.create(creationEntry(),creationId,midi::MidiCreationFile{"private.flac",bytes,false});
+    EXPECT_FALSE(repo.saved.publicDistributionConfirmed);
+    EXPECT_EQ(storage.writes,0);
 }
 TEST(MidiImport, PreservesEveryExtensionAndRawBytesForImportAndCreation) {
     FakeRepository repo; FakeStorage storage; midi::MidiImportService service(repo,storage,true);

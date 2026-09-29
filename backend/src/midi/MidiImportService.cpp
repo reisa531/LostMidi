@@ -66,15 +66,15 @@ MidiEntry MidiImportService::create(MidiEntry entry, const std::string& requestI
     std::optional<MidiFile> file;
     if (upload) {
         if (!enabled_) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled until durable S3 storage is configured.");
-        if (!upload->rightsConfirmed) throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
         validateFilename(upload->filename); validateFileContent(upload->bytes);
         file.emplace(); file->originalFilename = upload->filename; file->fileSize = upload->bytes.size();
         file->sha256 = storage::sha256(upload->bytes); file->storageKey = file->sha256;
-        file->publicDistributionConfirmed = true;
+        file->publicDistributionConfirmed = upload->rightsConfirmed;
     }
     const auto fingerprint = creationFingerprint(entry, file);
-    return repository_.createWithRequest(entry, requestId, fingerprint, file, [&] {
-        if (file) objects_.store(file->storageKey, upload->bytes);
+    return repository_.createWithRequest(entry, requestId, fingerprint, file,
+        upload ? std::span<const std::byte>(upload->bytes) : std::span<const std::byte>{}, [&] {
+        if (file && file->publicDistributionConfirmed) objects_.store(file->storageKey, upload->bytes);
     });
 }
 FileEditor MidiImportService::get(std::int64_t id) {
@@ -85,14 +85,15 @@ FileImportResult MidiImportService::import(std::int64_t id, std::int64_t revisio
     std::span<const std::byte> bytes, bool rightsConfirmed) {
     if (!enabled_) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled until durable S3 storage is configured.");
     if (id < 1 || revision < 1) throw ApiError(400, "INVALID_INPUT", "A positive MIDI id and revision are required.");
-    if (!rightsConfirmed) throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
     validateFilename(filename);
     validateFileContent(bytes);
     // Check ownership and parent before creating any storage or journal records.
     repository_.fileEditor(id);
-    MidiFile file; file.midiId = id; file.originalFilename = filename; file.publicDistributionConfirmed = true;
+    MidiFile file; file.midiId = id; file.originalFilename = filename; file.publicDistributionConfirmed = rightsConfirmed;
     file.sha256 = storage::sha256(bytes); file.storageKey = file.sha256; file.fileSize = bytes.size();
-    return repository_.importFile(file, revision, [&] { objects_.store(file.storageKey, bytes); });
+    return repository_.importFile(file, revision, bytes, [&] {
+        if (file.publicDistributionConfirmed) objects_.store(file.storageKey, bytes);
+    });
 }
 std::size_t MidiImportService::cleanup() {
     return repository_.cleanupImports([&](const std::string& key) { objects_.remove(key); });

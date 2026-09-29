@@ -19,12 +19,13 @@ public:
     virtual ~IMidiImportRepository() = default;
     // Replays return the current entry without invoking persist() or changing metadata.
     virtual MidiEntry createWithRequest(const MidiEntry& entry, const std::string& requestId,
-        const std::string& payloadSha256, const std::optional<MidiFile>& file,
+        const std::string& payloadSha256, const std::optional<MidiFile>& file, std::span<const std::byte> bytes,
         const std::function<void()>& persist) = 0;
     virtual FileEditor fileEditor(std::int64_t id) = 0;
     // Serializes each content hash across instances and checks the parent revision.
     // A committed journal must exist before persist() can write external storage.
-    virtual FileImportResult importFile(const MidiFile& file, std::int64_t revision, const std::function<void()>& persist) = 0;
+    virtual FileImportResult importFile(const MidiFile& file, std::int64_t revision,
+        std::span<const std::byte> bytes, const std::function<void()>& persist) = 0;
     virtual std::size_t cleanupImports(const std::function<void(const std::string&)>& remove) = 0;
 };
 class MidiImportService {

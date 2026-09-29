@@ -135,7 +135,7 @@ midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
 }
 }
 Json::Value ApiController::completeStagedCreate(const auth::SessionPrincipal& actor, Json::Value entry,
-    const std::string& filename, const std::vector<std::byte>& bytes) {
+    const std::string& filename, const std::vector<std::byte>& bytes, bool publicDownload) {
     if (!entry.isObject() || !entry["request_id"].isString())
         throw ApiError(400, "INVALID_INPUT", "A creation request id is required.");
     const auto requestId = stringOf(entry, "request_id", 36);
@@ -148,11 +148,11 @@ Json::Value ApiController::completeStagedCreate(const auth::SessionPrincipal& ac
         payload["request_id"] = requestId;
         payload["file"]["filename"] = filename;
         payload["file"]["content_base64"] = base64(std::span(bytes));
-        payload["file"]["rights_confirmed"] = true;
+        payload["file"]["rights_confirmed"] = publicDownload;
         return submitAdminChange(actor, "midi.create", 0, payload);
     }
     if (actor.role != "super_admin") throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a super administrator.");
-    midi::MidiCreationFile upload{filename, bytes, true};
+    midi::MidiCreationFile upload{filename, bytes, publicDownload};
     const auto saved = importer_.create(entryOf(entry, false), requestId, upload);
     recordContributor(saved.id, actor.username);
     logEvent("midi_created");
@@ -258,9 +258,22 @@ void ApiController::registerAdminRoutes() {
                         if (!payload["rights_confirmed"].isBool()) throw ApiError(400, "INVALID_INPUT", "Distribution confirmation is required.");
                         const auto bytes = midi::decodeMidiContentBase64(encoded);
                         midi::validateFilename(filename); midi::validateFileContent(bytes);
-                        if (!payload["rights_confirmed"].asBool()) throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
                         const auto result = importer_.import(entity, revisionOf(payload), filename, bytes, payload["rights_confirmed"].asBool());
                         applied["file"] = toJson(result.file); applied["duplicate"] = result.duplicate; applied["revision"] = Json::Int64(result.revision);
+                    }
+                    else if (type == "file.visibility" || type == "file.delete") {
+                        fieldsOf(payload, type == "file.visibility"
+                            ? std::set<std::string>{"revision", "file_id", "public_download_enabled"}
+                            : std::set<std::string>{"revision", "file_id"});
+                        const auto fileId = idOf(stringOf(payload, "file_id", 19));
+                        if (type == "file.visibility" && !payload["public_download_enabled"].isBool())
+                            throw ApiError(400, "INVALID_INPUT", "Download setting must be a boolean.");
+                        applied = manageMidiFile(entity, fileId, revisionOf(payload),
+                            type == "file.visibility" ? std::optional<bool>(payload["public_download_enabled"].asBool()) : std::nullopt);
+                    }
+                    else if (type == "evidence.delete") {
+                        fieldsOf(payload, {"revision", "evidence_id"});
+                        applied = deleteEvidence(entity, idOf(stringOf(payload, "evidence_id", 19)), revisionOf(payload));
                     }
                     else if (type == "evidence.upload") {
                         fieldsOf(payload, {"revision", "record_id", "relation_type", "filename", "media_type", "content_base64", "sha256"});
@@ -307,7 +320,7 @@ void ApiController::registerAdminRoutes() {
                     }
                     else throw ApiError(422, "REVIEW_TYPE_UNSUPPORTED", "This request type cannot be approved through the review panel.");
                     if (type == "midi.create") recordContributor(std::stoll(applied["id"].asString()), proposedBy);
-                    else if (type == "midi.update" || type == "credits.update" || type.starts_with("history.") || type == "file.import" || type == "evidence.upload")
+                    else if (type == "midi.update" || type == "credits.update" || type.starts_with("history.") || type.starts_with("file.") || type.starts_with("evidence."))
                         recordContributor(entity, proposedBy);
                     db_->execSqlSync("UPDATE admin_change_requests SET status='approved',review_note=$2,reviewed_by=$3,reviewed_at=CURRENT_TIMESTAMP,result=$4::jsonb WHERE id=$1::uuid", requestId, note, reviewer.username, applied.toStyledString());
                 } catch (const ApiError& error) {
@@ -789,8 +802,8 @@ void ApiController::registerAdminRoutes() {
                     if (!importer_.enabled()) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled.");
                     const auto& file = body["file"];
                     fieldsOf(file, {"filename", "content_base64", "rights_confirmed"});
-                    if (!file["rights_confirmed"].isBool() || !file["rights_confirmed"].asBool())
-                        throw ApiError(400, "RIGHTS_CONFIRMATION_REQUIRED", "Confirm the right to publicly distribute this file.");
+                    if (!file["rights_confirmed"].isBool())
+                        throw ApiError(400, "INVALID_INPUT", "File download visibility must be a boolean.");
                     midi::validateFilename(stringOf(file, "filename", 255));
                     if (!file["content_base64"].isString()) throw ApiError(400, "INVALID_FILE", "File content is required.");
                     midi::validateFileContent(midi::decodeMidiContentBase64(file["content_base64"].asString()));

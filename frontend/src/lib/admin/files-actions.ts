@@ -18,7 +18,6 @@ const messages: Record<string, string> = {
   INVALID_INPUT: "字段格式或长度不符合要求，请核对档案资料。",
   FILE_TOO_LARGE: "文件过大；单个文件最大 20 MB（20,000,000 字节）。",
   INVALID_FILE: "请选择非空文件，文件名不能包含路径、控制字符或首尾空格。",
-  RIGHTS_CONFIRMATION_REQUIRED: "请先确认你有权公开分发此文件。",
   STORAGE_UNAVAILABLE: "存储服务暂时不可用。请先核对已存记录，再决定是否重试。",
   IMPORT_DISABLED: "文件导入尚未启用或已暂停；可以移除文件，仅保存文字资料。",
   SERVER_BUSY: "服务繁忙，请先核对已存记录，再稍后重试。",
@@ -44,7 +43,6 @@ function selectedFile(form: FormData) {
   if (form.getAll("file").length !== 1 || !(file instanceof File) || !file.name || !file.size)
     throw new TransferError(400, "INVALID_FILE");
   if (file.size > maxFileSize) throw new TransferError(413, "FILE_TOO_LARGE");
-  if (form.get("rights_confirmed") !== "true") throw new TransferError(400, "RIGHTS_CONFIRMATION_REQUIRED");
   return file;
 }
 
@@ -57,7 +55,7 @@ async function transfer<T>(path: string, options: RequestInit): Promise<T> {
   return body as T;
 }
 
-async function stageFile(file: File) {
+async function stageFile(file: File, publicDownload: boolean) {
   const bytes = await file.arrayBuffer();
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2, "0")).join("");
   const uploadId = crypto.randomUUID();
@@ -69,7 +67,7 @@ async function stageFile(file: File) {
       body: file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize)),
     });
   }
-  return { uploadId, size: file.size, chunks, sha256: digest, filename: file.name, rights_confirmed: true };
+  return { uploadId, size: file.size, chunks, sha256: digest, filename: file.name, rights_confirmed: publicDownload };
 }
 
 export async function importMidiFile(form: FormData): Promise<MidiFileImportState> {
@@ -78,7 +76,7 @@ export async function importMidiFile(form: FormData): Promise<MidiFileImportStat
     const id = String(form.get("id") ?? ""), revision = String(form.get("revision") ?? "");
     if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > BigInt("9223372036854775807")
       || !/^[1-9]\d*$/.test(revision) || !Number.isSafeInteger(Number(revision))) throw new TransferError(400, "INVALID_INPUT");
-    const staged = await stageFile(file);
+    const staged = await stageFile(file, form.get("rights_confirmed") === "true");
     const imported = await transfer<{ request_id?: string; status?: string; file?: MidiDetail["files"][number]; duplicate?: boolean; revision?: number }>(
       `/admin/file-transfer/uploads/${staged.uploadId}/complete`, {
         headers: { "Content-Type": "application/json" },
@@ -105,7 +103,7 @@ export async function createMidiWithFile(form: FormData): Promise<MidiSaveState>
       copyright_status: value("copyright_status"), distribution_permission: value("distribution_permission"),
       license: value("license") || null, rights_holder: value("rights_holder") || null, request_id: requestId,
     };
-    const staged = await stageFile(file);
+    const staged = await stageFile(file, form.get("rights_confirmed") === "true");
     sent = true;
     const saved = await transfer<MidiEntry | { request_id: string; status: "pending" }>(`/admin/file-transfer/uploads/${staged.uploadId}/complete`, {
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...staged, mode: "create", entry }),
