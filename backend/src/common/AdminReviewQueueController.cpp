@@ -9,6 +9,8 @@ Json::Value changePage(const drogon::orm::DbClientPtr& db, const drogon::HttpReq
     const auto& params = request->getParameters();
     const auto page = params.contains("page") ? positiveInteger(params.at("page"), 1000000, "page") : 1;
     const auto pageSize = params.contains("pageSize") ? positiveInteger(params.at("pageSize"), 50, "pageSize") : 20;
+    const auto limit = static_cast<std::int64_t>(pageSize);
+    const auto offset = static_cast<std::int64_t>(page - 1) * pageSize;
     const auto status = params.contains("status") ? params.at("status") : std::string(ownOnly ? "all" : "pending");
     if (status != "all" && status != "pending" && status != "reviewing" && status != "failed" && status != "approved" && status != "rejected" && status != "stale")
         throw ApiError(400, "INVALID_INPUT", "Unknown review status.");
@@ -21,11 +23,11 @@ Json::Value changePage(const drogon::orm::DbClientPtr& db, const drogon::HttpReq
             : db->execSqlSync("SELECT count(*) AS total FROM admin_change_requests WHERE status=$1", status));
     const auto rows = ownOnly
         ? (status == "all"
-            ? db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE proposed_by=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3", actor.username, pageSize, (page - 1) * pageSize)
-            : db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE proposed_by=$1 AND status=$2 ORDER BY created_at DESC,id DESC LIMIT $3 OFFSET $4", actor.username, status, pageSize, (page - 1) * pageSize))
+            ? db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE proposed_by=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3", actor.username, limit, offset)
+            : db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE proposed_by=$1 AND status=$2 ORDER BY created_at DESC,id DESC LIMIT $3 OFFSET $4", actor.username, status, limit, offset))
         : (status == "all"
-            ? db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2", pageSize, (page - 1) * pageSize)
-            : db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE status=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3", status, pageSize, (page - 1) * pageSize));
+            ? db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2", limit, offset)
+            : db->execSqlSync("SELECT id::text,request_type,entity_id,proposed_by,((payload - 'content_base64') #- '{file,content_base64}')::text AS payload,status,review_note,created_at FROM admin_change_requests WHERE status=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3", status, limit, offset));
     Json::Value result; result["data"] = Json::Value(Json::arrayValue);
     result["pagination"]["page"] = page; result["pagination"]["pageSize"] = pageSize;
     result["pagination"]["total"] = Json::Int64(totalRows[0]["total"].as<std::int64_t>());

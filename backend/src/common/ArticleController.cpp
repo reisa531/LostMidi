@@ -154,7 +154,7 @@ void ApiController::registerArticleRoutes() {
             for (const auto& row : db_->execSqlSync(
                 "SELECT a.public_id,a.title,a.status,a.author_username,a.revision,a.created_at,a.updated_at FROM articles a WHERE a.status='published' AND EXISTS("
                 "SELECT 1 FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id WHERE am.article_id=a.public_id AND m.deleted_at IS NULL) "
-                "ORDER BY a.updated_at DESC,a.public_id LIMIT $1 OFFSET $2", pageSize, static_cast<std::int64_t>(page - 1) * pageSize))
+                "ORDER BY a.updated_at DESC,a.public_id LIMIT $1 OFFSET $2", static_cast<std::int64_t>(pageSize), static_cast<std::int64_t>(page - 1) * pageSize))
                 result["data"].append(summary(row));
             result["page"] = page;
             result["pageSize"] = pageSize;
