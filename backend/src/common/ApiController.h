@@ -27,6 +27,8 @@ private:
     void dispatchResponse(Callback callback, std::function<drogon::HttpResponsePtr()> work);
     Json::Value submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
                                   std::int64_t entityId, const Json::Value& payload);
+    Json::Value completeStagedCreate(const auth::SessionPrincipal& actor, Json::Value entry,
+                                     const std::string& filename, const std::vector<std::byte>& bytes);
     void registerAdminRoutes();
     void registerAdminReviewQueueRoutes();
     void registerAdminRecoveryRoutes();

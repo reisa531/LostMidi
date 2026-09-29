@@ -57,16 +57,32 @@ async function transfer<T>(path: string, options: RequestInit): Promise<T> {
   return body as T;
 }
 
+async function stageFile(file: File) {
+  const bytes = await file.arrayBuffer();
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2, "0")).join("");
+  const uploadId = crypto.randomUUID();
+  const chunkSize = 2_000_000;
+  const chunks = Math.ceil(file.size / chunkSize);
+  for (let index = 0; index < chunks; index++) {
+    await transfer(`/admin/file-transfer/uploads/${uploadId}/chunks/${index}`, {
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize)),
+    });
+  }
+  return { uploadId, size: file.size, chunks, sha256: digest, filename: file.name, rights_confirmed: true };
+}
+
 export async function importMidiFile(form: FormData): Promise<MidiFileImportState> {
   try {
     const file = selectedFile(form);
     const id = String(form.get("id") ?? ""), revision = String(form.get("revision") ?? "");
     if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > BigInt("9223372036854775807")
       || !/^[1-9]\d*$/.test(revision) || !Number.isSafeInteger(Number(revision))) throw new TransferError(400, "INVALID_INPUT");
+    const staged = await stageFile(file);
     const imported = await transfer<{ request_id?: string; status?: string; file?: MidiDetail["files"][number]; duplicate?: boolean; revision?: number }>(
-      `/admin/file-transfer/${id}/files`, {
-        headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(file.name),
-          "X-Entry-Revision": revision, "X-Rights-Confirmed": "true" }, body: file,
+      `/admin/file-transfer/uploads/${staged.uploadId}/complete`, {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...staged, mode: "import", id, revision }),
       });
     if (imported.status === "pending" && imported.request_id) return { error: "", queued: true };
     if (!imported.file || typeof imported.revision !== "number") throw new TransferError(502, "INVALID_RESPONSE");
@@ -83,22 +99,16 @@ export async function createMidiWithFile(form: FormData): Promise<MidiSaveState>
     const year = value("estimated_year"), requestId = value("request_id");
     if ((year && !/^\d{1,4}$/.test(year)) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId))
       throw new TransferError(400, "INVALID_INPUT");
-    const encoded = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("File read failed"));
-      reader.onload = () => typeof reader.result === "string" ? resolve(reader.result.slice(reader.result.indexOf(",") + 1)) : reject(new Error("File read failed"));
-      reader.readAsDataURL(file);
-    });
-    const body = {
+    const entry = {
       title: value("title"), slug: value("slug"), description: value("description") || null,
       estimated_year: year ? Number(year) : null, estimated_date: value("estimated_date") || null, archive_status: value("archive_status"),
       copyright_status: value("copyright_status"), distribution_permission: value("distribution_permission"),
       license: value("license") || null, rights_holder: value("rights_holder") || null, request_id: requestId,
-      file: { filename: file.name, content_base64: encoded, rights_confirmed: true },
     };
+    const staged = await stageFile(file);
     sent = true;
-    const saved = await transfer<MidiEntry | { request_id: string; status: "pending" }>("/admin/file-transfer/create", {
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    const saved = await transfer<MidiEntry | { request_id: string; status: "pending" }>(`/admin/file-transfer/uploads/${staged.uploadId}/complete`, {
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...staged, mode: "create", entry }),
     });
     if ("request_id" in saved) return { error: "", queued: true };
     if (!saved.id) throw new TransferError(502, "INVALID_RESPONSE");

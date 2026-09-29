@@ -216,7 +216,7 @@ sudo install -d -o 10001 -g 10001 -m 0750 ./storage
 - `X-Entry-Revision: 当前档案 revision`
 - `X-Rights-Confirmed: true`（确认有权公开分发此文件）
 
-每次上传单个非空文件，**不限扩展名或音乐格式，最大 15 MB（15,000,000 字节，含边界）**，保留原始内容，不解析或转码。文件传输使用 `/admin/file-transfer/` 下的同域外部 rewrite 直接代理至 C++，不经过 Vercel Function 的 4.5 MB 请求体入口；纯文字操作仍使用 `2mb` 的 Server Action。后端仅在上传接口接受 HttpOnly 管理 Cookie，并精确校验 `ADMIN_ORIGIN`，不会把会话或存储密钥交给浏览器脚本。前后端均须配置同一个 `ADMIN_ORIGIN`；`BACKEND_API_URL` 须在前端构建时可用，变更后重新构建。上传即同意公开分发，不修改版权、分发许可或归档状态；普通管理员上传仍须审核。
+每次上传单个非空文件，**不限扩展名或音乐格式，最大 20 MB（20,000,000 字节，含边界）**，保留原始内容，不解析或转码。浏览器经 `/admin/file-transfer/uploads/` 的同域 rewrite 分成最多 10 个、每个不超过 2 MB 的请求，避开 Vercel Function 的 4.5 MB 请求体上限；后端暂存分块并校验总大小与 SHA-256 后才保存文件或提交审核。未完成的暂存上传在 24 小时后清理；纯文字操作仍使用 `2mb` 的 Server Action。后端仅在上传接口接受 HttpOnly 管理 Cookie，并精确校验 `ADMIN_ORIGIN`，不会把会话或存储密钥交给浏览器脚本。前后端均须配置同一个 `ADMIN_ORIGIN`；`BACKEND_API_URL` 须在前端构建时可用，变更后重新构建。上传即同意公开分发，不修改版权、分发许可或归档状态；普通管理员上传仍须审核。
 
 访客下载通过站内 `GET /api/midis/{slug}/files/{id}/download` 的同域外部 rewrite 转发到后端 `GET /api/v1/midis/{slug}/files/{id}/download`，不经过 Next.js 下载函数，不携带管理员会话。成功返回 `application/octet-stream` 附件及 UTF-8 原文件名，禁止内容嗅探；逐次核对数据库中的文件归属、分发确认、长度和 SHA-256，local 与 S3 均适用，最大 15 MB。没有上传确认的旧记录不开放下载；条目的 `restricted` / `metadata_only` 优先禁止下载，其他状态仍需文件确认。`MIDI_IMPORT_ENABLED=false` 只暂停新增上传，不关闭已获准文件的下载。
 
@@ -258,7 +258,7 @@ docker compose up -d --wait --wait-timeout 180
 
 `migrate` 显示 **Exited (0)** 是正常情况；其他三个服务应处于运行且健康状态。依赖规则参考 [Compose 启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)。
 
-本分支当前应用需要全部迁移至 `021_midi_slug_history.sql`。009 增加 PostgreSQL trigram 搜索索引；010 增加回收站和审计；011 增加对象清理重试信息；012 增加来源类型、人工可信度、核验时间和数据库内证据附件；013 增加多管理员及邀请；014 为作品和人物增加稳定公开 UUID；015 增加内容审核队列；016 增加人物资料和推测日期；017–018 支持来源类型多选及自定义文本标签；019 增加新归档状态、账号注册及编号复用；020 增加文章；021 保留 MIDI 历史 slug。证据附件为最多 1 MiB 的 PDF、JPEG、PNG 或纯文本，SHA-256 校验，下载须后台会话。关闭文件上传也不能跳过后续迁移。
+本分支当前应用需要全部迁移至 `024_chunked_file_uploads.sql`。009 增加 PostgreSQL trigram 搜索索引；010 增加回收站和审计；011 增加对象清理重试信息；012 增加来源类型、人工可信度、核验时间和数据库内证据附件；013 增加多管理员及邀请；014 为作品和人物增加稳定公开 UUID；015 增加内容审核队列；016 增加人物资料和推测日期；017–018 支持来源类型多选及自定义文本标签；019 增加新归档状态、账号注册及编号复用；020 增加文章；021 保留 MIDI 历史 slug；022–023 增加贡献者、常用网址和注册验证码；024 增加音乐文件分块暂存。证据附件为最多 1 MiB 的 PDF、JPEG、PNG 或纯文本，SHA-256 校验，下载须后台会话。关闭文件上传也不能跳过后续迁移。
 
 ## 5. 部署验收
 

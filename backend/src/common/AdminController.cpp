@@ -1,5 +1,6 @@
 #include "common/ApiController.h"
 #include "common/Json.h"
+#include "common/FileEncoding.h"
 #include "common/Log.h"
 #include "common/Transaction.h"
 #include "auth/Password.h"
@@ -132,6 +133,30 @@ midi::MidiEntry entryOf(const Json::Value& json, bool editing) {
     }
     return entry;
 }
+}
+Json::Value ApiController::completeStagedCreate(const auth::SessionPrincipal& actor, Json::Value entry,
+    const std::string& filename, const std::vector<std::byte>& bytes) {
+    if (!entry.isObject() || !entry["request_id"].isString())
+        throw ApiError(400, "INVALID_INPUT", "A creation request id is required.");
+    const auto requestId = stringOf(entry, "request_id", 36);
+    entry.removeMember("request_id");
+    midi::validateFilename(filename);
+    midi::validateFileContent(bytes);
+    if (actor.role == "admin") {
+        if (!importer_.enabled()) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled.");
+        auto payload = entry;
+        payload["request_id"] = requestId;
+        payload["file"]["filename"] = filename;
+        payload["file"]["content_base64"] = base64(std::span(bytes));
+        payload["file"]["rights_confirmed"] = true;
+        return submitAdminChange(actor, "midi.create", 0, payload);
+    }
+    if (actor.role != "super_admin") throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a super administrator.");
+    midi::MidiCreationFile upload{filename, bytes, true};
+    const auto saved = importer_.create(entryOf(entry, false), requestId, upload);
+    recordContributor(saved.id, actor.username);
+    logEvent("midi_created");
+    return toJson(saved);
 }
 void ApiController::registerAdminRoutes() {
     registerAdminReviewQueueRoutes();

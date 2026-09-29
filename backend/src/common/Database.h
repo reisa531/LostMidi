@@ -121,5 +121,11 @@ inline void requireDatabaseReady(const drogon::orm::DbClientPtr& db) {
         "to_regclass('registration_captchas') IS NOT NULL AS captcha_table");
     if (!captcha[0]["applied"].as<bool>() || !captcha[0]["captcha_table"].as<bool>())
         throw ApiError(503, "DATABASE_NOT_READY", "Required registration captcha migration is not applied.");
+    const auto uploads = db->execSqlSync(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version='024_chunked_file_uploads.sql') AS applied, "
+        "to_regclass('file_uploads') IS NOT NULL AS uploads, "
+        "to_regclass('file_upload_chunks') IS NOT NULL AS chunks");
+    if (!uploads[0]["applied"].as<bool>() || !uploads[0]["uploads"].as<bool>() || !uploads[0]["chunks"].as<bool>())
+        throw ApiError(503, "DATABASE_NOT_READY", "Required chunked upload migration is not applied.");
 }
 }  // namespace lostmidi

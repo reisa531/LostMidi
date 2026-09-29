@@ -6,7 +6,7 @@
 
 部署与运维请从 [RUN.md](RUN.md) 开始；本批改动的部署顺序与验收项见 [发布验收清单](docs/release-checklist.md)。
 
-前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。部署当前工作区前须备份并运行 `database/migrate.sh` 应用全部迁移至 `021_midi_slug_history.sql`；其中 016 增加人物资料与推测日期，017–018 支持历史来源的多选及自定义文本标签，019 调整档案状态、账号注册与编号分配。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
+前后端保留在同一 Git 仓库，分别部署：前端 Vercel 项目的 Root Directory 为 `frontend`；生产后端使用独立 Vercel 容器项目 + Neon Free，根 `vercel.json` 是后端配置。旧 VPS / Compose 部署仍可用。部署当前工作区前须备份并运行 `database/migrate.sh` 应用全部迁移至 `024_chunked_file_uploads.sql`；其中 024 为 20 MB 音乐文件上传提供分块暂存表。详见 [Vercel 部署指引与前端一键部署入口](docs/vercel-assessment.md)。
 
 前端根布局已接入 `@vercel/analytics/next`。在 Vercel 项目中启用 Web Analytics 后，部署前端并访问站点即可开始采集页面浏览；本地开发数据不会替代生产访问数据。
 

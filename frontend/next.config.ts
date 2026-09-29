@@ -12,10 +12,12 @@ const nextConfig: NextConfig = {
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash)
       throw new Error("Invalid BACKEND_API_URL");
     const backend = url.href.replace(/\/$/, "");
-    // External rewrites avoid routing file bodies through a size-limited Vercel Function.
+    // Each file chunk stays below Vercel Function's request body limit.
     return { beforeFiles: [
       { source: "/admin/file-transfer/create", destination: `${backend}/api/v1/admin/midis` },
       { source: "/admin/file-transfer/:id([1-9][0-9]*)/files", destination: `${backend}/api/v1/admin/midis/:id/files` },
+      { source: "/admin/file-transfer/uploads/:upload/chunks/:index", destination: `${backend}/api/v1/admin/uploads/:upload/chunks/:index` },
+      { source: "/admin/file-transfer/uploads/:upload/complete", destination: `${backend}/api/v1/admin/uploads/:upload/complete` },
       { source: "/api/midis/:slug/files/:id/download", destination: `${backend}/api/v1/midis/:slug/files/:id/download` },
     ] };
   },
