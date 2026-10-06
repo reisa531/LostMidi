@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 const links = [
-  { href: "/", label: "首页总览" },
+  { href: "/", label: "首页" },
+  { href: "/overview", label: "总览" },
   { href: "/midis", label: "MIDI" },
   { href: "/search", label: "搜索" },
   { href: "/people", label: "作者" },

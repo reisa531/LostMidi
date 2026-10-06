@@ -16,7 +16,7 @@ export type SitemapUrl = { loc: string; lastModified?: string; changeFrequency: 
 type Kind = "midis" | "people" | "articles";
 const KINDS: Kind[] = ["midis", "people", "articles"];
 /** Public entry points; `/search` stays out of the sitemap by design. */
-const STATIC_PATHS = ["/", "/midis", "/people", "/articles", "/recovery", "/map", "/about", "/sponsor", "/changelog"];
+const STATIC_PATHS = ["/", "/overview", "/midis", "/people", "/articles", "/recovery", "/map", "/about", "/sponsor", "/changelog"];
 
 function isoDate(value: unknown): string | undefined {
   const date = new Date(typeof value === "string" ? value : "");

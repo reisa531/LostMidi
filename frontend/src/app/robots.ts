@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default function robots(): MetadataRoute.Robots {
   const base = siteOrigin();
   return {
-    rules: [{ userAgent: "*", allow: ["/", "/midis", "/people", "/recovery", "/map", "/about"], disallow: ["/admin", "/install", "/api/"] }],
+    rules: [{ userAgent: "*", allow: ["/", "/overview", "/midis", "/people", "/recovery", "/map", "/about"], disallow: ["/admin", "/install", "/api/"] }],
     // /sitemap.xml always answers; when the archive outgrows one document it lists the /sitemap/<id>.xml shards.
     sitemap: base ? [`${base}/sitemap.xml`] : [],
   };
