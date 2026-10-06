@@ -10,6 +10,10 @@ import type { Metadata } from "next";
 import { Markdown, markdownSummary } from "@/components/markdown";
 import { Suspense } from "react";
 import { RelatedArticlesFor } from "@/components/related-articles";
+import { RelatedEntries } from "@/components/related-entries";
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { absoluteUrl, jsonLd, siteOrigin } from "@/lib/seo";
+import { musicCompositionSchema, type Crumb } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -19,7 +23,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     const detail = stableId ? await getMidiByPublicId(slug) : await getMidiBySlug(slug);
     const title = detail.entry.title;
     const description = markdownSummary(detail.entry.description || `查看 ${title} 的 MIDI 作品、署名、历史来源与寻回记录。`, 155);
-    return { title, description, alternates: { canonical: `/midis/${detail.entry.slug}` }, openGraph: { type: "article", title, description }, twitter: { card: "summary", title, description } };
+    const path = `/midis/${detail.entry.slug}`;
+    return { title, description, alternates: { canonical: path },
+      openGraph: { type: "article", title, description, url: absoluteUrl(path) ?? undefined, modifiedTime: detail.entry.updated_at },
+      twitter: { card: "summary_large_image", title, description } };
   } catch { return { title: "档案详情", robots: { index: false, follow: false } }; }
 }
 export default async function MidiDetailPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -36,16 +43,27 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
   const { entry, historical_sources, recovery_events, files } = detail;
   const credits = detail.credits.filter(credit => credit.role !== "contributor");
   const authors = new Map(detail.people.map(person => [person.id, person]));
-  const structuredData = {
-    "@context": "https://schema.org", "@type": "MusicComposition", name: entry.title,
-    description: entry.description ? markdownSummary(entry.description, 155) : undefined, dateCreated: entry.estimated_date ?? (entry.estimated_year ? String(entry.estimated_year) : undefined),
-    url: `${process.env.ADMIN_ORIGIN ?? ""}/midis/${detail.entry.slug}`,
-    author: credits.map(credit => ({ "@type": "Person", name: credit.display_name })),
-  };
+  const personPath = (personId: string) => `/people/${authors.get(personId)?.public_id ?? personId}`;
+  const composer = credits.find(credit => credit.role === "composer");
+  const sourceNames = [...new Set(historical_sources.map(source => source.website_name))];
+  const structuredData = musicCompositionSchema({
+    origin: siteOrigin() ?? undefined, path: `/midis/${detail.entry.slug}`, title: entry.title,
+    description: entry.description ? markdownSummary(entry.description, 155) : undefined,
+    identifier: entry.public_id,
+    dateCreated: entry.estimated_date ?? (entry.estimated_year ? String(entry.estimated_year) : undefined),
+    dateModified: entry.updated_at,
+    composers: credits.filter(credit => credit.role === "composer").map(credit => ({ name: credit.display_name, path: personPath(credit.person_id) })),
+    contributors: credits.filter(credit => credit.role !== "composer").map(credit => ({ name: credit.display_name, path: personPath(credit.person_id) })),
+  });
+  const crumbs: Crumb[] = [
+    { name: "首页", path: "/" },
+    { name: "MIDI 档案", path: "/midis" },
+    { name: entry.title, path: `/midis/${detail.entry.slug}` },
+  ];
   return <article className="mx-auto max-w-3xl">
-    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
-    <Link href="/midis" className="archive-link text-sm">← 全部 MIDI 档案</Link>
-    <p className="eyebrow mt-10">档案编号 / {entry.id}</p>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} />
+    <Breadcrumbs items={crumbs} />
+    <p className="eyebrow">档案编号 / {entry.id}</p>
     <h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1>
     <div className="mb-7 flex items-center gap-4"><Status status={entry.archive_status} /><span className="text-sm text-muted">推测时间：{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</span></div>
     {entry.description ? <Markdown source={entry.description} className="mb-9" /> : <p className="mb-9 text-muted">尚无描述。</p>}
@@ -93,6 +111,9 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
       <div><dt className="text-muted">许可证</dt><dd>{entry.license ?? "尚未确认"}</dd></div>
       <div><dt className="text-muted">权利人</dt><dd>{entry.rights_holder ?? "尚未确认"}</dd></div>
     </dl></Section>
+    <Suspense fallback={<p className="border-t border-line pt-5 text-sm text-muted">正在加载相关档案…</p>}>
+      <RelatedEntries sources={sourceNames} person={composer ? { id: composer.person_id, name: composer.display_name } : undefined} excludeSlug={entry.slug} />
+    </Suspense>
     <Suspense fallback={<p className="text-sm text-muted">正在加载相关文章…</p>}><RelatedArticlesFor kind="midi" id={detail.entry.public_id} /></Suspense>
   </article>;
 }

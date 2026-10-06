@@ -1,0 +1,52 @@
+name: IndexNow submission
+on:
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: 站点来源（留空用生产域名）
+        required: false
+        default: ""
+      all:
+        description: 忽略状态文件，提交全部 URL
+        type: boolean
+        required: false
+        default: false
+      dry_run:
+        description: 只打印批次，不发送提交请求
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    # 每天 02:17 UTC 提交 sitemap 中变化的 URL。
+    - cron: "17 2 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: indexnow
+  cancel-in-progress: false
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+      - name: Restore submission state
+        uses: actions/cache/restore@v4
+        with:
+          path: .local/indexnow-state.json
+          key: indexnow-state-${{ github.run_id }}
+          restore-keys: indexnow-state-
+      - name: Verify key file and submit changed URLs
+        env:
+          ADMIN_ORIGIN: ${{ inputs.origin || 'https://lostmidi.dzhes.xyz' }}
+        run: |
+          node scripts/indexnow.mjs --engine indexnow ${{ inputs.all && '--all' || '' }} ${{ inputs.dry_run && '--dry-run' || '' }}
+      - name: Save submission state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .local/indexnow-state.json
+          key: indexnow-state-${{ github.run_id }}

@@ -448,6 +448,37 @@ docker compose up -d --wait --wait-timeout 180
 
 应用回退前确认旧版本兼容现有 schema，再切换旧提交或保留的镜像重新部署。当前没有 down migration；回退代码不会回退数据库。若 schema 不兼容，应恢复匹配的数据库与文件备份，并明确备份时间之后的数据如何处理。不要用删除 volume 的方式冒充回滚。
 
+### 7.4 搜索引擎推送（IndexNow）
+
+IndexNow 的 key 文件固定托管在站点根目录：`frontend/public/5c270565dbaf403db9534550a63670e3.txt`，部署后即 `https://lostmidi.dzhes.xyz/5c270565dbaf403db9534550a63670e3.txt`，文件内容就是 key 本身。更换 key 时必须同时改文件名、文件内容和 `scripts/indexnow.mjs` 的 `KEY_FILE_NAME`，并在搜索引擎后台登记新 key。
+
+```sh
+node scripts/indexnow.mjs --verify-only        # 只校验 key 文件已正确托管
+node scripts/indexnow.mjs --dry-run            # 打印将要提交的批次，不发提交请求
+node scripts/indexnow.mjs                      # 校验 → 采集 sitemap → 只提交有变化的 URL
+node scripts/indexnow.mjs --all --engine bing  # 忽略状态文件，向 Bing 端点提交全部 URL
+```
+
+脚本从 `<origin>/sitemap.xml` 采集 URL，分片索引会逐片展开，非本站 URL 直接丢弃；默认来源取 `ADMIN_ORIGIN`，可用 `--origin` 覆盖。已提交 URL 与其 `<lastmod>` 记录在 `.local/indexnow-state.json`（已被 gitignore），因此重复运行只提交变化项，`--all` 强制全量，`--prune` 随当前 URL 集合重写状态。协议单次请求上限 10,000 条，超出自动分批；429、5xx 与网络错误按 `Retry-After` 或指数退避重试，400/403/422 属永久失败，不再重试。
+
+退出码：0 成功，1 校验或提交失败，2 参数用法错误。key 文件不可达时脚本立即中止提交（实测未托管 key 的请求会先返回 `202`，之后在异步校验中被丢弃），因此**先部署 key 文件再提交 URL**。`.github/workflows/indexnow.yml` 每天定时执行同一条命令，并用 Actions 缓存存取状态文件，不需要额外密钥。
+
+### 7.5 搜索可见性：结构化数据、卡片图与公开缓存
+
+**结构化数据**由 `frontend/src/lib/schema.ts` 的构造器统一生成，再由 `frontend/src/lib/seo.ts` 的 `jsonLd()` 写进 `<script type="application/ld+json">`。首页输出 `WebSite` + `Dataset` + `CollectionPage` 三节点，作品页输出 `MusicComposition`（`composer` 表署名），人物页输出 `Person`，文章页输出 `Article`；详情页与全站规则约定见 `frontend/src/components/breadcrumbs.tsx`（可见面包屑与 `BreadcrumbList` 同步输出，不得只给爬虫）。缺失的字段一律留空，不猜年代、作者或许可。
+
+**卡片图**遵循 Next 文件式约定：`frontend/src/app/opengraph-image.tsx` 生成站点级卡片，作品、人物、文章三个详情目录下各有自己的 `opengraph-image.tsx`。`next/og` 默认字体只有拉丁字形，因此卡片文本经 `components/og-card.tsx` 的 `asciiText()` 处理，中文标题回落为 slug——不要在卡片里直接渲染中文。注意 Next 的合并规则：页面只要自己声明 `openGraph`，就会丢掉父级继承的图片，这类页面必须显式带上 `siteOgImage()`（首页与关于页已如此处理）。
+
+**公开缓存**：`frontend/src/lib/api/client.ts` 的 `apiRead()` 把公开只读数据写入 Next 数据缓存（默认 60 秒，标签 `ARCHIVE_CACHE_TAG`），后台工作区传 `{ cache: "bypass" }` 换取即时一致性；`frontend/src/lib/admin/auth.ts` 在任何非 GET 的后台请求成功后立即失效该标签（Server Action 内用 `updateTag`，其余上下文退回 `revalidateTag`）。因此新增或修改档案后公开页面无需等待缓存过期。安装状态（`/api/v1/installation`）与注册验证码刻意不缓存，必须即时。站点地图为静态入口输出可核对的 `lastmod`（`/changelog` 取发布记录，列表页取各自采集结果的最新更新时间，手写页面留空），并允许 CDN 缓存十分钟。
+
+**本地校验**：`.local/fake-backend.mjs` 提供固定样例的公开读取端点，`.local/verify-seo.mjs` 对 `next start` 起的服务断言结构化数据、面包屑、卡片图、sitemap 与缓存行为（含“第二次渲染不再回源”）。两者都在 gitignore 范围内，不参与部署：
+
+```sh
+node .local/fake-backend.mjs &
+cd frontend && BACKEND_API_URL=http://127.0.0.1:8099 ADMIN_ORIGIN=http://localhost:3000 npm run start
+node .local/verify-seo.mjs
+```
+
 ## 8. 备份与恢复
 
 以下命令是 **VPS / Compose + local** 的 Linux Bash 示例，不适用于直接备份 Neon 或 S3。备份存于仓库之外并复制到独立存储；数据库、对应对象、部署版本和受控配置共同构成恢复资料。

@@ -1,5 +1,5 @@
 import "server-only";
-import { apiGet } from "./client";
+import { apiRead, type ReadOptions } from "./client";
 import type { ArchiveStatus, CatalogEntries, CatalogGroups, CatalogOverview, CatalogPeople } from "./types";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
@@ -120,19 +120,19 @@ export function mapEntryQuery(query: MapQuery): CatalogQuery {
     source: query.by === "source" ? query.group : undefined,
   };
 }
-export function getCatalogOverview() {
-  return apiGet<CatalogOverview>("/api/v1/catalog/overview");
+export function getCatalogOverview(options: ReadOptions = {}) {
+  return apiRead<CatalogOverview>("/api/v1/catalog/overview", options);
 }
-export function getCatalogEntries(query: CatalogQuery) {
+export function getCatalogEntries(query: CatalogQuery, options: ReadOptions = {}) {
   const valid = readCatalogQuery(toRaw(query));
-  return apiGet<CatalogEntries>(`/api/v1/catalog/entries?${encodeQuery(valid)}`);
+  return apiRead<CatalogEntries>(`/api/v1/catalog/entries?${encodeQuery(valid)}`, options);
 }
-export function getCatalogPeople(query: { page: number; pageSize: number; q?: string }) {
+export function getCatalogPeople(query: { page: number; pageSize: number; q?: string }, options: ReadOptions = {}) {
   const valid = readPeopleQuery(toRaw(query));
-  return apiGet<CatalogPeople>(`/api/v1/people?${encodeQuery(valid)}`);
+  return apiRead<CatalogPeople>(`/api/v1/people?${encodeQuery(valid)}`, options);
 }
-export function getCatalogGroups(by: GroupBy, page = 1) {
+export function getCatalogGroups(by: GroupBy, page = 1, options: ReadOptions = {}) {
   const validBy = groupBy(by) ?? "author";
   const validPage = integer(String(page), 1);
-  return apiGet<CatalogGroups>(`/api/v1/catalog/groups?${encodeQuery({ by: validBy, page: validPage, pageSize: 30 })}`);
+  return apiRead<CatalogGroups>(`/api/v1/catalog/groups?${encodeQuery({ by: validBy, page: validPage, pageSize: 30 })}`, options);
 }

@@ -14,7 +14,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || Number(raw) > 1000000) return <>{notice}<p>页码无效。<Link href="/admin/people" className="underline">返回第一页</Link></p></>;
   const page = Number(raw);
   let result;
-  try { result = q ? await getCatalogPeople({ page, pageSize: 100, q }) : await getPeople(page); } catch (error) {
+  try { result = q ? await getCatalogPeople({ page, pageSize: 100, q }, { cache: "bypass" }) : await getPeople(page); } catch (error) {
     if (error instanceof ApiError && error.status === 401) redirect("/admin/login");
     if (error instanceof ApiError) return <>{notice}<AdminUnavailable /></>;
     throw error;

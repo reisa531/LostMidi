@@ -11,7 +11,7 @@ export const metadata = { title: "工作台" };
 export default async function AdminOverview() {
   await requireAdmin();
   let overview;
-  try { overview = await getCatalogOverview(); } catch (error) {
+  try { overview = await getCatalogOverview({ cache: "bypass" }); } catch (error) {
     if (!(error instanceof ApiError)) throw error;
   }
   const pending = overview ? overview.stats.statuses.verifying + overview.stats.statuses.lost : undefined;

@@ -27,7 +27,7 @@ export default async function HistoryPage({ params, searchParams }: {
   if (failureStatus === 401) redirect("/admin/login");
   if (failureStatus === 404) notFound();
   if (!history) return <AdminUnavailable />;
-  const usefulLinks = await getUsefulLinks().catch(() => []);
+  const usefulLinks = await getUsefulLinks({ cache: "bypass" }).catch(() => []);
   const { saved, deleted, evidence } = await searchParams;
   const reviewRequired = session.role === "admin";
   return <>

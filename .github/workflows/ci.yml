@@ -17,6 +17,8 @@ jobs:
           node-version-file: frontend/.nvmrc
       - name: Test release rules
         run: node --test scripts/release-check.test.mjs
+      - name: Test IndexNow submission tooling
+        run: node --test scripts/indexnow.test.mjs
       - name: Require a new changelog entry for this push
         run: node scripts/check-release.mjs --ci
   frontend:

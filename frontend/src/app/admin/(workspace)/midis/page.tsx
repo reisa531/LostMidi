@@ -20,7 +20,7 @@ export default async function AdminMidis({ searchParams }: { searchParams: Promi
     throw error;
   }
   let result;
-  try { result = await getCatalogEntries({ ...query, pageSize: 20 }); } catch (error) {
+  try { result = await getCatalogEntries({ ...query, pageSize: 20 }, { cache: "bypass" }); } catch (error) {
     const header = <AdminPageHeader eyebrow="音乐条目" title="音乐条目" description="新增和编辑作品基础资料，维护归档状态与权利信息。" />;
     if (error instanceof ApiError) return <>{header}<AdminUnavailable /></>;
     throw error;

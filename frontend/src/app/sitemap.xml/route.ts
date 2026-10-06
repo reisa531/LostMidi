@@ -7,6 +7,6 @@ export async function GET() {
   const document = await buildSitemap();
   const body = document.kind === "index" ? sitemapIndexXml(document.locs) : urlsetXml(document.urls);
   return new Response(body, {
-    headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "no-store" },
+    headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, s-maxage=600, stale-while-revalidate=3600" },
   });
 }

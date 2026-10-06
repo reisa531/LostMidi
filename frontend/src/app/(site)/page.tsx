@@ -3,13 +3,16 @@ import type { Metadata } from "next";
 import { installedSite } from "@/lib/install/state";
 import { loadOverview } from "@/lib/api/overview";
 import type { CatalogOverview } from "@/lib/api/types";
-import { jsonLd, siteOrigin } from "@/lib/seo";
+import { jsonLd, siteOgImage, siteOrigin } from "@/lib/seo";
+import { datasetId, datasetSchema, webSiteId } from "@/lib/schema";
 import { Unavailable } from "@/components/archive";
 import { EntryActivity, MetricGrid, StatusSummary, primaryLink, secondaryLink } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
 
 type Stats = CatalogOverview["stats"];
+
+const homeKeywords = ["早期网络 MIDI", "MIDI 档案", "网络考古", "数字档案", "MIDI 作品", "历史来源", "寻回记录"];
 
 function homeTitle(siteName: string) { return `${siteName} · 早期网络 MIDI 数字档案`; }
 
@@ -37,9 +40,9 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { absolute: title },
     description,
     alternates: { canonical: "/" },
-    keywords: ["早期网络 MIDI", "MIDI 档案", "网络考古", "数字档案", "MIDI 作品", "历史来源", "寻回记录"],
-    openGraph: { type: "website", title, description, siteName: site.name, locale: "zh_CN", url: origin ? `${origin}/` : undefined },
-    twitter: { card: "summary", title, description },
+    keywords: homeKeywords,
+    openGraph: { type: "website", title, description, siteName: site.name, locale: "zh_CN", url: origin ? `${origin}/` : undefined, images: siteOgImage(title) },
+    twitter: { card: "summary_large_image", title, description },
   };
 }
 
@@ -50,18 +53,21 @@ export default async function Home() {
   const site = await installedSite();
   const origin = siteOrigin();
   const description = homeDescription(site.description, stats);
+  // 三个节点互相引用：站点 → 数据集 → 本次渲染的最近收录列表。
+  // datasetSchema 自带 @context，作为 @graph 成员重复声明同一上下文是合法 JSON-LD。
   const structuredData = origin ? {
     "@context": "https://schema.org",
     "@graph": [
       {
-        "@type": "WebSite", "@id": `${origin}/#website`, url: `${origin}/`, name: site.name,
+        "@type": "WebSite", "@id": webSiteId(origin), url: `${origin}/`, name: site.name,
         alternateName: "Lost MIDI Archive", description, inLanguage: "zh-CN",
         potentialAction: { "@type": "SearchAction", target: { "@type": "EntryPoint", urlTemplate: `${origin}/search?q={search_term_string}` }, "query-input": "required name=search_term_string" },
       },
+      datasetSchema({ origin, name: `${site.name} 档案数据集`, description, keywords: homeKeywords, sitemapPath: "/sitemap.xml" }),
       {
         "@type": "CollectionPage", "@id": `${origin}/#collection`, url: `${origin}/`, name: "档案总览", description,
-        isPartOf: { "@id": `${origin}/#website` }, inLanguage: "zh-CN",
-        about: { "@type": "Thing", name: "早期网络 MIDI 作品、人物与历史来源" },
+        isPartOf: { "@id": webSiteId(origin) }, inLanguage: "zh-CN",
+        about: { "@id": datasetId(origin) },
         mainEntity: recent.length ? {
           "@type": "ItemList",
           itemListElement: recent.map((entry, index) => ({

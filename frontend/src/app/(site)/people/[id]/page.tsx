@@ -9,6 +9,9 @@ import { Markdown, markdownHeadings, markdownSummary } from "@/components/markdo
 import { Suspense } from "react";
 import { RelatedArticlesFor } from "@/components/related-articles";
 import { PersonAvatar } from "@/components/person-avatar";
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { absoluteUrl, jsonLd, siteOrigin } from "@/lib/seo";
+import { personSchema, type Crumb } from "@/lib/schema";
 
 type Collaborator = { name: string; personId: string; source: string; publicId?: string };
 async function resolveCollaborators(profile: Record<string, unknown>): Promise<Collaborator[]> {
@@ -43,7 +46,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     const title = detail.person.display_name;
     const description = markdownSummary(detail.person.summary || detail.person.biography || `${title} 的人物档案、历史昵称与相关 MIDI 作品。`, 155);
     const sameAs = Array.isArray(detail.person.profile.sameAs) ? detail.person.profile.sameAs.filter((url): url is string => typeof url === "string" && /^https:\/\//.test(url)) : [];
-    return { title, description, alternates: { canonical: `/people/${detail.person.public_id}` }, openGraph: { type: "profile", title, description }, twitter: { card: "summary", title, description }, other: sameAs.length ? { "profile:same_as": sameAs } : undefined };
+    return { title, description, alternates: { canonical: `/people/${detail.person.public_id}` },
+      openGraph: { type: "profile", title, description, url: absoluteUrl(`/people/${detail.person.public_id}`) ?? undefined },
+      twitter: { card: "summary_large_image", title, description }, other: sameAs.length ? { "profile:same_as": sameAs } : undefined };
   } catch { return { title: "人物档案", robots: { index: false, follow: false } }; }
 }
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,13 +67,21 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const collaborators = await resolveCollaborators(profile);
   const summary = detail.person.summary || markdownSummary(detail.person.biography ?? `${detail.person.display_name} 的人物档案、历史昵称与相关 MIDI 作品。`, 155);
   const sameAs = Array.isArray(profile.sameAs) ? profile.sameAs.filter((url): url is string => typeof url === "string" && /^https:\/\//.test(url)) : [];
-  const structuredData = { "@context": "https://schema.org", "@type": "Person", name: detail.person.display_name, description: summary, sameAs: sameAs.length ? sameAs : undefined, alternateName: detail.aliases.length ? detail.aliases : undefined, url: `${process.env.ADMIN_ORIGIN ?? ""}/people/${detail.person.public_id}` };
+  const structuredData = personSchema({
+    origin: siteOrigin() ?? undefined, publicId: detail.person.public_id, name: detail.person.display_name,
+    description: summary, aliases: detail.aliases, sameAs,
+  });
+  const crumbs: Crumb[] = [
+    { name: "首页", path: "/" },
+    { name: "作者", path: "/people" },
+    { name: detail.person.display_name, path: `/people/${detail.person.public_id}` },
+  ];
   const facts = ["country", "activeTime", "pronunciation", "birthText", "birthplace", "residence", "education", "gender", "roles"].filter(key => profile[key] && (!Array.isArray(profile[key]) || profile[key].length));
   const sites = Array.isArray(profile.sites) ? profile.sites : [];
   const midiGroups = [...detail.midis.reduce((map, midi) => { const current = map.get(midi.id) ?? { ...midi, roles: [] as string[] }; current.roles.push(midi.role); map.set(midi.id, current); return map; }, new Map<string, { id: string; public_id: string; slug: string; title: string; roles: string[] }>()).values()];
   const headings = markdownHeadings(detail.person.biography ?? "");
   const neighbors = [detail.previous, detail.next].filter(Boolean);
-  return <article className="mx-auto max-w-6xl"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} /><p className="eyebrow"><Link href="/people" className="archive-link">人物</Link> / 档案</p>
+  return <article className="mx-auto max-w-6xl"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} /><Breadcrumbs items={crumbs} />
     <div className="my-6 flex items-center gap-5"><PersonAvatar avatar={profile.avatar} name={detail.person.display_name} size={96} /><h1 className="font-serif text-4xl">{detail.person.display_name}</h1></div><p className="mb-8 max-w-3xl text-lg leading-8 text-muted">{summary}</p>
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem]"><div className="min-w-0 space-y-8">
     <section aria-labelledby="bio-title"><h2 id="bio-title" className="mb-4 font-serif text-2xl">人物简介</h2>{detail.person.biography ? <Markdown source={detail.person.biography} /> : <p className="text-muted">人物生平尚待补充。</p>}</section>

@@ -8,6 +8,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const shardId = id.endsWith(".xml") ? id.slice(0, -4) : id;
   const urls = await shardSitemapUrls(shardId);
   return new Response(urlsetXml(urls), {
-    headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "no-store" },
+    headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, s-maxage=600, stale-while-revalidate=3600" },
   });
 }
