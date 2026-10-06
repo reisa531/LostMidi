@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.6.3",
+    "date": "2026-10-06",
+    "title": "站点地图入口与首页搜索优化",
+    "changes": [
+      "新增 /sitemap.xml 站点地图索引，汇总静态入口与 MIDI、人物、文章分片；robots.txt 同时声明索引地址与各分片。",
+      "首页补充独立的搜索引擎标题、描述与结构化数据（WebSite、SearchAction、CollectionPage 及最近作品列表），元数据与页面正文共用同一次目录查询。"
+    ]
+  },
+  {
     "version": "0.6.2",
     "date": "2026-09-29",
     "title": "文件与证据附件管理",

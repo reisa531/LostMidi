@@ -1,8 +1,14 @@
 import type { MetadataRoute } from "next";
-import { generateSitemaps } from "./sitemap";
+import { siteOrigin } from "@/lib/seo";
 
-export default async function robots(): Promise<MetadataRoute.Robots> {
-  const base = process.env.ADMIN_ORIGIN?.replace(/\/$/, "") || "";
-  const sitemaps = base ? await generateSitemaps() : [];
-  return { rules: [{ userAgent: "*", allow: ["/", "/midis", "/people", "/recovery", "/map", "/about"], disallow: ["/admin", "/install", "/api/"] }], sitemap: sitemaps.map(({ id }) => `${base}/sitemap/${id}.xml`) };
+// Read the origin per request: a prerendered robots.txt would bake whichever ADMIN_ORIGIN the build used.
+export const dynamic = "force-dynamic";
+
+export default function robots(): MetadataRoute.Robots {
+  const base = siteOrigin();
+  return {
+    rules: [{ userAgent: "*", allow: ["/", "/midis", "/people", "/recovery", "/map", "/about"], disallow: ["/admin", "/install", "/api/"] }],
+    // /sitemap.xml always answers; when the archive outgrows one document it lists the /sitemap/<id>.xml shards.
+    sitemap: base ? [`${base}/sitemap.xml`] : [],
+  };
 }
