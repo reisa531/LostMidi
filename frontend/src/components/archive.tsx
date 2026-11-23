@@ -19,8 +19,8 @@ export function Credits({ credits }: { credits: Credit[] }) {
     <span className="ml-2 text-xs text-muted">{roleName(c.role)}</span>
   </li>)}</ul> : <p className="text-muted">作者尚待考证</p>;
 }
-export function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="border-t border-line py-8"><h2 className="mb-5 font-serif text-2xl">{title}</h2><div className="space-y-5 text-sm leading-7">{children}</div></section>;
+export function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
+  return <section id={id} className="border-t border-line py-8"><h2 className="mb-5 font-serif text-2xl">{title}</h2><div className="space-y-5 text-sm leading-7">{children}</div></section>;
 }
 export function Unavailable() {
   return <section><p className="eyebrow">档案服务</p><h1 className="my-6 font-serif text-3xl">档案暂时无法读取</h1>

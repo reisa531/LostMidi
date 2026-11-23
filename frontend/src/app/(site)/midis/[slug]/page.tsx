@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getMidiByPublicId, getMidiBySlug } from "@/lib/api/midi";
 import { ApiError } from "@/lib/api/client";
 import { Status, Section, Unavailable, ExternalSource, dateLabel, copyrightLabel, distributionLabel, roleName } from "@/components/archive";
-import { MidiDownload } from "@/components/midi-download";
+import { MidiFileInformation } from "@/components/midi-file-information";
 import { UsageTerms } from "@/components/usage-terms";
 import { EvidenceAttachments } from "@/components/evidence-attachments";
 import type { Metadata } from "next";
@@ -14,6 +14,7 @@ import { RelatedEntries } from "@/components/related-entries";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { absoluteUrl, jsonLd, siteOrigin } from "@/lib/seo";
 import { musicCompositionSchema, type Crumb } from "@/lib/schema";
+import { extractMidiFileMetadata } from "@/lib/midi-file-metadata";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -41,6 +42,7 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
   }
   if (slug !== detail.entry.slug) redirect(`/midis/${detail.entry.slug}`);
   const { entry, historical_sources, recovery_events, files } = detail;
+  const fileMetadata = extractMidiFileMetadata(entry.description ?? "");
   const credits = detail.credits.filter(credit => credit.role !== "contributor");
   const authors = new Map(detail.people.map(person => [person.id, person]));
   const personPath = (personId: string) => `/people/${authors.get(personId)?.public_id ?? personId}`;
@@ -66,7 +68,7 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     <p className="eyebrow">档案编号 / {entry.id}</p>
     <h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1>
     <div className="mb-7 flex items-center gap-4"><Status status={entry.archive_status} /><span className="text-sm text-muted">推测时间：{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</span></div>
-    {entry.description ? <Markdown source={entry.description} className="mb-9" /> : <p className="mb-9 text-muted">尚无描述。</p>}
+    {fileMetadata.description ? <Markdown source={fileMetadata.description} className="mb-9" /> : <p className="mb-9 text-muted">尚无描述。</p>}
     <Section title="人物与署名">{credits.length ? <ul className="grid gap-3 sm:grid-cols-2">{credits.map(credit => {
       const rights = authors.get(credit.person_id)?.profile.rights;
       return <li key={`${credit.person_id}-${credit.role}`} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-white/70 px-4 py-3">
@@ -88,23 +90,8 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
       <Markdown source={event.story} /><div className="mt-3"><p className="text-xs text-muted">证据说明</p>{event.evidence ? <Markdown source={event.evidence} /> : <p className="text-muted">尚未补充</p>}</div>
       <div className="mt-4"><EvidenceAttachments midiId={entry.id} files={event.evidence_files ?? []} /></div>
     </div>) : <p className="text-muted">尚无寻回记录。</p>}</Section>
-    <Section title="文件信息">{files.length ? <>
-      <p className="text-muted">文件是否可下载以具体档案权限为准。公开分发不转让版权，使用时请遵守下方许可与署名要求。</p>
-      {files.map(file => <div key={file.id} className="min-w-0 rounded-sm border border-line p-4 sm:p-5">
-        <dl className="space-y-3">
-          <div><dt className="text-muted">原始文件名</dt><dd className="min-w-0 font-semibold [overflow-wrap:anywhere]">{file.original_filename}</dd></div>
-          <div><dt className="text-muted">大小</dt><dd>{file.file_size.toLocaleString("zh-CN")} 字节</dd></div>
-          <div><dt className="text-muted">SHA-256</dt><dd className="min-w-0 break-all font-mono text-xs">{file.sha256}</dd></div>
-          <div><dt className="text-muted">发现时间</dt><dd>{dateLabel(file.discovered_at)}</dd></div>
-        </dl>
-        {file.download_available === true ? <MidiDownload slug={entry.slug} id={file.id} filename={file.original_filename} /> : <div className="mt-5 space-y-2">
-          <button type="button" disabled className="w-full cursor-not-allowed rounded-sm border border-line px-4 py-2 text-sm text-muted sm:w-auto">暂不可下载</button>
-          <p className="text-muted">{entry.distribution_permission === "restricted" ? "此档案限制分发，暂不提供文件下载。"
-            : entry.distribution_permission === "metadata_only" ? "此档案仅公开文字资料，不提供文件下载。"
-            : "尚未确认此文件可公开分发，暂不提供下载。"}</p><p className="text-sm">如需申请获取，请通过<Link href="/about#contact" className="archive-link">联系我们</Link>说明用途；能否提供需结合授权条款确认。</p>
-        </div>}
-      </div>)}
-    </> : <p className="text-muted">尚未收录文件。此档案目前仅保存文字资料。</p>}</Section>
+    <MidiFileInformation slug={entry.slug} stored={files} metadata={fileMetadata.files}
+      redistributionProhibited={Boolean(entry.description?.includes("《音乐利用規約》禁止未经许可的 MIDI 再分发"))} />
     <Section title="权利信息"><dl className="grid gap-4 sm:grid-cols-2">
       <div><dt className="text-muted">版权状态</dt><dd>{copyrightLabel(entry.copyright_status)}</dd></div>
       <div><dt className="text-muted">分发许可</dt><dd>{distributionLabel(entry.distribution_permission)}</dd></div>
