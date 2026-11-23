@@ -47,10 +47,10 @@ export function Markdown({ source, className = "" }: { source: string; className
       ul: ({ children }) => <ul className="list-disc space-y-1 pl-6">{children}</ul>,
       ol: ({ children }) => <ol className="list-decimal space-y-1 pl-6">{children}</ol>,
       blockquote: ({ children }) => <blockquote className="border-l-4 border-line pl-4 text-muted">{children}</blockquote>,
-      pre: ({ children }) => <pre className="max-w-full overflow-x-auto rounded bg-[#ecece6] p-4 font-mono text-sm">{children}</pre>,
+      pre: ({ children }) => <pre className="max-w-full overflow-x-auto rounded bg-wash p-4 font-mono text-sm">{children}</pre>,
       code: ({ children, className: codeClass }) => codeClass
         ? <code className="font-mono text-sm">{children}</code>
-        : <code className="rounded bg-[#ecece6] px-1">{children}</code>,
+        : <code className="rounded bg-wash px-1">{children}</code>,
     }}>{normalizeHeadings(source)}</ReactMarkdown>
   </div>;
 }

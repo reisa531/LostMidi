@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """生成 Lost MIDI Archive 的 favicon.ico。
 
-品牌要素（与站点页眉 / 管理后台标识一脉相承）：
-- 深绿 #203d31 圆角方块（管理后台侧栏色）
-- 米白 #f7f6f0 的 ♮ 还原记号（站点页眉同款衬线符号）
+采用站点页眉的砖红色软盘标识。
 
 输出：frontend/src/app/favicon.ico
   16 / 32 / 48 / 64 / 128 / 256 六种尺寸；
-  小尺寸使用加粗变体，保证 16px 下清晰可读；
   16 / 32 / 48 以 BMP 存储，64 / 128 / 256 以 PNG 存储（兼容性最佳实践）。
 
 用法：python scripts/generate_favicon.py
@@ -24,67 +21,20 @@ ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, "frontend", "src", "app", "favicon.ico")
 PREVIEW_DIR = os.path.join(ROOT, "storage", "tmp", "favicon-preview")
 
-BG = (32, 61, 49, 255)     # #203d31 深绿
-FG = (247, 246, 240, 255)  # #f7f6f0 米白
-
-DESIGN = 1024   # 设计网格
-RADIUS = 230    # 背景圆角半径（设计网格单位，约 22.5%）
 SIZES = [16, 32, 48, 64, 128, 256]
-BOLD_BELOW = 32  # 小于等于该尺寸使用加粗变体
 
 
-def natural_sign(d: ImageDraw.ImageDraw, s: float, bold: bool = False) -> None:
-    """在 1024 设计网格上绘制 ♮（还原记号）。s 为目标画布相对设计网格的缩放。
-
-    结构：两根等长竖干（左干整体偏下、右干整体偏上），
-    两根平行四边形横杆自左下向右上倾斜，与竖干外缘平齐。
-    """
-    sw = 150 if bold else 118   # 笔画宽
-    ext = 132 if bold else 118  # 竖干伸出横杆的长度
-    xl, xr = 372, 652           # 左右竖干中心 x
-    rise = 72                   # 横杆右上倾高度
-    y_up_l, y_up_r = 420, 420 - rise   # 上横杆中心线（位于左右干处）
-    y_lo_l, y_lo_r = 706, 706 - rise   # 下横杆中心线
-    t = sw / 2 * 1.04                  # 横杆垂直半厚
-    m = -rise / (xr - xl)              # 中心线斜率（屏幕 y 向下为正）
-
-    def X(v: float) -> float:
-        return v * s
-
-    def Y(v: float) -> float:
-        return (v - 12) * s  # 光学居中微调
-
-    # 左竖干：上端与上杆平齐，下端伸出下杆
-    d.rectangle([X(xl - sw / 2), Y(y_up_l - t), X(xl + sw / 2), Y(y_lo_l + t + ext)], fill=FG)
-    # 右竖干：上端伸出上杆，下端与下杆平齐
-    d.rectangle([X(xr - sw / 2), Y(y_up_r - t - ext), X(xr + sw / 2), Y(y_lo_r + t)], fill=FG)
-
-    def bar(yl: float, yr: float) -> None:
-        """横杆：平行四边形，左右端与竖干外缘平齐。"""
-        c_l = yl - m * sw / 2  # 左外缘处中心线 y
-        c_r = yr + m * sw / 2  # 右外缘处中心线 y
-        pts = [
-            (X(xl - sw / 2), Y(c_l - t)),
-            (X(xr + sw / 2), Y(c_r - t)),
-            (X(xr + sw / 2), Y(c_r + t)),
-            (X(xl - sw / 2), Y(c_l + t)),
-        ]
-        d.polygon(pts, fill=FG)
-
-    bar(y_up_l, y_up_r)
-    bar(y_lo_l, y_lo_r)
-
-
-def render(size: int, bold: bool = False) -> Image.Image:
-    """以 4x 超采样绘制后经 LANCZOS 缩小到目标尺寸。"""
-    ss = 4
-    w = size * ss
-    s = w / DESIGN
-    img = Image.new("RGBA", (w, w), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, w - 1, w - 1], radius=round(RADIUS * s), fill=BG)
-    natural_sign(d, s, bold)
-    return img.resize((size, size), Image.LANCZOS)
+def render(size: int) -> Image.Image:
+    disk = Image.new("RGBA", (256, 256))
+    draw = ImageDraw.Draw(disk)
+    ink, label = "#b23a29", "#fcfaf5"
+    draw.polygon([(8, 8), (211, 8), (248, 46), (248, 248), (8, 248)], fill=ink)
+    draw.rectangle((52, 8, 178, 88), fill=label)
+    draw.rectangle((156, 8, 178, 88), fill="#d4a79b")
+    draw.rectangle((49, 137, 207, 217), fill=label)
+    for y in (162, 188):
+        draw.rectangle((49, y, 207, y + 7), fill=ink)
+    return disk.resize((size, size), Image.Resampling.LANCZOS)
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +95,7 @@ def main() -> None:
 
     frames = []
     for size in SIZES:
-        im = render(size, bold=size <= BOLD_BELOW)
+        im = render(size)
         frames.append((size, im))
         im.save(os.path.join(PREVIEW_DIR, f"favicon-{size}.png"))
 

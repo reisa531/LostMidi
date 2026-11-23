@@ -16,6 +16,7 @@ export default async function AboutPage() {
   const usefulLinks = await getUsefulLinks().catch(() => []);
   const origin = siteOrigin();
   return <article className="mx-auto max-w-3xl"><p className="eyebrow">关于我们</p><h1 className="my-6 font-serif text-4xl">为声音留下来处</h1>
+    <nav aria-label="关于档案馆" className="about-links"><a href="#about-intro">项目介绍</a><a href="#archive-rights">权利说明</a><a href="#archive-cite">引用方式</a><a href="#contact">联系我们</a></nav>
     <section aria-labelledby="about-intro" className="mb-10 rounded-xl border border-dashed border-line bg-white/50 p-6"><h2 id="about-intro" className="font-semibold">项目介绍</h2>
       <div className="mt-3 space-y-4 leading-8 text-muted">
         <p>这是一个关于早期网络 MIDI 的数字档案与网络考古项目。它收录作品本身，也收录作品出现过的过程：谁在什么时间把文件发到哪里，后来在哪些页面被再次引用，今天还能找到哪些快照和附件。</p>
@@ -24,12 +25,12 @@ export default async function AboutPage() {
       </div></section>
     <Section title="保存事实，也保留未知"><p>我们将作品、文件版本、历史来源和寻回事件分别记录。推测的年代不是确定的年代，缺失的署名也不应被随意填补。</p></Section>
     <Section title="如何阅读档案"><p>每条档案分别列出作品资料、历史来源、寻回记录和权利信息。尚未确认的内容会保留未知状态；记录存在不代表文件已经寻回。文件是否可下载请以档案详情和对应许可为准；不可下载文件可通过下方联系方式提出申请。</p></Section>
-    <Section title="关于权利"><p>历史网站或网络档案中出现过某个文件，并不代表它属于公有领域。来源、版权状态与分发许可需要分别记录。</p></Section>
+    <Section title="关于权利" id="archive-rights"><p>历史网站或网络档案中出现过某个文件，并不代表它属于公有领域。来源、版权状态与分发许可需要分别记录。</p></Section>
     <Section title="更正与审核">
       <p>档案由站点维护者与已注册的后台用户共同维护。普通管理员提交的新增、修改与删除会先进入审核队列，由超级管理员确认后才公开；同一份资料被两个页面同时修改时，保存会被拒绝并要求人工合并，而不是互相覆盖。站点层面的公开变更记录在<Link href="/changelog" className="archive-link">更新日志</Link>。</p>
       <p>如果条目的事实有误、署名缺失或来源判断过宽，请通过下方联系方式提出更正，并尽量附上可核对的材料（原始网址、网页快照、文件校验值）。核对后我们会修正记录；无法确认的部分保持未知，而不是为了完整而补一个说法。</p>
     </Section>
-    <Section title="如何引用">
+    <Section title="如何引用" id="archive-cite">
       <p className="text-muted">每条档案都有稳定的公开编号，每个文件都登记 SHA-256 校验值，引用时可以给出访问地址与访问日期：</p>
       <p className="rounded-lg border border-line bg-white/70 px-4 py-3 font-mono text-xs [overflow-wrap:anywhere]">{`${origin ?? "https://站点域名"}/midis/作品-slug`}<span className="text-muted">{`（档案编号 #123 · 访问日期 YYYY-MM-DD）`}</span></p>
       <p>引用档案记录不代表取得作品本身的使用许可；文件是否可下载、能否再分发，以该档案的权利信息与对应许可为准。引用时也建议一并给出所使用的历史来源条目，方便他人复核判断依据。</p>

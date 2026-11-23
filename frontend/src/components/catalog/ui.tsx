@@ -3,22 +3,17 @@ import { Credits, Status, dateLabel } from "@/components/archive";
 import { archiveStates, catalogHref, type CatalogPath, type UrlQuery } from "@/lib/api/catalog";
 import type { ArchiveStatus, CatalogEntry, CatalogPagination as PaginationData, CatalogOverview } from "@/lib/api/types";
 
-export const primaryLink = "inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition hover:bg-foreground";
-export const secondaryLink = "inline-flex items-center justify-center rounded-lg border border-line bg-white/70 px-4 py-2.5 text-sm font-medium text-accent transition hover:bg-white";
-const statusColors: Record<ArchiveStatus, string> = {
-  archived: "bg-[#e6eee4]",
-  verifying: "bg-[#faf0d9]",
-  lost: "bg-[#f7e6df]",
-};
+export const primaryLink = "min-h-11 inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition hover:bg-foreground";
+export const secondaryLink = "min-h-11 inline-flex items-center justify-center rounded-lg border border-line bg-white/70 px-4 py-2.5 text-sm font-medium text-accent transition hover:bg-white";
 export function CatalogStatus({ status }: { status: ArchiveStatus }) {
-  return <span className={`inline-block rounded-full [&>span]:rounded-full [&>span]:border-transparent ${statusColors[status]}`}><Status status={status} /></span>;
+  return <Status status={status} />;
 }
 export function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
-  return <header className="mb-7 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 max-w-2xl"><p className="eyebrow">{eyebrow}</p><h1 className="mb-3 mt-3 font-serif text-3xl tracking-tight sm:text-4xl">{title}</h1><p className="text-sm leading-7 text-muted">{description}</p></div>{action}</header>;
+  return <header className="catalog-heading"><div className="min-w-0 max-w-2xl"><p className="eyebrow">{eyebrow}</p><h1 className="mb-3 mt-3 font-serif text-3xl tracking-tight sm:text-4xl">{title}</h1><p className="text-sm leading-7 text-muted">{description}</p></div>{action}</header>;
 }
 export function MetricGrid({ items }: { items: { label: string; value: number; note: string; href?: string }[] }) {
-  return <dl className={`grid grid-cols-2 gap-3 ${items.length > 4 ? "lg:grid-cols-6 sm:grid-cols-3" : items.length === 3 ? "sm:grid-cols-3" : "lg:grid-cols-4"}`}>
-    {items.map(item => <div key={item.label} className="min-w-0 rounded-xl border border-line bg-white/70 px-4 py-4 sm:px-5"><dt className="text-xs text-muted">{item.label}</dt><dd className="my-2 text-3xl font-semibold tracking-tight text-accent tabular-nums [overflow-wrap:anywhere]">{item.href ? <Link href={item.href} className="hover:underline" aria-label={`${item.label} ${item.value}，查看详情`}>{item.value.toLocaleString("zh-CN")}</Link> : item.value.toLocaleString("zh-CN")}</dd><dd className="text-[11px] leading-5 text-muted">{item.note}</dd></div>)}
+  return <dl className={`metric-grid grid grid-cols-2 ${items.length > 4 ? "lg:grid-cols-6 sm:grid-cols-3" : items.length === 3 ? "sm:grid-cols-3" : "lg:grid-cols-4"}`}>
+    {items.map(item => <div key={item.label} className="min-w-0 px-4 py-4 sm:px-5"><dt className="text-xs text-muted">{item.label}</dt><dd className="my-2 text-3xl font-semibold tracking-tight text-accent tabular-nums [overflow-wrap:anywhere]">{item.href ? <Link href={item.href} className="hover:underline" aria-label={`${item.label} ${item.value}，查看详情`}>{item.value.toLocaleString("zh-CN")}</Link> : item.value.toLocaleString("zh-CN")}</dd><dd className="text-[11px] leading-5 text-muted">{item.note}</dd></div>)}
   </dl>;
 }
 export function OverviewMetrics({ stats }: { stats: CatalogOverview["stats"] }) {
@@ -55,8 +50,8 @@ export function CatalogTable({ entries, caption = "MIDI 档案列表" }: { entri
     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4 text-xs leading-5"><div className="min-w-0"><dt className="text-muted">署名</dt><dd className="mt-1 break-words"><Credits credits={entry.credits} /></dd></div><div className="min-w-0"><dt className="text-muted">推测时间</dt><dd className="mt-1">{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</dd></div><div className="min-w-0"><dt className="text-muted">历史来源</dt><dd className="mt-1 break-words">{entry.sources.length ? entry.sources.map((source, index) => <span key={`${source}-${index}`}><Link className="underline" href={catalogHref("/map", { by: "source", group: source })}>{source}</Link>{index < entry.sources.length - 1 ? "、" : ""}</span>) : "待补"}</dd></div><div className="min-w-0"><dt className="text-muted">文件</dt><dd className="mt-1">{entry.file_count} 个 · {entry.downloadable_file_count} 个可下载</dd></div></dl>
   </li>)}</ul><div role="region" aria-label={caption} className="hidden min-w-0 max-w-full overflow-x-auto rounded-xl border border-line bg-white/70 md:block">
     <table className="w-full min-w-[760px] table-fixed text-left text-sm"><caption className="sr-only">{caption}：作品、署名、历史来源、归档状态及文件</caption>
-      <thead className="border-b border-line bg-[#efefe7] text-xs text-muted"><tr><th scope="col" className="w-[28%] px-5 py-3 font-medium">作品 / 更新日期</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">署名</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">历史来源</th><th scope="col" className="w-[15%] px-4 py-3 font-medium">归档状态</th><th scope="col" className="w-[17%] px-4 py-3 font-medium">文件 / 下载资格</th></tr></thead>
-      <tbody className="divide-y divide-line">{entries.map(entry => <tr key={entry.id} className="align-top transition hover:bg-[#f5f6ee]">
+      <thead className="border-b border-line bg-wash text-xs text-muted"><tr><th scope="col" className="w-[28%] px-5 py-3 font-medium">作品 / 更新日期</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">署名</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">历史来源</th><th scope="col" className="w-[15%] px-4 py-3 font-medium">归档状态</th><th scope="col" className="w-[17%] px-4 py-3 font-medium">文件 / 下载资格</th></tr></thead>
+      <tbody className="divide-y divide-line">{entries.map(entry => <tr key={entry.id} className="align-top transition hover:bg-surface">
         <th scope="row" className="px-5 py-4 text-left font-normal [overflow-wrap:anywhere]"><Link href={`/midis/${entry.slug}`} className="font-medium text-foreground hover:text-accent hover:underline">{entry.title}</Link><p className="mt-2 text-xs leading-5 text-muted">{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year === null ? "时间不详" : `约 ${entry.estimated_year} 年`}<br />更新于 {dateLabel(entry.updated_at)}</p></th>
         <td className="px-4 py-4 text-xs leading-5 [overflow-wrap:anywhere]"><Credits credits={entry.credits} /></td>
         <td className="px-4 py-4 text-xs leading-6 [overflow-wrap:anywhere]">{entry.sources.length ? <ul className="space-y-1">{entry.sources.map(source => <li key={source}><Link className="text-muted underline decoration-line underline-offset-4 hover:text-accent" href={catalogHref("/map", { by: "source", group: source })}>{source}</Link></li>)}</ul> : <span className="text-muted">来源待补</span>}</td>
@@ -77,8 +72,16 @@ export function CatalogPagination({ pagination, path, query, pageKey = "page", l
 }
 export function EntryActivity({ entries, admin = false, empty }: { entries: CatalogEntry[]; admin?: boolean; empty: string }) {
   if (!entries.length) return <p className="py-6 text-sm leading-7 text-muted">{empty}</p>;
-  return <ul className="divide-y divide-line">{entries.map(entry => <li key={entry.id} className="flex flex-wrap items-start justify-between gap-3 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1 basis-44 [overflow-wrap:anywhere]"><Link href={admin ? `/admin/midis/${entry.id}/edit` : `/midis/${entry.slug}`} className="text-sm font-medium hover:text-accent hover:underline">{entry.title}</Link><p className="mt-2 text-xs leading-5 text-muted">{dateLabel(entry.updated_at)} 更新<span className="px-2" aria-hidden="true">·</span>{entry.file_count ? `${entry.file_count} 个文件` : "暂无文件"}</p></div><CatalogStatus status={entry.archive_status} /></li>)}</ul>;
+  return <ul className="activity-list">{entries.map(entry => <li key={entry.id}>
+    <div className="activity-record">
+      <time dateTime={entry.updated_at}>{dateLabel(entry.updated_at)}</time>
+      <div className="min-w-0"><Link href={admin ? `/admin/midis/${entry.id}/edit` : `/midis/${entry.slug}`}>{entry.title}</Link>
+        <p>{entry.credits.map(credit => credit.display_name).join("、") || "署名待考"} · {entry.file_count ? `${entry.file_count} 个文件` : "暂无文件"}</p>
+      </div>
+    </div>
+    <CatalogStatus status={entry.archive_status} />
+  </li>)}</ul>;
 }
 export function StatusSummary({ stats, active, query = {} }: { stats: CatalogOverview["stats"]; active?: ArchiveStatus; query?: UrlQuery }) {
-  return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{archiveStates.map(state => <Link key={state.value} href={catalogHref("/recovery", { ...query, status: state.value, page: undefined })} aria-current={active === state.value ? "true" : undefined} className={`min-w-0 rounded-xl border p-4 transition hover:border-accent sm:p-5 ${active === state.value ? "border-accent bg-[#e8eee2]" : "border-line bg-white/70"}`}><CatalogStatus status={state.value} /><p className="mb-1 mt-3 text-3xl font-semibold text-accent tabular-nums [overflow-wrap:anywhere]">{stats.statuses[state.value].toLocaleString("zh-CN")}</p><p className="text-xs leading-6 text-muted">{state.description}</p></Link>)}</div>;
+  return <div className="grid gap-2 sm:grid-cols-3">{archiveStates.map(state => <Link key={state.value} href={catalogHref("/recovery", { ...query, status: state.value, page: undefined })} aria-current={active === state.value ? "true" : undefined} className={`min-w-0 rounded-xl border p-4 transition hover:border-accent sm:p-5 ${active === state.value ? "border-accent bg-tint" : "border-line bg-white/70"}`}><CatalogStatus status={state.value} /><p className="mb-1 mt-3 text-3xl font-semibold text-accent tabular-nums [overflow-wrap:anywhere]">{stats.statuses[state.value].toLocaleString("zh-CN")}</p><p className="text-xs leading-6 text-muted">{state.description}</p></Link>)}</div>;
 }

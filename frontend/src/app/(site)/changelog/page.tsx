@@ -14,8 +14,8 @@ export default function ChangelogPage() {
       <h1 className="my-5 font-serif text-4xl">更新日志</h1>
       <p className="leading-8 text-muted">记录档案站的每一步改进。当前版本 <span className="font-medium text-accent">v{releases[0].version}</span>。</p>
     </header>
-    <div className="space-y-10">
-      {releases.map((release, index) => <section key={release.version} id={`v${release.version}`} aria-labelledby={`title-${release.version}`} className="scroll-mt-8 rounded-xl border border-line p-5 sm:p-8 [overflow-wrap:anywhere]">
+    <div>
+      {releases.map((release, index) => <section key={release.version} id={`v${release.version}`} aria-labelledby={`title-${release.version}`} className="scroll-mt-8 border-t border-line py-6 [overflow-wrap:anywhere]">
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <Link href={`#v${release.version}`} className="font-medium text-accent hover:underline" aria-label={`版本 ${release.version} 的永久链接`}>v{release.version}</Link>
           <time dateTime={release.date} className="text-muted">{release.date}</time>

@@ -62,14 +62,25 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     { name: "MIDI 档案", path: "/midis" },
     { name: entry.title, path: `/midis/${detail.entry.slug}` },
   ];
-  return <article className="mx-auto max-w-3xl">
+  return <article className="record-page">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} />
     <Breadcrumbs items={crumbs} />
-    <p className="eyebrow">档案编号 / {entry.id}</p>
+    <header className="record-header"><p className="eyebrow">档案编号 / {entry.id}</p>
     <h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1>
     <div className="mb-7 flex items-center gap-4"><Status status={entry.archive_status} /><span className="text-sm text-muted">推测时间：{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</span></div>
+    </header>
+    <div className="record-grid">
+      <nav className="record-index" aria-label="本页目录"><p>本页目录</p>
+        <a href="#record-credits">人物与署名</a>
+        <a href="#record-contributors">档案贡献者</a>
+        <a href="#record-sources">历史来源</a>
+        <a href="#record-recovery">寻回记录</a>
+        <a href="#record-files">文件信息</a>
+        <a href="#record-rights">权利信息</a>
+      </nav>
+      <div className="record-body">
     {fileMetadata.description ? <Markdown source={fileMetadata.description} className="mb-9" /> : <p className="mb-9 text-muted">尚无描述。</p>}
-    <Section title="人物与署名">{credits.length ? <ul className="grid gap-3 sm:grid-cols-2">{credits.map(credit => {
+    <Section id="record-credits" title="人物与署名">{credits.length ? <ul className="grid gap-3 sm:grid-cols-2">{credits.map(credit => {
       const rights = authors.get(credit.person_id)?.profile.rights;
       return <li key={`${credit.person_id}-${credit.role}`} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-white/70 px-4 py-3">
         <Link className="archive-link min-w-0 break-words font-medium" href={`/people/${authors.get(credit.person_id)?.public_id ?? credit.person_id}`}>{credit.display_name}</Link>
@@ -77,22 +88,22 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
         {typeof rights === "string" && rights.trim() && <UsageTerms author={credit.display_name} terms={rights} />}
       </li>;
     })}</ul> : <p className="text-muted">作者尚待考证。</p>}</Section>
-    <Section title="档案贡献者"><p className="text-muted">提交或完善这条音乐档案的后台用户。</p>{detail.contributors?.length ? <ul className="flex flex-wrap gap-2">{detail.contributors.map(username => <li key={username} className="rounded-full border border-line bg-white px-3 py-1 text-sm">{username}</li>)}</ul> : <p className="text-muted">暂无可核实的用户贡献记录。</p>}</Section>
-    <Section title="历史来源">{historical_sources.length ? <><p className="text-xs text-muted">共 {historical_sources.length} 条线索；点击条目查看详情。</p><div className="space-y-3">{historical_sources.map(source => <details className="group min-w-0 rounded-lg border border-line bg-white/70 [overflow-wrap:anywhere]" key={source.id} open={historical_sources.length === 1}>
+    <Section id="record-contributors" title="档案贡献者"><p className="text-muted">提交或完善这条音乐档案的后台用户。</p>{detail.contributors?.length ? <ul className="flex flex-wrap gap-2">{detail.contributors.map(username => <li key={username} className="rounded-full border border-line bg-white px-3 py-1 text-sm">{username}</li>)}</ul> : <p className="text-muted">暂无可核实的用户贡献记录。</p>}</Section>
+    <Section id="record-sources" title="历史来源">{historical_sources.length ? <><p className="text-xs text-muted">共 {historical_sources.length} 条线索；点击条目查看详情。</p><div className="space-y-3">{historical_sources.map(source => <details className="group min-w-0 rounded-lg border border-line bg-white/70 [overflow-wrap:anywhere]" key={source.id} open={historical_sources.length === 1}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"><span className="min-w-0 font-medium">{source.website_name}<span className="ml-3 text-xs font-normal text-muted">{dateLabel(source.first_seen_at)}{source.evidence_files?.length ? ` · ${source.evidence_files.length} 个附件` : ""}</span></span><span aria-hidden="true" className="shrink-0 text-accent transition-transform group-open:rotate-180">⌄</span></summary>
       <div className="space-y-3 border-t border-line px-4 py-4"><p className="text-xs text-muted">首次记录 {dateLabel(source.first_seen_at)} · 最后记录 {dateLabel(source.last_seen_at)}</p>
       <div className="flex flex-wrap gap-5"><ExternalSource url={source.original_url} label="原始网址" /><ExternalSource url={source.wayback_url} label="历史快照" /></div>
       {source.notes ? <Markdown source={source.notes} /> : <p className="text-muted">暂无补充说明。</p>}
       <EvidenceAttachments midiId={entry.id} files={source.evidence_files ?? []} /></div>
     </details>)}</div></> : <p className="text-muted">尚未登记历史来源。</p>}</Section>
-    <Section title="寻回记录">{recovery_events.length ? recovery_events.map(event => <div className="min-w-0 border-l-2 border-line pl-5 [overflow-wrap:anywhere]" key={event.id}>
+    <Section id="record-recovery" title="寻回记录">{recovery_events.length ? recovery_events.map(event => <div className="min-w-0 border-l-2 border-line pl-5 [overflow-wrap:anywhere]" key={event.id}>
       <p className="mb-2 text-xs text-muted">{dateLabel(event.recovered_at)} · {event.recovered_by_name ?? "寻回人不详"}</p>
       <Markdown source={event.story} /><div className="mt-3"><p className="text-xs text-muted">证据说明</p>{event.evidence ? <Markdown source={event.evidence} /> : <p className="text-muted">尚未补充</p>}</div>
       <div className="mt-4"><EvidenceAttachments midiId={entry.id} files={event.evidence_files ?? []} /></div>
     </div>) : <p className="text-muted">尚无寻回记录。</p>}</Section>
     <MidiFileInformation slug={entry.slug} stored={files} metadata={fileMetadata.files}
       redistributionProhibited={Boolean(entry.description?.includes("《音乐利用規約》禁止未经许可的 MIDI 再分发"))} />
-    <Section title="权利信息"><dl className="grid gap-4 sm:grid-cols-2">
+    <Section id="record-rights" title="权利信息"><dl className="grid gap-4 sm:grid-cols-2">
       <div><dt className="text-muted">版权状态</dt><dd>{copyrightLabel(entry.copyright_status)}</dd></div>
       <div><dt className="text-muted">分发许可</dt><dd>{distributionLabel(entry.distribution_permission)}</dd></div>
       <div><dt className="text-muted">许可证</dt><dd>{entry.license ?? "尚未确认"}</dd></div>
@@ -102,5 +113,7 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
       <RelatedEntries sources={sourceNames} person={composer ? { id: composer.person_id, name: composer.display_name } : undefined} excludeSlug={entry.slug} />
     </Suspense>
     <Suspense fallback={<p className="text-sm text-muted">正在加载相关文章…</p>}><RelatedArticlesFor kind="midi" id={detail.entry.public_id} /></Suspense>
+      </div>
+    </div>
   </article>;
 }

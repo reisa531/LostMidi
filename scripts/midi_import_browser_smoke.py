@@ -58,19 +58,29 @@ def check_download(page, button, payload):
 
 
 def check_catalog(page, base, screenshots, search_slug):
-    routes = [("/", "首页总览"), ("/midis", "MIDI"), ("/people", "作者"),
+    routes = [("/", "首页"), ("/midis", "MIDI 目录"), ("/people", "人物"),
               ("/recovery", "寻回进度"), ("/map", "关系图谱"), ("/search", "搜索")]
     for width in (1280, 390):
         page.set_viewport_size({"width": width, "height": 900})
         for path, label in routes:
             page.goto(base + path)
-            expect(page.get_by_role("navigation", name="主导航").get_by_role("link", name=label, exact=True)).to_have_attribute("aria-current", "page")
+            if width >= 1024 and path in ("/midis", "/people", "/recovery"):
+                nav = page.get_by_role("navigation", name="主导航", exact=True)
+                expect(nav.get_by_role("link", name=label, exact=True)).to_have_attribute("aria-current", "page")
+            else:
+                trigger = page.get_by_role("button", name="打开导航菜单")
+                trigger.click()
+                dialog = page.get_by_role("dialog", name="浏览档案")
+                expect(dialog.get_by_role("link", name=label, exact=True)).to_have_attribute("aria-current", "page")
+                page.keyboard.press("Escape")
+                expect(trigger).to_be_focused()
             expect(page.get_by_role("main").get_by_role("heading", level=1)).to_be_visible()
             expect(page.get_by_role("main").get_by_role("alert")).to_have_count(0)
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), path
             if screenshots:
                 screenshots.mkdir(parents=True, exist_ok=True)
                 page.screenshot(path=str(screenshots / f"catalog-{path.strip('/') or 'home'}-{width}.png"), full_page=True, caret='initial')
+    page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(base + "/midis?pageSize=1")
     expect(page.get_by_role("table").locator("tbody tr")).to_have_count(1)
     page.get_by_role("link", name="下一页", exact=True).click()
@@ -81,21 +91,25 @@ def check_catalog(page, base, screenshots, search_slug):
     expect(page.locator("select[name=status]")).to_have_value("lost")
     for by in ("author", "source"):
         page.goto(base + "/map?by=" + by)
-        page.get_by_role("table").first.locator("tbody a").first.click()
+        page.locator(".group-index li a").first.click()
         expect(page.locator("#group-entries").get_by_role("form", name="筛选档案")).to_be_visible()
     for path in ("/midis?page=0", "/people?page=0", "/map?by=invalid", "/recovery?status=invalid", "/midis?page=1&page=2"):
         page.goto(base + path)
         expect(page.get_by_role("main").get_by_role("alert")).to_contain_text("筛选参数无效")
     page.goto(base + "/midis?page=1000000")
     expect(page.get_by_text("暂无档案", exact=True)).to_be_visible()
+    page.goto(base + "/")
+    expect(page.get_by_role("searchbox", name="搜索作品、人物或来源")).to_be_visible()
+    page.keyboard.press("/")
+    expect(page.get_by_role("searchbox", name="搜索作品、人物或来源")).to_be_focused()
     page.goto(base + "/search")
     expect(page.get_by_text("输入关键词开始搜索", exact=True)).to_be_visible()
     expect(page.locator('meta[name=robots]')).to_have_attribute('content', re.compile('noindex'))
-    page.get_by_role('textbox', name='搜索关键词').fill(search_slug)
+    page.get_by_role('searchbox', name='搜索作品、人物或来源').fill(search_slug)
     page.get_by_role('button', name='搜索', exact=True).click()
     entry = page.request.get(os.environ['BACKEND_API_URL'] + '/api/v1/midis/' + search_slug).json()['entry']
-    expect(page.get_by_role('main').locator('a[href="/midis/' + entry['public_id'] + '"]')).to_have_count(1)
-    page.get_by_role('textbox', name='搜索关键词').fill('missing-' + uuid.uuid4().hex)
+    expect(page.get_by_role('main').locator('a[href="/midis/' + entry['slug'] + '"]')).to_have_count(1)
+    page.get_by_role('searchbox', name='搜索作品、人物或来源').fill('missing-' + uuid.uuid4().hex)
     page.get_by_role('button', name='搜索', exact=True).click()
     expect(page.get_by_text('没有匹配的作品', exact=True)).to_be_visible()
     expect(page.get_by_text('没有匹配的人物', exact=True)).to_be_visible()

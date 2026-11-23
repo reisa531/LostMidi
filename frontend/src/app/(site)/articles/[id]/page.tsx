@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getArticle } from "@/lib/api/articles";
 import { ApiError } from "@/lib/api/client";
-import { Markdown, markdownSummary } from "@/components/markdown";
+import { Markdown, markdownHeadings, markdownSummary } from "@/components/markdown";
 import { Unavailable } from "@/components/archive";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { absoluteUrl, jsonLd, siteOrigin } from "@/lib/seo";
@@ -42,13 +42,19 @@ export default async function ArticlePage({ params }: { params: Promise<{ id: st
     { name: "文章", path: "/articles" },
     { name: article.title, path: `/articles/${article.id}` },
   ];
-  return <article className="mx-auto max-w-3xl">
+  const headings = markdownHeadings(article.body_markdown);
+  return <article className="record-page">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} />
     <Breadcrumbs items={crumbs} />
-    <p className="eyebrow">档案文章</p><h1 className="my-5 break-words font-serif text-4xl leading-tight">{article.title}</h1>
+    <header className="record-header"><p className="eyebrow">档案文章</p><h1 className="my-5 break-words font-serif text-4xl leading-tight">{article.title}</h1>
     <p className="mb-9 text-sm text-muted">{article.author_username} · 更新于 {article.updated_at.slice(0, 10)}</p>
-    <Markdown source={article.body_markdown} />
-    <section className="mt-12 border-t border-line pt-7"><h2 className="mb-4 font-serif text-2xl">关联 MIDI</h2><ul className="space-y-2">{article.midis.map(midi => <li key={midi.id}><Link className="archive-link" href={`/midis/${midi.slug}`}>{midi.title}</Link></li>)}</ul></section>
-    {article.people.length > 0 && <section className="mt-8 border-t border-line pt-7"><h2 className="mb-4 font-serif text-2xl">关联人物</h2><ul className="space-y-2">{article.people.map(person => <li key={person.id}><Link className="archive-link" href={`/people/${person.public_id}`}>{person.display_name}</Link></li>)}</ul></section>}
+    </header><div className="record-grid">
+    <nav className="record-index" aria-label="文章目录"><p>本页目录</p>
+      {headings.map(item => <a key={item.id} href={`#${item.id}`}>{item.title}</a>)}
+      <a href="#article-works">关联 MIDI</a>{article.people.length > 0 && <a href="#article-people">关联人物</a>}
+    </nav><div className="record-body"><Markdown source={article.body_markdown} />
+    <section id="article-works" className="mt-12 border-t border-line pt-7"><h2 className="mb-4 font-serif text-2xl">关联 MIDI</h2><ul className="space-y-2">{article.midis.map(midi => <li key={midi.id}><Link className="archive-link" href={`/midis/${midi.slug}`}>{midi.title}</Link></li>)}</ul></section>
+    {article.people.length > 0 && <section id="article-people" className="mt-8 border-t border-line pt-7"><h2 className="mb-4 font-serif text-2xl">关联人物</h2><ul className="space-y-2">{article.people.map(person => <li key={person.id}><Link className="archive-link" href={`/people/${person.public_id}`}>{person.display_name}</Link></li>)}</ul></section>}
+    </div></div>
   </article>;
 }

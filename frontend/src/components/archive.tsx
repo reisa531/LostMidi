@@ -11,7 +11,7 @@ const distributionPermissions: Record<string, string> = { unknown: "尚未确认
 export function copyrightLabel(value: string | null) { return copyrightStatuses[value ?? "unknown"] ?? "尚未确认"; }
 export function distributionLabel(value: string | null) { return distributionPermissions[value ?? "unknown"] ?? "尚未确认"; }
 export function Status({ status }: { status: ArchiveStatus }) {
-  return <span className="inline-block whitespace-nowrap rounded-sm border border-line px-2 py-1 text-xs text-accent">{statuses[status] ?? status}</span>;
+  return <span className="archive-status" data-status={status}>{statuses[status] ?? status}</span>;
 }
 export function Credits({ credits }: { credits: Credit[] }) {
   return credits.length ? <ul className="space-y-2">{credits.map(c => <li key={`${c.person_id}-${c.role}`}>
@@ -19,8 +19,8 @@ export function Credits({ credits }: { credits: Credit[] }) {
     <span className="ml-2 text-xs text-muted">{roleName(c.role)}</span>
   </li>)}</ul> : <p className="text-muted">作者尚待考证</p>;
 }
-export function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
-  return <section id={id} className="border-t border-line py-8"><h2 className="mb-5 font-serif text-2xl">{title}</h2><div className="space-y-5 text-sm leading-7">{children}</div></section>;
+export function Section({ title, children, id }: { title: string; id?: string; children: React.ReactNode }) {
+  return <section id={id} className="record-section border-t border-line py-8"><h2 className="mb-5 font-serif text-2xl">{title}</h2><div className="space-y-5 text-sm leading-7">{children}</div></section>;
 }
 export function Unavailable() {
   return <section><p className="eyebrow">档案服务</p><h1 className="my-6 font-serif text-3xl">档案暂时无法读取</h1>

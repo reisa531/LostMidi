@@ -14,7 +14,7 @@ export function RestoreButton({ type, id, reviewRequired = false }: { type: "mid
   }, { error: "" });
   return <form action={action} className="flex flex-wrap items-center gap-3">
     <input type="hidden" name="type" value={type} /><input type="hidden" name="id" value={id} />
-    <button disabled={pending} className="rounded-lg border border-line px-4 py-2 text-sm text-accent hover:bg-[#edf0e5] disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? "申请恢复" : "恢复"}</button>
+    <button disabled={pending} className="rounded-lg border border-line px-4 py-2 text-sm text-accent hover:bg-wash disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? "申请恢复" : "恢复"}</button>
     {state.error && <span role="alert" className="text-xs text-red-800">{state.error}</span>}
   </form>;
 }

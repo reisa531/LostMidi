@@ -77,7 +77,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
     <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，批准后才会发布。" : entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传音乐文件；没有文件时仍可建立寻回档案。"}</p>
     <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restoreDraft} discard={discardDraft} />
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
-    <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="sr-only">档案基础资料</legend>
+    <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="editor-heading">作品资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>
       <p className="text-xs leading-6 text-muted">Slug 使用小写字母、数字和词间连字符。更改后旧地址会转到新地址；历史使用过的 slug 不可分配给其他档案。标题最多 300 UTF-8 字节，中文字符通常占 3 字节。</p>
       <MarkdownField name="description" label="描述（支持 Markdown）" rows={7} value={values.description} onChange={value => change("description", value)} disabled={pending || state.retryOnly} />
@@ -85,6 +85,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       <div className="grid gap-6 md:grid-cols-2"><label className="block text-sm">推测时间 · 日期<input className={inputClass} type="date" name="estimated_date" value={values.estimated_date} onChange={event => change("estimated_date", event.target.value)} /></label>
       {select("archive_status", "档案状态", [["lost","待寻回"],["verifying","验证中"],...(!reviewRequired ? [["archived","已归档"]] as [string,string][] : [])])}</div>
       <div className="grid gap-6 md:grid-cols-2">
+      <h2 className="editor-heading md:col-span-2">权利与分发</h2>
       {select("copyright_status", "版权状态", [["unknown","未知"],["public_domain","公有领域"],["licensed","已许可"],["copyrighted","受版权保护"]])}
       {select("distribution_permission", "分发许可", [["unknown","未知"],["permission_granted","已获授权"],["metadata_only","仅元数据"],["restricted","受限"]])}
       {input("license", "许可证（最多 500 UTF-8 字节）")}{input("rights_holder", "权利人（最多 500 UTF-8 字节）")}</div>

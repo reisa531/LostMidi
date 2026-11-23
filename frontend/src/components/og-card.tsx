@@ -6,11 +6,11 @@
  * 卡片本身用色块与几何标记表达站点识别，不依赖字体覆盖范围。
  */
 const palette = {
-  background: "#f7f6f0",
-  foreground: "#262f2b",
-  muted: "#637069",
-  accent: "#335c4b",
-  panel: "#edf0e5",
+  background: "#f3eee4",
+  foreground: "#201f1c",
+  muted: "#676257",
+  accent: "#b23a29",
+  panel: "#e8e0d1",
 };
 
 /** 非 ASCII 文本回退到 fallback，避免卡片出现缺字方块。 */

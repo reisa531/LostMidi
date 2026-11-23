@@ -11,10 +11,10 @@ export default async function InstallPage() {
   const installed = state.kind === "reachable" && state.status.installed;
   const canInstall = state.kind === "reachable" && !state.status.installed && state.status.installation_enabled && config.ready;
   return <main id="main" className="mx-auto max-w-4xl px-5 py-10 sm:px-8 sm:py-16 [overflow-wrap:anywhere]">
-    <header className="rounded-t-2xl bg-[#203d31] px-6 py-9 text-white sm:px-10 sm:py-12">
-      <p className="text-[10px] tracking-[0.25em] text-[#bdcec5]">LOST MIDI ARCHIVE / 初始化向导</p>
-      <h1 className="mt-5 font-serif text-3xl leading-snug sm:text-4xl">{installed ? "站点已安装" : "为声音留下来处，从这里开始。"}</h1>
-      <p className="mt-4 max-w-2xl text-sm leading-8 text-[#d6e0d7]">{installed ? "初始化入口已锁定，已有配置与档案不会被覆盖。" : "连接后端、设置站点、创建管理员。安装只需完成一次，配置将持久保存在你的后端数据库中。"}</p>
+    <header className="install-heading bg-foreground px-6 py-9 text-white sm:px-10 sm:py-12">
+      <p className="text-[10px] tracking-[0.25em] text-rail-muted">LOST MIDI ARCHIVE / 初始化向导</p>
+      <h1 className="mt-5 font-serif text-3xl leading-snug sm:text-4xl">{installed ? "站点已安装" : "初始化档案馆"}</h1>
+      <p className="mt-4 max-w-2xl text-sm leading-8 text-rail-muted">{installed ? "初始化入口已锁定，已有配置与档案不会被覆盖。" : "连接后端、设置站点、创建管理员。安装只需完成一次，配置将持久保存在你的后端数据库中。"}</p>
     </header>
     <div className="space-y-8 rounded-b-2xl border border-t-0 border-line bg-white px-6 py-8 sm:px-10 sm:py-10">
       {installed ? <section className="space-y-5">
@@ -24,7 +24,7 @@ export default async function InstallPage() {
         <p className="text-xs leading-6 text-muted">若使用安装向导完成初始化，可以从后端部署环境移除 INSTALLATION_TOKEN 并重启，数据库中的安装锁仍会保留。</p>
       </section> : <>
         <section className="space-y-5" aria-labelledby="connection-heading">
-          <h2 id="connection-heading" className="text-lg font-semibold">01 / 部署与连接检查</h2>
+          <h2 id="connection-heading" className="text-lg font-semibold">部署与连接检查</h2>
           <dl className="divide-y divide-line rounded-lg border border-line px-4 text-sm">
             <div className="flex flex-wrap justify-between gap-2 py-3"><dt className="text-muted">后端地址</dt><dd>{config.backendUrl ? "已配置" : "缺失或格式不正确"}</dd></div>
             <div className="flex flex-wrap justify-between gap-2 py-3"><dt className="text-muted">站点来源与 Cookie</dt><dd>{config.ready ? "配置有效" : "需要检查 ADMIN_ORIGIN / Cookie 配置"}</dd></div>

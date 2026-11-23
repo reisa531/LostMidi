@@ -1,3 +1,4 @@
+import { ArchiveSearch } from "@/components/archive-search";
 import Link from "next/link";
 import { ApiError } from "@/lib/api/client";
 import { getCatalogEntries, getCatalogPeople, type SearchParams } from "@/lib/api/catalog";
@@ -46,10 +47,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const href = (kind: "midiPage" | "peoplePage", nextPage: number) => `/search?${new URLSearchParams({ ...(q ? { q } : {}), ...(personId ? { person: personId } : {}), midiPage: String(kind === "midiPage" ? nextPage : midiPage), ...(!personId ? { peoplePage: String(kind === "peoplePage" ? nextPage : peoplePage) } : {}) })}`;
   return <>
     <PageHeader eyebrow="档案 / 搜索" title="搜索档案" description="按作品名称、slug、人物姓名、历史昵称或来源名称查找。" />
-    <form action="/search" method="get" className="mb-8 flex flex-wrap gap-3 rounded-xl border border-line bg-white/70 p-4">
-      <label className="min-w-0 flex-1"><span className="sr-only">搜索关键词</span><input name="q" defaultValue={q ?? ""} maxLength={200} placeholder="作品、人物、历史昵称或来源" className="w-full rounded-lg border border-line bg-white px-4 py-3 text-sm focus:outline-2 focus:outline-offset-2 focus:outline-accent" /></label>
-      {personId && <input type="hidden" name="person" value={personId} />}<button className="rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white" type="submit">搜索</button>
-    </form>
+    <div className="mb-8 max-w-3xl"><ArchiveSearch key={JSON.stringify([personId, q])} query={q} person={personId} /></div>
     {!q && !personId ? <EmptyState title="输入关键词开始搜索" description="支持作品名称、slug、人物姓名、历史昵称和历史来源。" /> : <>
       {personId && selectedPerson && <p className="mb-4 rounded-lg border border-line bg-white/70 p-3 text-sm">人物：{selectedPerson.person.display_name} {q && `· 关键词：“${q}”`} <Link className="archive-link ml-3" href={q ? `/search?q=${encodeURIComponent(q)}` : "/search"}>清除人物筛选</Link></p>}
       {!personId && q && <p className="mb-6 text-sm text-muted">“{q}”的搜索结果</p>}

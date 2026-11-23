@@ -34,7 +34,8 @@ def check_changelog(page, base, screenshots=None):
             page.screenshot(path=str(screenshots / f'changelog-{width}.png'), full_page=True)
     sitemap = page.request.get(base + '/sitemap.xml')
     assert sitemap.ok and '<loc>' + base + '/changelog</loc>' in sitemap.text()
-    page.get_by_role('navigation', name='主导航').get_by_role('link', name='MIDI', exact=True).click()
+    page.get_by_role('button', name='打开导航菜单').click()
+    page.get_by_role('dialog', name='浏览档案').get_by_role('link', name='MIDI 目录', exact=True).click()
     expect(page).to_have_url(base + '/midis')
     expect(page.get_by_role('main').get_by_role('heading', level=1)).to_be_visible()
     assert not errors, errors
