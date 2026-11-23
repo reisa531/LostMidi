@@ -20,7 +20,7 @@ export type ChangeRequest = {
 export type ChangeRequestPage = { data: ChangeRequest[]; pagination: { page: number; pageSize: number; total: number } };
 export async function getChangeRequests(page: number, status: string) {
   const admin = await requireAdmin();
-  if (admin.role !== "super_admin") throw new Error("只有超级管理员可以查看内容审核队列");
+  if (admin.role !== "super_admin") throw new Error("仅超级管理员可查看内容审核队列");
   return adminRequest<ChangeRequestPage>(`/api/v1/admin/changes?page=${page}&status=${encodeURIComponent(status)}`, {}, 30_000);
 }
 export async function getOwnSubmissions(page: number, status: string) {
@@ -44,7 +44,7 @@ export async function getReviewCurrent(type: string, entityId: number) {
 
 export async function reviewChangeAction(form: FormData) {
   const admin = await requireAdmin();
-  if (admin.role !== "super_admin") throw new Error("只有超级管理员可以审核内容");
+  if (admin.role !== "super_admin") throw new Error("仅超级管理员可审核内容");
   const id = String(form.get("id") ?? "");
   const decision = String(form.get("decision") ?? "");
   const note = String(form.get("note") ?? "");
@@ -56,7 +56,7 @@ export async function reviewChangeAction(form: FormData) {
 }
 export async function closeFailedChangeAction(form: FormData) {
   const admin = await requireAdmin();
-  if (admin.role !== "super_admin") throw new Error("只有超级管理员可以关闭失败申请");
+  if (admin.role !== "super_admin") throw new Error("仅超级管理员可关闭失败申请");
   const id = String(form.get("id") ?? "");
   const note = String(form.get("note") ?? "").trim();
   if (!/^[0-9a-f-]{36}$/.test(id) || !note || note.length > 2000) throw new Error("请填写关闭原因。");

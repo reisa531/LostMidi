@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { installedSite, requireInstallation } from "@/lib/install/state";
 import { SiteNavigation } from "@/components/site-navigation";
-import { DiskMark } from "@/components/archive-brand";
+import { ArchiveMark } from "@/components/archive-brand";
 import releases from "@/lib/changelog.json";
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
@@ -9,7 +9,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
   const site = installed ?? await installedSite();
   return <div className="public-site">
     <header className="masthead"><div className="site-width masthead-inner">
-      <Link href="/" className="wordmark" aria-label={site.name + " 首页"}><DiskMark /><span>{site.name}</span></Link>
+      <Link href="/" className="wordmark" aria-label={site.name + " 首页"}><ArchiveMark /><span>{site.name}</span></Link>
       <SiteNavigation />
     </div></header>
     <main id="main" className="site-width public-main">
@@ -17,7 +17,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       {children}
     </main>
     <footer className="site-footer"><div className="site-width footer-inner">
-      <Link className="wordmark" href="/"><DiskMark /><span>{site.name}</span></Link>
+      <Link className="wordmark" href="/"><ArchiveMark /><span>{site.name}</span></Link>
       <nav aria-label="页脚导航"><Link href="/overview">档案总览</Link><Link href="/map">关系图谱</Link><Link href="/about#contact">联系我们</Link><Link href="/changelog">更新日志 · v{releases[0].version}</Link><Link href="/admin">工作台 ↗</Link></nav>
     </div></footer>
   </div>;

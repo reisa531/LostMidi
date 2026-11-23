@@ -104,7 +104,7 @@ export function EvidenceAttachments({ midiId, files }: { midiId: string; files: 
         </div>
         <div className="min-h-0 overflow-auto p-4 sm:p-6">
           {loading && <p role="status" className="py-8 text-center text-sm text-muted">正在加载预览…</p>}
-          {error && <div role="alert" className="space-y-3 py-8 text-center text-sm"><p>预览暂时无法显示，请重试或下载文件。</p><button type="button" onClick={retryPreview} className="archive-link">重新加载</button></div>}
+          {error && <div role="alert" className="space-y-3 py-8 text-center text-sm"><p>无法加载预览，请重试或下载文件。</p><button type="button" onClick={retryPreview} className="archive-link">重新加载</button></div>}
           {preview?.text !== undefined && <><label className="mb-3 block text-sm">文本编码<select value={encoding} onChange={event => { const next = event.target.value; setEncoding(next); if (textBytes) setPreview({ text: new TextDecoder(next).decode(textBytes) }); }} className="ml-3 rounded-lg border border-line bg-white px-3 py-2">{textEncodings.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><pre className="whitespace-pre-wrap break-words rounded-lg border border-line bg-white p-4 font-mono text-sm leading-6">{preview.text}</pre></>}
           {preview?.imageUrl && <Image src={preview.imageUrl} alt={selected.filename} width={1200} height={900} unoptimized className="mx-auto h-auto max-h-[72dvh] w-auto max-w-full object-contain" />}
         </div>

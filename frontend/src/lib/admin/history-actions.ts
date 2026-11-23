@@ -10,12 +10,12 @@ class InputError extends Error {}
 
 function text(form: FormData, name: string) {
   const value = form.get(name) ?? "";
-  if (typeof value !== "string") throw new InputError("字段格式不正确，请检查输入。");
+  if (typeof value !== "string") throw new InputError("字段格式有误，请检查输入。");
   return value;
 }
 function idOf(value: string) {
   if (!/^[1-9]\d{0,18}$/.test(value) || BigInt(value) > BigInt("9223372036854775807"))
-    throw new InputError("记录编号不正确，请保留输入并重新打开页面。");
+    throw new InputError("记录编号无效，请保留输入并重开页面。");
   return value;
 }
 function boundedText(form: FormData, name: string, label: string, max: number, required = false) {
@@ -45,7 +45,7 @@ function utcOf(form: FormData, name: string, label: string) {
   const value = text(form, name);
   if (!value) return null;
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?$/.test(value))
-    throw new InputError(`${label}请填写完整 UTC 日期和时间，小数秒最多 6 位；不知道完整日期时请留空。`);
+    throw new InputError(`${label}须填写完整 UTC 日期与时间，小数秒最多 6 位；未知完整日期请留空。`);
   // Do not use Date: it changes time zones and loses sub-millisecond precision.
   return `${value.length === 16 ? `${value}:00` : value}Z`;
 }
@@ -57,18 +57,18 @@ function errorMessage(error: unknown) {
   if (error instanceof InputError) return error.message;
   if (error instanceof ApiError) {
     if (error.status === 401) return "会话已过期。当前输入已保留，请在新页面登录后重试。";
-    if (error.status === 409) return "作品资料已被其他页面修改。请保留当前输入，重新打开来源与寻回页，核对最新资料后手动合并；不要直接重复提交。";
+    if (error.status === 409) return "作品资料已被其他页面修改。请保留当前输入，重开来源与寻回页核对最新资料并手动合并，勿直接重复提交。";
     const messages: Record<string, string> = {
-      INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
-      INVALID_INPUT: "请检查必填项、UTF-8 字节长度、网址和 UTC 日期；首次记录时间不能晚于最后记录时间。",
-      UNKNOWN_PERSON: "所选寻回人已不存在。请刷新人物列表并重新选择，或选择「人物不详」。",
+      INVALID_ORIGIN: "请求来源与后台配置不符，请检查访问地址。",
+      INVALID_INPUT: "请核对必填项、UTF-8 字节长度、网址和 UTC 日期；首次记录时间不得晚于最后记录时间。",
+      UNKNOWN_PERSON: "所选寻回人已不存在。请刷新人物列表重选，或选择「人物不详」。",
       MIDI_NOT_FOUND: "音乐条目已不存在。当前输入已保留，请先核对作品列表。",
-      SOURCE_NOT_FOUND: "这条历史来源已不存在。请保留输入，重新打开页面核对，不要直接重复提交。",
-      RECOVERY_EVENT_NOT_FOUND: "这条寻回记录已不存在。请保留输入，重新打开页面核对，不要直接重复提交。",
+      SOURCE_NOT_FOUND: "这条来源已不存在。请保留输入，重开页面核对，勿直接重复提交。",
+      RECOVERY_EVENT_NOT_FOUND: "这条寻回记录已不存在。请保留输入，重开页面核对，勿直接重复提交。",
     };
     if (messages[error.code]) return messages[error.code];
   }
-  return "请求超时、连接中断或服务异常，无法确认是否已保存。输入已保留，请先在新页面核对记录是否已保存或删除，再决定是否重试，避免重复新增。";
+  return "请求超时、连接中断或服务异常，无法确认保存结果。输入已保留，请先在新页面核对记录是否已保存或删除，再决定是否重试，避免重复新增。";
 }
 
 export async function saveHistoryAction(_previous: { error: string }, form: FormData) {
@@ -82,13 +82,13 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
     const kind = text(form, "kind");
     operation = text(form, "operation");
     if (!["source", "event"].includes(kind) || !["save", "delete"].includes(operation))
-      throw new InputError("操作不正确，请重新选择保存或确认删除。");
+      throw new InputError("操作无效，请重新选择保存或确认删除。");
     const recordId = text(form, "record_id") ? idOf(text(form, "record_id")) : "";
     const version = text(form, "revision");
     const revision = Number(version);
     if (!/^[1-9]\d*$/.test(version) || !Number.isSafeInteger(revision))
-      throw new InputError("作品版本不正确，请保留输入并重新打开页面。");
-    if (operation === "delete" && !recordId) throw new InputError("尚未保存的记录无需删除，请取消新增。");
+      throw new InputError("作品版本无效，请保留输入并重开页面。");
+    if (operation === "delete" && !recordId) throw new InputError("未保存的记录无需删除，请取消新增。");
 
     // Only these flat writable fields reach the API; deletion sends revision alone.
     let body: Record<string, string | number | null> = { revision };
@@ -96,11 +96,11 @@ export async function saveHistoryAction(_previous: { error: string }, form: Form
       const sourceTypes = text(form, "source_type").split(",");
       if (sourceTypes.length > 20 || sourceTypes.some(type => !type || type !== type.trim() || /[\r\n\t\0]/.test(type) || new TextEncoder().encode(type).length > 100) ||
           new Set(sourceTypes).size !== sourceTypes.length || new TextEncoder().encode(text(form, "source_type")).length > 2000)
-        throw new InputError("来源类型至少一项、最多 20 项；每项不能含逗号，且最多 100 UTF-8 字节。");
+        throw new InputError("来源类型至少 1 项、最多 20 项；每项不得含逗号，且不超过 100 UTF-8 字节。");
       const first = utcOf(form, "first_seen_at", "首次记录时间");
       const last = utcOf(form, "last_seen_at", "最后记录时间");
       if (first && last && sortableUTC(first) > sortableUTC(last))
-        throw new InputError("首次记录时间不能晚于最后记录时间。未知的日期请留空。");
+        throw new InputError("首次记录时间不得晚于最后记录时间；未知日期请留空。");
       body = { revision,
         website_name: boundedText(form, "website_name", "网站名称", 300, true),
         original_url: urlOf(form, "original_url", "原始网址"),
@@ -137,17 +137,17 @@ export async function uploadEvidenceAction(form: FormData): Promise<never> {
   const recordId = idOf(text(form, "record_id"));
   const versionText = text(form, "revision");
   const revision = Number(versionText);
-  if (!/^[1-9]\d*$/.test(versionText) || !Number.isSafeInteger(revision)) throw new InputError("作品版本不正确，请重新打开记录后上传。");
+  if (!/^[1-9]\d*$/.test(versionText) || !Number.isSafeInteger(revision)) throw new InputError("作品版本无效，请重开记录后上传。");
   const kind = text(form, "kind");
   if (kind !== "source" && kind !== "event") throw new InputError("附件关联类型无效。");
   const file = form.get("evidence_file");
-  if (!(file instanceof File) || !file.size) throw new InputError("请选择一个非空证据文件。");
+  if (!(file instanceof File) || !file.size) throw new InputError("请选择非空证据文件。");
   if (file.size > 1048576) throw new InputError("证据文件最大为 1 MiB。");
   const extension = file.name.toLowerCase().split(".").at(-1);
   const mediaTypes: Record<string, string> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", txt: "text/plain" };
   const mediaType = mediaTypes[extension ?? ""];
   if (!mediaType || (file.type && file.type !== mediaType && file.type !== "application/octet-stream"))
-    throw new InputError("仅支持 PDF、PNG、JPEG 和纯文本文件，且扩展名与文件类型必须相符。");
+    throw new InputError("仅支持 PDF、PNG、JPEG 和纯文本文件，扩展名须与文件类型一致。");
   const collection = kind === "source" ? "sources" : "recovery-events";
   const encodedName = encodeURIComponent(file.name);
   let queued = false;
@@ -167,7 +167,7 @@ export type EvidenceDeleteState = { error: string; queued?: boolean; done?: bool
 export async function deleteEvidenceAction(_: EvidenceDeleteState, form: FormData): Promise<EvidenceDeleteState> {
   try {
     if (!process.env.ADMIN_ORIGIN || (await headers()).get("origin") !== process.env.ADMIN_ORIGIN)
-      throw new InputError("请求来源不正确，请从后台页面重试。");
+      throw new InputError("请求来源无效，请从后台页面重试。");
     const midiId = idOf(text(form, "midi_id"));
     const evidenceId = idOf(text(form, "evidence_id"));
     const revision = Number(idOf(text(form, "revision")));

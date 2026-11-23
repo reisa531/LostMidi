@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <style>
+    svg { --paper: #f4f1e8; --ink: #24211d; --accent: #b23a29 }
+    @media (prefers-color-scheme: dark) { svg { --paper: #1c1a17; --ink: #ece6d6; --accent: #e0634f } }
+  </style>
+  <path d="M6 6H33L42 15V42H6Z" fill="#f4f1e8" stroke="#24211d" stroke-width="3" style="fill: var(--paper); stroke: var(--ink)" />
+  <path d="M33 6V15H42" fill="none" stroke="#24211d" stroke-width="3" style="stroke: var(--ink)" />
+  <rect x="12" y="30" width="9" height="6" fill="#24211d" style="fill: var(--ink)" />
+  <rect x="21" y="21" width="6" height="6" fill="#24211d" style="fill: var(--ink)" />
+  <rect x="30" y="27" width="6" height="6" fill="#b23a29" style="fill: var(--accent)" />
+</svg>

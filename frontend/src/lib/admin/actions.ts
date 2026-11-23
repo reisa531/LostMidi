@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api/client";
 import { adminRequest, sessionCookie } from "./auth";
 import type { MidiEntry } from "@/lib/api/types";
+import { registrationCopy } from "./registration-copy";
 
 async function checkOrigin() {
   const expected = process.env.ADMIN_ORIGIN;
@@ -14,16 +15,16 @@ function message(error: unknown) {
   if (!(error instanceof ApiError)) return "请求失败，请稍后重试。";
   const messages: Record<string, string> = {
     INVALID_CREDENTIALS: "用户名或密码不正确。", LOGIN_RATE_LIMITED: "登录尝试过多，请一分钟后重试。",
-    ACCOUNT_DISABLED: "账号尚未启用，请联系超级管理员（关于我们页）启用账号。",
-    ADMIN_DISABLED: "管理员账号尚未配置，请联系部署维护者。", INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
-    SLUG_CONFLICT: "此 slug 已被使用，请换一个。", STALE_ENTRY: "作品资料已被其他页面修改。请保留当前内容，重新打开编辑页后合并修改。",
-    INVALID_INPUT: "字段格式或长度不符合要求，请检查标题、slug、年份和文字长度。",
+    ACCOUNT_DISABLED: "账号未启用，请联系超级管理员（见“关于我们”页）启用。",
+    ADMIN_DISABLED: "尚未配置管理员账号，请联系部署维护者。", INVALID_ORIGIN: "请求来源与后台配置不符，请检查访问地址。",
+    SLUG_CONFLICT: "此 slug 已被占用，请更换。", STALE_ENTRY: "作品资料已被他处修改。请保留当前内容，重新打开编辑页合并。",
+    INVALID_INPUT: "字段格式或长度不符要求，请检查标题、slug、年份与文字长度。",
     MIDI_NOT_FOUND: "该档案已不存在。", UNAUTHORIZED: "会话已过期，请重新登录。",
     ARCHIVE_SUPER_ADMIN_REQUIRED: "已归档档案及归档操作仅限超级管理员。",
     USER_EXISTS: "账号或邮箱已存在。",
     REGISTRATION_RATE_LIMITED: "注册请求过多，请一分钟后重试。",
-    CAPTCHA_INVALID: "图片验证码错误或已过期，请填写新验证码。",
-    CAPTCHA_RATE_LIMITED: "验证码请求过多，请一分钟后重试。",
+    CAPTCHA_INVALID: registrationCopy.registrationRejected,
+    CAPTCHA_UNAVAILABLE: registrationCopy.registrationUnavailable,
   };
   return messages[error.code] ?? "服务暂时不可用，请稍后重试。";
 }
@@ -49,17 +50,16 @@ export async function registerAction(_previous: RegisterState, form: FormData): 
     const email = String(form.get("email") ?? "");
     const password = String(form.get("password") ?? "");
     const passwordConfirmation = String(form.get("password_confirmation") ?? "");
-    const captchaId = String(form.get("captcha_id") ?? "");
-    const captchaAnswer = String(form.get("captcha_answer") ?? "");
+    const token = String(form.get("captcha_token") ?? "");
     if (!/^[A-Za-z0-9_.-]{3,64}$/.test(username) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
       email.length > 254 || password.length < 12 || password !== passwordConfirmation)
       return { error: "请检查账号、邮箱及至少 12 位且一致的密码。", attempt: (_previous.attempt ?? 0) + 1 };
-    if (!/^[0-9a-f]{64}$/.test(captchaId) || !/^[0-9a-fA-F]{6}$/.test(captchaAnswer))
-      return { error: "请输入图片中的六位验证码。", attempt: (_previous.attempt ?? 0) + 1 };
+    if (!token || token.length > 2048)
+      return { error: registrationCopy.missing, attempt: (_previous.attempt ?? 0) + 1 };
     await apiRequest("/api/v1/admin/register", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, email, password, password_confirmation: passwordConfirmation,
-        captcha_id: captchaId, captcha_answer: captchaAnswer }),
+        captcha_token: token }),
     });
     return { error: "", registered: true };
   } catch (error) { return { error: message(error), attempt: (_previous.attempt ?? 0) + 1 }; }
@@ -108,14 +108,14 @@ export async function saveMidiAction(_previous: MidiSaveState, form: FormData): 
   } catch (error) {
     const disabled = error instanceof ApiError && error.code === "IMPORT_DISABLED";
     const retryOnly = !id && sent && !disabled && (!(error instanceof ApiError) || error.status >= 500);
-    if (retryOnly) return { error: "暂时无法确认创建结果，输入和文件已保留。请重试本次提交，系统会核对原请求，不会重复建档。", retryOnly: true };
+    if (retryOnly) return { error: "暂无法确认创建结果，输入与文件已保留。请重试提交，系统将核对原请求，不会重复建档。", retryOnly: true };
     const messages: Record<string, string> = {
       INVALID_FILE: "请通过文件上传表单提交文件。",
-      RIGHTS_CONFIRMATION_REQUIRED: "请先确认你有权公开分发此文件。",
-      FILE_OWNERSHIP_CONFLICT: "相同文件已归属于其他档案，未创建新档案。请先在档案列表核对归属。",
-      IDEMPOTENCY_CONFLICT: "本次请求已保存过不同内容。请在新页面核对档案列表，不要重复建档。",
-      CREATION_DELETED: "本次创建请求对应的档案已删除，不能通过重试恢复。请重新打开新增页创建。",
-      IMPORT_DISABLED: "文件上传尚未启用或已暂停；可以移除文件，仅保存文字资料。",
+      RIGHTS_CONFIRMATION_REQUIRED: "请先确认有权公开分发此文件。",
+      FILE_OWNERSHIP_CONFLICT: "相同文件已归属其他档案，未新建。请先在档案列表核对归属。",
+      IDEMPOTENCY_CONFLICT: "本次请求已保存其他内容。请在新页面核对档案列表，勿重复建档。",
+      CREATION_DELETED: "此请求对应的档案已删除，重试无法恢复。请重新打开新增页创建。",
+      IMPORT_DISABLED: "文件上传未启用或已暂停；可移除文件，仅保存文字资料。",
     };
     return { error: error instanceof ApiError ? messages[error.code] ?? message(error) : message(error) };
   }

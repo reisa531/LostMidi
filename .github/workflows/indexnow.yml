@@ -41,7 +41,7 @@ jobs:
           restore-keys: indexnow-state-
       - name: Verify key file and submit changed URLs
         env:
-          ADMIN_ORIGIN: ${{ inputs.origin || 'https://lostmidi.dzhes.xyz' }}
+          ADMIN_ORIGIN: ${{ inputs.origin || 'https://lostmidi.dzhes.app' }}
         run: |
           node scripts/indexnow.mjs --engine indexnow ${{ inputs.all && '--all' || '' }} ${{ inputs.dry_run && '--dry-run' || '' }}
       - name: Save submission state

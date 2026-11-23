@@ -15,7 +15,7 @@ export async function PersonWorks({ filter, publicId, page }: {
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
     return <Section id="related-works" title="相关作品">
-      <p className="text-muted">暂时无法读取相关作品。</p>
+      <p className="text-muted">暂无法读取相关作品。</p>
       <Link href={catalogUrl} className="archive-link">{filter.source ? "查看该来源的 MIDI 目录" : "按此人物筛选 MIDI 目录"}</Link>
     </Section>;
   }
@@ -31,7 +31,7 @@ export async function PersonWorks({ filter, publicId, page }: {
         <Link href={`/midis/${work.slug}`} className="archive-link">{work.title}</Link>
         <span className="text-muted"> · {year ? `约 ${year} 年` : "年代未详"} · {work.sources.join("、") || "来源待补"}</span>
       </li>;
-    })}</ul> : <p className="text-muted">{works.pagination.total ? "此页暂无作品。" : filter.source ? "该来源下暂无收录记录。" : "尚无作品署名记录。"}</p>}
+    })}</ul> : <p className="text-muted">{works.pagination.total ? "此页暂无作品。" : filter.source ? "该来源暂无收录记录。" : "尚无作品署名记录。"}</p>}
     {(pages > 1 || page > 1) && <nav aria-label="相关作品分页" className="flex flex-wrap items-center gap-4 text-xs">
       {page <= pages && <span className="text-muted">第 {page} 页 / 共 {pages} 页</span>}
       {page > 1 && <a href={href(1)} className="archive-link">第一页</a>}

@@ -9,7 +9,7 @@ export async function RelatedArticlesFor({ kind, id }: { kind: "midi" | "person"
     articles = await (kind === "midi" ? getMidiArticles(id) : getPersonArticles(id));
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
-    return <p className="border-t border-line pt-5 text-sm text-muted">相关文章暂时无法加载。<Link href="/articles" className="archive-link ml-2">浏览文章目录</Link></p>;
+    return <p className="border-t border-line pt-5 text-sm text-muted">相关文章暂无法加载。<Link href="/articles" className="archive-link ml-2">浏览文章目录</Link></p>;
   }
   return <RelatedArticles articles={articles} moreHref={`/articles/related?kind=${kind}&id=${encodeURIComponent(id)}`} />;
 }

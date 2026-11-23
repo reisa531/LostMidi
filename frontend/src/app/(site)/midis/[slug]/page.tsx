@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     const stableId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(slug);
     const detail = stableId ? await getMidiByPublicId(slug) : await getMidiBySlug(slug);
     const title = detail.entry.title;
-    const description = markdownSummary(detail.entry.description || `查看 ${title} 的 MIDI 作品、署名、历史来源与寻回记录。`, 155);
+    const description = markdownSummary(detail.entry.description || `查看 ${title} 的 MIDI 作品、署名、来源与寻回记录。`, 155);
     const path = `/midis/${detail.entry.slug}`;
     return { title, description, alternates: { canonical: path },
       openGraph: { type: "article", title, description, url: absoluteUrl(path) ?? undefined, modifiedTime: detail.entry.updated_at },
@@ -73,7 +73,7 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
       <nav className="record-index" aria-label="本页目录"><p>本页目录</p>
         <a href="#record-credits">人物与署名</a>
         <a href="#record-contributors">档案贡献者</a>
-        <a href="#record-sources">历史来源</a>
+        <a href="#record-sources">来源</a>
         <a href="#record-recovery">寻回记录</a>
         <a href="#record-files">文件信息</a>
         <a href="#record-rights">权利信息</a>
@@ -88,14 +88,14 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
         {typeof rights === "string" && rights.trim() && <UsageTerms author={credit.display_name} terms={rights} />}
       </li>;
     })}</ul> : <p className="text-muted">作者尚待考证。</p>}</Section>
-    <Section id="record-contributors" title="档案贡献者"><p className="text-muted">提交或完善这条音乐档案的后台用户。</p>{detail.contributors?.length ? <ul className="flex flex-wrap gap-2">{detail.contributors.map(username => <li key={username} className="rounded-full border border-line bg-white px-3 py-1 text-sm">{username}</li>)}</ul> : <p className="text-muted">暂无可核实的用户贡献记录。</p>}</Section>
-    <Section id="record-sources" title="历史来源">{historical_sources.length ? <><p className="text-xs text-muted">共 {historical_sources.length} 条线索；点击条目查看详情。</p><div className="space-y-3">{historical_sources.map(source => <details className="group min-w-0 rounded-lg border border-line bg-white/70 [overflow-wrap:anywhere]" key={source.id} open={historical_sources.length === 1}>
+    <Section id="record-contributors" title="档案贡献者"><p className="text-muted">提交或完善本条目的后台用户。</p>{detail.contributors?.length ? <ul className="flex flex-wrap gap-2">{detail.contributors.map(username => <li key={username} className="rounded-full border border-line bg-white px-3 py-1 text-sm">{username}</li>)}</ul> : <p className="text-muted">暂无可核实的用户贡献记录。</p>}</Section>
+    <Section id="record-sources" title={"来源"}>{historical_sources.length ? <><p className="text-xs text-muted">共 {historical_sources.length} 条线索；点击条目查看详情。</p><div className="space-y-3">{historical_sources.map(source => <details className="group min-w-0 rounded-lg border border-line bg-white/70 [overflow-wrap:anywhere]" key={source.id} open={historical_sources.length === 1}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"><span className="min-w-0 font-medium">{source.website_name}<span className="ml-3 text-xs font-normal text-muted">{dateLabel(source.first_seen_at)}{source.evidence_files?.length ? ` · ${source.evidence_files.length} 个附件` : ""}</span></span><span aria-hidden="true" className="shrink-0 text-accent transition-transform group-open:rotate-180">⌄</span></summary>
       <div className="space-y-3 border-t border-line px-4 py-4"><p className="text-xs text-muted">首次记录 {dateLabel(source.first_seen_at)} · 最后记录 {dateLabel(source.last_seen_at)}</p>
       <div className="flex flex-wrap gap-5"><ExternalSource url={source.original_url} label="原始网址" /><ExternalSource url={source.wayback_url} label="历史快照" /></div>
       {source.notes ? <Markdown source={source.notes} /> : <p className="text-muted">暂无补充说明。</p>}
       <EvidenceAttachments midiId={entry.id} files={source.evidence_files ?? []} /></div>
-    </details>)}</div></> : <p className="text-muted">尚未登记历史来源。</p>}</Section>
+    </details>)}</div></> : <p className="text-muted">尚未登记来源。</p>}</Section>
     <Section id="record-recovery" title="寻回记录">{recovery_events.length ? recovery_events.map(event => <div className="min-w-0 border-l-2 border-line pl-5 [overflow-wrap:anywhere]" key={event.id}>
       <p className="mb-2 text-xs text-muted">{dateLabel(event.recovered_at)} · {event.recovered_by_name ?? "寻回人不详"}</p>
       <Markdown source={event.story} /><div className="mt-3"><p className="text-xs text-muted">证据说明</p>{event.evidence ? <Markdown source={event.evidence} /> : <p className="text-muted">尚未补充</p>}</div>

@@ -35,9 +35,9 @@ function ReviewFields({ type, payload, current }: { type: string; payload: unkno
   const deletion = type.endsWith(".delete");
   const restore = type.endsWith(".restore");
   return <div className="mt-4 space-y-3 text-sm">
-    {(deletion || restore) && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-950">{deletion ? "批准后会删除这条记录。" : "批准后会恢复这条记录。"}请核对记录编号和版本。</p>}
+    {(deletion || restore) && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-950">{deletion ? "通过后会删除此条目。" : "通过后会恢复此条目。"}请核对条目编号与版本。</p>}
     {rows.length > 0 && <dl className="divide-y divide-line rounded-lg border border-line">{rows.map(({ key, value, before }) => <div key={key} className="grid gap-2 p-3 sm:grid-cols-[10rem_minmax(0,1fr)]"><dt className="font-medium">{fieldLabels[key] ?? key}</dt><dd className="min-w-0 space-y-1 break-words">{existing && <p className="whitespace-pre-wrap text-muted">原值：{valueText(before)}</p>}<p className="whitespace-pre-wrap">拟改为：{valueText(value)}</p></dd></div>)}</dl>}
-    {!rows.length && !deletion && !restore && <p className="text-muted">此申请没有可显示的文字字段；请展开原始申请核对附件或记录编号。</p>}
+    {!rows.length && !deletion && !restore && <p className="text-muted">该申请无可展示的文字字段，请展开原始申请核对附件或条目编号。</p>}
     {Boolean(proposed.file) && <p className="rounded-lg bg-background p-3">同时提交文件：{valueText(fieldsOf(proposed.file).filename)}</p>}
   </div>;
 }
@@ -58,7 +58,7 @@ export function ReviewComparison({ type, entityId, payload, canCompare }: { type
   }}>
     <summary className="cursor-pointer text-sm font-medium text-accent">展开字段对比</summary>
     {loading && <p role="status" className="mt-3 text-sm text-muted">正在加载原档案…</p>}
-    {error && <p role="alert" className="mt-3 text-sm text-amber-900">原档案暂时无法加载；请核对版本后再审核。</p>}
+    {error && <p role="alert" className="mt-3 text-sm text-amber-900">原档案暂无法加载，请核对版本后再审核。</p>}
     {loaded && <ReviewFields type={type} payload={payload} current={current} />}
   </details>;
 }

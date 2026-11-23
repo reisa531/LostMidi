@@ -21,7 +21,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   if ((q !== undefined && (typeof q !== "string" || !q.trim() || new TextEncoder().encode(q).length > 200)) ||
       (personId !== undefined && (typeof personId !== "string" || !/^[1-9]\d{0,18}$/.test(personId) || BigInt(personId) > BigInt("9223372036854775807"))) ||
       ([pageRaw, midiPageRaw, peoplePageRaw].some(value => value !== undefined && (typeof value !== "string" || !/^[1-9]\d*$/.test(value) || Number(value) > 1000000))))
-    return <EmptyState title="搜索条件无效" description="请使用 1 到 200 字节的关键词，并从第一页重新搜索。" action={<Link href="/search" className="archive-link">重置搜索</Link>} />;
+    return <EmptyState title="搜索条件无效" description={"输入 1 到 200 字节的关键词，从第一页重新搜索。"} action={<Link href="/search" className="archive-link">重置搜索</Link>} />;
   const midiPage = midiPageRaw === undefined ? 1 : Number(midiPageRaw);
   const peoplePage = peoplePageRaw === undefined ? 1 : Number(peoplePageRaw);
   let entries: CatalogEntries | undefined;

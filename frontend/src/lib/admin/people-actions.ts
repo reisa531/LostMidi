@@ -17,10 +17,10 @@ function idOf(value: FormDataEntryValue | null) {
 function errorMessage(error: unknown) {
   const messages: Record<string, string> = {
     UNAUTHORIZED: "会话已过期。请在新页面登录后重试。",
-    INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
-    INVALID_INPUT: "请检查必填项、文字长度和重复的昵称或署名。",
-    STALE_PERSON: "人物资料已被其他页面修改，请保留当前输入，重新打开编辑页后合并修改。",
-    STALE_ENTRY: "作品资料已被其他页面修改，请保留当前输入，重新打开页面后合并修改。",
+    INVALID_ORIGIN: "请求来源与后台配置不符，请检查访问地址。",
+    INVALID_INPUT: "请核对必填项、文字长度及重复的昵称或署名。",
+    STALE_PERSON: "人物资料已被其他页面修改。请保留当前输入，重开编辑页后合并修改。",
+    STALE_ENTRY: "作品资料已被其他页面修改。请保留当前输入，重开页面后合并修改。",
     UNKNOWN_PERSON: "所选人物已不存在，请重新选择。", PERSON_NOT_FOUND: "人物资料已不存在。", MIDI_NOT_FOUND: "音乐条目已不存在。",
   };
   return error instanceof ApiError ? messages[error.code] ?? "服务暂时不可用，请稍后重试。" : "请求失败，请稍后重试。";

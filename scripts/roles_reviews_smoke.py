@@ -274,14 +274,11 @@ def main():
                    expected=400)["error"]["code"] == "DELETE_CONFIRMATION_REQUIRED"
     assert request(user_path, "DELETE", {"confirm_username": username}, super_token)["deleted_id"] == invitation["id"]
     assert all(user["id"] != invitation["id"] for user in request("/api/v1/admin/users", token=super_token))
-    captcha = request("/api/v1/admin/register/captcha")
-    assert len(captcha["id"]) == 64 and "<svg" in captcha["svg"] and "<text" not in captcha["svg"]
-    assert request("/api/v1/admin/register", "POST", {
+    assert request("/api/v1/admin/register", method="POST", body={
         "username": "captcha_" + marker[:12], "email": marker + "@example.test",
-        "password": password, "password_confirmation": password,
-        "captcha_id": captcha["id"], "captcha_answer": "G00000",
+        "password": "registration-password-42", "password_confirmation": "registration-password-42",
     }, expected=400)["error"]["code"] == "CAPTCHA_INVALID"
-    print("PASS: roles/revoked cookies; review workflow; user deletion; image captcha validation")
+    print("PASS: roles/revoked cookies; review workflow; user deletion; registration token requirement")
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ export function MidiFileManagement({ midiId, fileId, revision, publicDownload, d
         <button type="submit" disabled={disabled} className="underline disabled:opacity-50">{publicDownload ? "关闭访客下载" : "开放访客下载"}</button>
       </form>
       <form action={deletionAction} onSubmit={event => {
-        if (!window.confirm("确定从此音乐条目移除该文件？移除后访客将无法下载。")) event.preventDefault();
+        if (!window.confirm("确定从此条目移除该文件？移除后访客无法下载。")) event.preventDefault();
       }}>
         <input type="hidden" name="midi_id" value={midiId} /><input type="hidden" name="file_id" value={fileId} />
         <input type="hidden" name="revision" value={revision} /><input type="hidden" name="intent" value="delete" />
@@ -31,6 +31,6 @@ export function MidiFileManagement({ midiId, fileId, revision, publicDownload, d
     </div>
     {(visibility.error || deletion.error) && <p role="alert" className="text-sm text-red-800">{visibility.error || deletion.error}</p>}
     {(visibility.queued || deletion.queued) && <p role="status" className="text-sm text-amber-900">{reviewRequired ? "申请已提交，等待超级管理员审核。" : "申请已提交。"}</p>}
-    {(visibility.done || deletion.done) && <p role="status" className="text-sm text-green-900">操作已完成，文件列表正在刷新。</p>}
+    {(visibility.done || deletion.done) && <p role="status" className="text-sm text-green-900">操作已完成，正在刷新文件列表。</p>}
   </div>;
 }

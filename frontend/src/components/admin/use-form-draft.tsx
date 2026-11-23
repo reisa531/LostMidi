@@ -22,7 +22,7 @@ export function useFormDraft(key: string) {
       if (!dirtyRef.current || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const target = event.target;
       const link = target instanceof Element ? target.closest("a[href]") : null;
-      if (link instanceof HTMLAnchorElement && link.target !== "_blank" && !window.confirm("有未保存的修改，确定离开吗？草稿会保留在当前浏览器标签页。")) {
+      if (link instanceof HTMLAnchorElement && link.target !== "_blank" && !window.confirm("修改尚未保存，确定离开？草稿会保留在当前浏览器标签页。")) {
         event.preventDefault(); event.stopPropagation();
       }
     };
@@ -78,7 +78,7 @@ export function useFormDraft(key: string) {
 export function DraftNotice({ hasDraft, dirty, restore, discard }: { hasDraft: boolean; dirty: boolean; restore: () => void; discard: () => void }) {
   if (!hasDraft && !dirty) return null;
   return <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-    <span>{hasDraft ? "当前标签页有未提交的文字草稿；文件需要重新选择。" : "修改尚未保存，离开页面前会提醒。"}</span>
+    <span>{hasDraft ? "当前标签页存有未提交的文字草稿，文件需重新选择。" : "修改尚未保存，离开页面前会提醒。"}</span>
     {hasDraft && <button type="button" onClick={restore} className="underline">恢复草稿</button>}
     <button type="button" onClick={discard} className="underline">清除草稿</button>
   </div>;

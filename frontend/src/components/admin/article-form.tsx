@@ -29,7 +29,7 @@ function AssociationList({ kind, title, selected, setSelected, initial, canChoos
         if (cancelled) return;
         setOptions(result.options); setTotal(result.total);
         setKnown(previous => [...new Map([...previous, ...result.options].map(option => [option.id, option])).values()]);
-      } catch { if (!cancelled) setError("候选档案加载失败，请重试搜索。"); }
+      } catch { if (!cancelled) setError("候选档案加载失败，请重新搜索。"); }
       finally { if (!cancelled) setLoading(false); }
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
@@ -88,8 +88,8 @@ export function ArticleForm({ article, role }: { article?: ArticleDetail; role: 
   }, { error: "" });
   const initialMidis: Option[] = article?.midis.map(item => ({ id: item.id, label: `${item.title} · #${item.id}`, archived: item.archive_status === "archived" })) ?? [];
   const initialPeople: Option[] = article?.people.map(item => ({ id: item.id, label: `${item.display_name} · #${item.id}`, archived: false })) ?? [];
-  return <div className="space-y-8">{!canEdit && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">这篇文章关联已归档 MIDI，仅超级管理员可以修改或删除。</p>}
-    {canEdit && <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} className="space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8" onSubmit={event => { if (!midiIds.length) { event.preventDefault(); setFormError("请至少关联一条 音乐条目。"); } else setFormError(""); }}>
+  return <div className="space-y-8">{!canEdit && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">本文关联了已归档 MIDI，仅超级管理员可修改或删除。</p>}
+    {canEdit && <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} className="space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8" onSubmit={event => { if (!midiIds.length) { event.preventDefault(); setFormError("请至少关联一条音乐条目。"); } else setFormError(""); }}>
       <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restore} discard={discard} />
       {article && <><input type="hidden" name="id" value={article.id} /><input type="hidden" name="revision" value={article.revision} /></>}
       <input type="hidden" name="midi_ids" value={JSON.stringify(midiIds)} /><input type="hidden" name="person_ids" value={JSON.stringify(personIds)} />
@@ -104,7 +104,7 @@ export function ArticleForm({ article, role }: { article?: ArticleDetail; role: 
       {formError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{formError}</p>}
       <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5"><button disabled={pending} className="rounded-lg bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在保存…" : article ? "保存文章" : "创建文章"}</button><Link className="archive-link text-sm" href="/admin/articles">返回文章列表</Link></div>
     </form>}
-    {article && canEdit && <form action={async form => { setDeleting(true); setDeleteError(""); try { await deleteArticleAction(form); discard(); clearDraft(); router.push("/admin/articles"); router.refresh(); } catch { setDeleteError("删除失败。请确认权限或稍后重试。"); } finally { setDeleting(false); } }} className="rounded-xl border border-red-200 bg-white p-5"><input type="hidden" name="id" value={article.id} />
+    {article && canEdit && <form action={async form => { setDeleting(true); setDeleteError(""); try { await deleteArticleAction(form); discard(); clearDraft(); router.push("/admin/articles"); router.refresh(); } catch { setDeleteError("删除失败，请检查权限或稍后重试。"); } finally { setDeleting(false); } }} className="rounded-xl border border-red-200 bg-white p-5"><input type="hidden" name="id" value={article.id} />
       <p className="mb-3 text-sm font-medium text-red-800">删除文章</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" value="yes" required />我确认删除这篇文章</label>
       {deleteError && <p role="alert" className="mt-3 text-sm text-red-800">{deleteError}</p>}
       <button disabled={deleting} className="mt-4 rounded border border-red-300 px-4 py-2 text-sm text-red-800 disabled:opacity-50">{deleting ? "正在删除…" : "删除文章"}</button>

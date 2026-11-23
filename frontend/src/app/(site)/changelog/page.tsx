@@ -3,7 +3,7 @@ import releases from "@/lib/changelog.json";
 
 export const metadata = {
   title: "更新日志",
-  description: "Lost MIDI Archive 的版本更新与功能改进记录。",
+  description: "Lost MIDI Archive 版本更新与功能改进记录。",
   alternates: { canonical: "/changelog" },
 };
 
@@ -12,7 +12,7 @@ export default function ChangelogPage() {
     <header className="mb-10 border-b border-line pb-8">
       <p className="eyebrow">项目进展</p>
       <h1 className="my-5 font-serif text-4xl">更新日志</h1>
-      <p className="leading-8 text-muted">记录档案站的每一步改进。当前版本 <span className="font-medium text-accent">v{releases[0].version}</span>。</p>
+      <p className="leading-8 text-muted">记录档案站每次改进。当前版本 <span className="font-medium text-accent">v{releases[0].version}</span>。</p>
     </header>
     <div>
       {releases.map((release, index) => <section key={release.version} id={`v${release.version}`} aria-labelledby={`title-${release.version}`} className="scroll-mt-8 border-t border-line py-6 [overflow-wrap:anywhere]">

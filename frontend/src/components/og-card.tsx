@@ -1,3 +1,5 @@
+import { ArchiveMark } from "./archive-brand";
+
 /**
  * Open Graph / Twitter 卡片图。
  *
@@ -10,20 +12,12 @@ const palette = {
   foreground: "#201f1c",
   muted: "#676257",
   accent: "#b23a29",
-  panel: "#e8e0d1",
 };
 
 /** 非 ASCII 文本回退到 fallback，避免卡片出现缺字方块。 */
 export function asciiText(value: string | null | undefined, fallback: string) {
   const text = (value ?? "").trim();
   return text && /^[\x20-\x7e]+$/.test(text) ? text : fallback;
-}
-
-function equalizer() {
-  const bars = [26, 44, 62, 38, 54, 30];
-  return <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 62 }}>
-    {bars.map((height, index) => <div key={index} style={{ width: 10, height, borderRadius: 2, background: index % 2 ? palette.muted : palette.accent }} />)}
-  </div>;
 }
 
 export function OgCard({ eyebrow, title, host, footer }: { eyebrow: string; title: string; host: string; footer?: string }) {
@@ -38,11 +32,11 @@ export function OgCard({ eyebrow, title, host, footer }: { eyebrow: string; titl
         <div style={{ fontSize: 26, letterSpacing: 8, color: palette.accent }}>LOST MIDI ARCHIVE</div>
         <div style={{ fontSize: 19, letterSpacing: 4, color: palette.muted }}>{eyebrow}</div>
       </div>
-      {equalizer()}
+      <ArchiveMark size={104} colors={{ paper: palette.background, ink: palette.foreground, accent: palette.accent }} />
     </div>
     <div style={{ display: "flex", fontSize: size, lineHeight: 1.15, letterSpacing: -1, color: palette.foreground }}>{title}</div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: `2px solid ${palette.accent}`, paddingTop: 22, fontSize: 20, color: palette.muted }}>
-      <span>{footer ?? "Early web MIDI · digital archive"}</span>
+      <span>{footer ?? "MIDI sources and recovery records"}</span>
       <span style={{ color: palette.accent }}>{host}</span>
     </div>
   </div>;

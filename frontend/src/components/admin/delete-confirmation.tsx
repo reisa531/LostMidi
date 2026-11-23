@@ -33,10 +33,10 @@ export function DeleteConfirmation({ resource, id, revision, name, reviewRequire
 
   return <section aria-labelledby={headingId} className="mt-10 min-w-0 space-y-4 rounded-xl border border-red-200 bg-white p-5 sm:p-6">
     <h2 id={headingId} className="text-lg font-semibold text-red-900">危险操作：删除{label}</h2>
-    <p className="break-words text-sm leading-7">{reviewRequired ? `将提交「${name}」（编号 ${id}）的删除申请，超级管理员批准后才会移入回收站。` : `即将将「${name}」（编号 ${id}）移入回收站。可以从后台回收站恢复。`}不会保存上方表单中尚未提交的修改。</p>
+    <p className="break-words text-sm leading-7">{reviewRequired ? `将提交「${name}」（编号 ${id}）的删除申请，经超级管理员批准后移入回收站。` : `即将把「${name}」（编号 ${id}）移入回收站，可从后台回收站恢复。`}上方表单未提交的修改不会保存。</p>
     {resource === "midis" ? <div className="space-y-2 text-sm leading-7 text-muted">
-      <p>作品署名、来源、寻回记录、文件登记和外部文件都会保留，恢复后继续可用。</p>
-    </div> : <p className="text-sm leading-7 text-muted">人物历史昵称会保留，恢复后继续可用。仍有作品署名或寻回记录引用的人物需要先解除引用。</p>}
+      <p>作品署名、来源、寻回记录、文件登记和外部文件均会保留，恢复后继续可用。</p>
+    </div> : <p className="text-sm leading-7 text-muted">人物历史昵称会保留，恢复后继续可用。仍被作品署名或寻回记录引用的人物，需先解除引用。</p>}
     <form action={action} onReset={event => event.preventDefault()} onSubmit={event => {
       if (busy || submitting.current || !confirming || !confirmed) { event.preventDefault(); return; }
       submitting.current = true;

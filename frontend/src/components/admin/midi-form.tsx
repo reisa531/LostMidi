@@ -42,7 +42,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       }
       return { ...next, retryOnly: !next.savedId && (previous.retryOnly || next.retryOnly) };
     } catch {
-      return { error: "连接中断，输入和文件已保留。请重试本次提交或在新页面核对档案记录。", retryOnly: !entry };
+      return { error: "连接中断，已填写内容与文件均已保留。可重试本次提交，或在新页面核对档案记录。", retryOnly: !entry };
     } finally { submitting.current = false; }
   }, { error: "" });
   const [values, setValues] = useState({
@@ -62,8 +62,8 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
   </label>;
   function fileError(file: File | undefined) {
     if (!file) return "";
-    if (file.size === 0) return "请选择一个非空文件。";
-    return file.size > maxFileSize ? "文件过大；单个文件最大 20 MB（20,000,000 字节）。" : "";
+    if (file.size === 0) return "请选择非空文件。";
+    return file.size > maxFileSize ? "文件过大，单文件上限 20 MB（20,000,000 字节）。" : "";
   }
   return <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} onReset={event => event.preventDefault()} onSubmit={event => {
     if (pending || submitting.current) { event.preventDefault(); return; }
@@ -74,12 +74,12 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
     }
     submitting.current = true;
   }} aria-busy={pending} className="min-w-0 space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8">
-    <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，批准后才会发布。" : entry ? "保存后，基础资料立即显示在公开档案中。" : "填写作品资料，也可以一起上传音乐文件；没有文件时仍可建立寻回档案。"}</p>
+    <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，通过后发布。" : entry ? "保存后，基础资料立即在公开档案中显示。" : "填写作品资料，可同时上传音乐文件；暂无文件也可先建寻回档案。"}</p>
     <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restoreDraft} discard={discardDraft} />
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
     <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="editor-heading">作品资料</legend>
       <div className="grid gap-6 md:grid-cols-2">{input("title", "标题 *", true)}{input("slug", "Slug（公开地址）*", true)}</div>
-      <p className="text-xs leading-6 text-muted">Slug 使用小写字母、数字和词间连字符。更改后旧地址会转到新地址；历史使用过的 slug 不可分配给其他档案。标题最多 300 UTF-8 字节，中文字符通常占 3 字节。</p>
+      <p className="text-xs leading-6 text-muted">Slug 仅限小写字母、数字与词间连字符。修改后旧地址将跳转至新地址；用过的 slug 不可分配给其他档案。标题最多 300 UTF-8 字节，中文通常占 3 字节。</p>
       <MarkdownField name="description" label="描述（支持 Markdown）" rows={7} value={values.description} onChange={value => change("description", value)} disabled={pending || state.retryOnly} />
       <input type="hidden" name="estimated_year" value={values.estimated_date ? values.estimated_date.slice(0, 4) : !entry?.estimated_date ? entry?.estimated_year?.toString() ?? "" : ""} />
       <div className="grid gap-6 md:grid-cols-2"><label className="block text-sm">推测时间 · 日期<input className={inputClass} type="date" name="estimated_date" value={values.estimated_date} onChange={event => change("estimated_date", event.target.value)} /></label>
@@ -89,9 +89,9 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
       {select("copyright_status", "版权状态", [["unknown","未知"],["public_domain","公有领域"],["licensed","已许可"],["copyrighted","受版权保护"]])}
       {select("distribution_permission", "分发许可", [["unknown","未知"],["permission_granted","已获授权"],["metadata_only","仅元数据"],["restricted","受限"]])}
       {input("license", "许可证（最多 500 UTF-8 字节）")}{input("rights_holder", "权利人（最多 500 UTF-8 字节）")}</div>
-      {!entry && !importEnabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，仍可创建档案资料。</p>}
+      {!entry && !importEnabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入未启用或已暂停，仍可创建档案资料。</p>}
       {!entry && importEnabled && <section className="min-w-0 space-y-4 rounded-lg border border-line bg-background p-4 sm:p-5">
-        <div><h2 className="font-semibold">音乐文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">不限文件格式，单个文件最大 20 MB（20,000,000 字节）。原始文件和资料一起保存，失败不会留下半成品档案。</p></div>
+        <div><h2 className="font-semibold">音乐文件 <span className="ml-2 text-xs font-normal text-muted">可选</span></h2><p id="create-file-help" className="mt-2 text-xs leading-6 text-muted">不限格式，单文件上限 20 MB（20,000,000 字节）。原始文件与资料一并保存，失败时不留半成品档案。</p></div>
         <label className="block text-sm">选择音乐文件<input ref={fileInput} name="file" type="file" aria-describedby="create-file-help" className={`${inputClass} min-w-0`} onChange={event => {
           const file = event.target.files?.[0];
           setHasFile(Boolean(file)); setClientError(fileError(file));
@@ -101,8 +101,8 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
           if (rightsInput.current) rightsInput.current.checked = false;
           setHasFile(false); setClientError("");
         }}>移除文件，仅保存资料</button>}
-        <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" className="mt-2 shrink-0" />允许访客下载此文件（仅在确认有权公开分发时勾选；不勾选也可上传）。</label>
-        {hasFile && <p className="text-xs leading-6 text-muted">上传不会自动改变归档状态或分发许可，请按实际情况填写。</p>}
+        <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" className="mt-2 shrink-0" />允许访客下载此文件（确认有权公开分发时再勾选；不勾选仍可上传）。</label>
+        {hasFile && <p className="text-xs leading-6 text-muted">上传不会自动更改归档状态或分发许可，请按实际情况填写。</p>}
       </section>}
     </fieldset>
     {clientError && <p role="alert" className="text-sm text-red-900">{clientError}</p>}

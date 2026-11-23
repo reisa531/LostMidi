@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 const errorMessages: Record<number, string> = {
-  403: "此文件尚未确认可公开分发，或档案限制分发、仅公开资料，暂时无法下载。请通过联系我们说明用途。",
-  404: "档案或文件不存在，可能已被移除，请刷新页面后重试。",
-  503: "下载服务暂时不可用，请稍后重试。",
+  403: "此文件尚未确认公开分发，或档案限制分发、仅公开资料，暂不提供下载。请通过联系我们说明用途。",
+  404: "档案或文件不存在，可能已移除，请刷新页面重试。",
+  503: "下载服务暂不可用，请稍后重试。",
   504: "下载请求超时，请稍后重试。",
 };
 
@@ -27,14 +27,14 @@ export function MidiDownload({ slug, id, filename }: { slug: string; id: string;
     inFlight.current = controller;
     setState({ kind: "loading", message: "正在获取文件，请稍候。" });
     let timedOut = false;
-    let failureMessage = "下载失败，请检查网络连接后重试。";
+    let failureMessage = "下载失败，请检查网络后重试。";
     const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
     try {
       const response = await fetch(`/api/midis/${encodeURIComponent(slug)}/files/${encodeURIComponent(id)}/download`, {
         cache: "no-store", credentials: "omit", redirect: "error", signal: controller.signal,
         headers: { Accept: "application/octet-stream" },
       });
-      failureMessage = errorMessages[response.status] ?? "下载服务返回了无效文件，请稍后重试。";
+      failureMessage = errorMessages[response.status] ?? "下载服务返回无效文件，请稍后重试。";
       const lengthHeader = response.headers.get("Content-Length");
       const length = Number(lengthHeader);
       if (response.status !== 200 || response.headers.get("Content-Type")?.toLowerCase() !== "application/octet-stream"
@@ -56,7 +56,7 @@ export function MidiDownload({ slug, id, filename }: { slug: string; id: string;
       link.hidden = true;
       document.body.appendChild(link);
       try { link.click(); } finally { link.remove(); }
-      setState({ kind: "success", message: "下载已开始，请查看浏览器的下载列表。" });
+      setState({ kind: "success", message: "下载已开始，请查看浏览器下载列表。" });
     } catch {
       if (inFlight.current === controller) {
         setState({ kind: "error", message: timedOut ? errorMessages[504] : failureMessage });
@@ -75,6 +75,6 @@ export function MidiDownload({ slug, id, filename }: { slug: string; id: string;
       {state.kind === "loading" ? "正在下载…" : "下载文件"}
     </button>
     <p role={state.kind === "error" ? "alert" : "status"} aria-live={state.kind === "error" ? "assertive" : "polite"} aria-atomic="true" className={`min-w-0 text-sm [overflow-wrap:anywhere] ${state.kind === "error" ? "text-red-800" : "text-muted"}`}>{state.message}</p>
-    {state.kind === "error" && <p className="text-sm"><Link href="/about#contact" className="archive-link">通过联系我们申请获取</Link></p>}
+    {state.kind === "error" && <p className="text-sm"><Link href="/about#contact" className="archive-link">联系我们申请获取</Link></p>}
   </div>;
 }

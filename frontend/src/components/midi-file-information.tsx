@@ -18,10 +18,10 @@ export function MidiFileInformation({ slug, stored, metadata, redistributionProh
   });
   const unavailableReason = redistributionProhibited
     ? "原作者禁止再分发，若需要请邮件联系管理员。"
-    : "尚未确认公开分发授权，若需要请邮件联系管理员。";
+    : "尚未确认公开分发授权，如需获取请邮件联系管理员。";
 
   return <Section id="record-files" title="文件信息">
-    {!rows.length && !metadataByHash.size && <p className="text-muted">尚未收录文件。此档案目前仅保存文字资料。</p>}
+    {!rows.length && !metadataByHash.size && <p className="text-muted">尚未收录文件，此档案目前仅存文字资料。</p>}
     {[...rows, ...Array.from(metadataByHash, ([key, details]) => ({ key, details, file: undefined }))].map(({ key, file, details }) => {
       const filename = file?.original_filename ?? details?.filename;
       const tooltipId = `midi-file-download-${key}`;

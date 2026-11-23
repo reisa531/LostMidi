@@ -8,7 +8,7 @@ import { SearchMark } from "./archive-brand";
 const catalog = [
   { href: "/midis", label: "MIDI 目录" },
   { href: "/people", label: "人物" },
-  { href: "/recovery", label: "寻回进度" },
+  { href: "/recovery", label: "寻回记录" },
   { href: "/articles", label: "文章" },
 ];
 
@@ -17,7 +17,6 @@ const more = [
   { href: "/overview", label: "档案总览" },
   { href: "/map", label: "关系图谱" },
   { href: "/about", label: "关于我们" },
-  { href: "/sponsor", label: "赞助" },
   { href: "/changelog", label: "更新日志" },
 ];
 

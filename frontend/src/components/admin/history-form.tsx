@@ -92,7 +92,7 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
     <input type="hidden" name="revision" value={revision} />
     <input type="hidden" name="kind" value={selection.kind} />
     <input type="hidden" name="record_id" value={selection.record?.id ?? ""} />
-    <p className="text-sm leading-7 text-muted">本次仅保存这一条记录，{reviewRequired ? "提交后由超级管理员审核，批准后公开。" : "保存后立即公开。"}时间均按 UTC 填写，不转换本地时区；不知道完整日期时请留空，将已知年份写入{selection.kind === "source" ? "备注" : "证据说明"}。已有微秒精度会保留；改动毫秒或清空重填会重置更细精度。</p>
+    <p className="text-sm leading-7 text-muted">本次仅保存这一条记录，{reviewRequired ? "提交后由超级管理员审核，批准后公开。" : "保存后立即公开。"}时间按 UTC 填写，不转本地时区；不知完整日期请留空，将已知年份写入{selection.kind === "source" ? "备注" : "证据说明"}。已有微秒精度会保留，改动毫秒或清空重填将重置更细精度。</p>
     <fieldset disabled={pending || confirming} className="min-w-0 space-y-5 disabled:opacity-60"><legend className="sr-only">{label}资料</legend>
       {selection.kind === "source" ? <>
         <label className="block text-sm">网站名称 *<input name="website_name" className={inputClass} required maxLength={300} value={values.website_name} onChange={event => change("website_name", event.target.value)} /><span className="mt-2 block text-xs text-muted">最多 300 UTF-8 字节，中文字符通常占 3 字节。</span></label>
@@ -102,7 +102,7 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
           <label className="block min-w-0 text-sm">存档网址（可留空）<input type="url" name="wayback_url" className={inputClass} maxLength={4096} value={values.wayback_url} onChange={event => change("wayback_url", event.target.value)} /></label>
         </div>
         <div className="grid min-w-0 gap-5 lg:grid-cols-2">
-          <fieldset className="min-w-0 text-sm"><legend>来源类型（可多选，也可添加自定义标签）</legend><input type="hidden" name="source_type" value={values.source_type} />
+          <fieldset className="min-w-0 text-sm"><legend>来源类型（可多选或添加自定义标签）</legend><input type="hidden" name="source_type" value={values.source_type} />
             <select aria-label="添加常用来源类型" className={inputClass} value="" onChange={event => { if (event.target.value && selectedSourceTypes.length < 20) setSourceTypes([...selectedSourceTypes, event.target.value]); }}><option value="">选择常用标签…</option>{commonSourceTypes.filter(label => !selectedSourceTypes.includes(label)).map(label => <option key={label} value={label}>{label}</option>)}</select>
             <div className="mt-3 flex gap-2"><input aria-label="自定义来源类型" className={`${inputClass} mt-0`} value={customSourceType} maxLength={100} placeholder="输入自定义标签" onChange={event => setCustomSourceType(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addCustomSourceType(); } }} /><button type="button" className="shrink-0 rounded-lg border border-line px-3 text-xs text-accent" onClick={addCustomSourceType}>添加</button></div>
             {selectedSourceTypes.length > 0 && <div className="mt-3 flex flex-wrap gap-2" aria-label="已选来源类型">{selectedSourceTypes.map(type => <span key={type} className="inline-flex items-center gap-2 rounded-full bg-surface px-3 py-1 text-xs">{sourceTypeLabels[type] ?? type}<button type="button" aria-label={`移除${sourceTypeLabels[type] ?? type}`} className="font-semibold text-accent" onClick={() => setSourceTypes(selectedSourceTypes.filter(item => item !== type))}>×</button></span>)}</div>}
@@ -113,7 +113,7 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
           </select></label>
         </div>
         <UTCInput name="checked_at" label="最近核验时间" value={values.checked_at} onChange={value => change("checked_at", value)} />
-        <p className="text-xs leading-6 text-muted">可信度是整理者的人工评估，不是系统自动判断的事实分数。保存来源后可上传 PDF、PNG、JPEG 或纯文本证据（每份不超过 1 MiB）。</p>
+        <p className="text-xs leading-6 text-muted">可信度为整理者人工评估，非系统自动评分。保存来源后可上传 PDF、PNG、JPEG 或纯文本证据（每份不超过 1 MiB）。</p>
         <p className="text-xs leading-6 text-muted">网址须为完整的 http/https 地址，不含账户信息或控制符，最多 4,096 UTF-8 字节；未知时留空。</p>
         <div className="grid min-w-0 gap-5 lg:grid-cols-2">
           <UTCInput name="first_seen_at" label="首次记录时间" value={values.first_seen_at} onChange={value => change("first_seen_at", value)} />
@@ -123,7 +123,7 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
         {textarea("notes", "备注")}
       </> : <>
         <UTCInput name="recovered_at" label="寻回时间" value={values.recovered_at} onChange={value => change("recovered_at", value)} />
-        <label className="block min-w-0 text-sm">寻回人（姓名或昵称，可留空）<input name="recovered_by_name" className={inputClass} maxLength={300} value={values.recovered_by_name} onChange={event => change("recovered_by_name", event.target.value)} /><span className="mt-2 block text-xs text-muted">记录实际寻回该 MIDI 的人；无需建立人物档案。</span></label>
+        <label className="block min-w-0 text-sm">寻回人（姓名或昵称，可留空）<input name="recovered_by_name" className={inputClass} maxLength={300} value={values.recovered_by_name} onChange={event => change("recovered_by_name", event.target.value)} /><span className="mt-2 block text-xs text-muted">记录实际寻回该 MIDI 的人，无需建立人物档案。</span></label>
         {textarea("story", "寻回经过", true)}
         {textarea("evidence", "证据说明")}
       </>}
@@ -132,14 +132,14 @@ function HistoryRecordForm({ midiId, revision, selection, onCancel, reviewRequir
       <p>{state.error}</p><div className="flex flex-wrap gap-x-4"><Link href="/admin/login" target="_blank" rel="noopener noreferrer" className="underline">在新页面登录</Link><Link href={`/admin/midis/${midiId}/history`} target="_blank" rel="noopener noreferrer" className="underline">重新打开来源与寻回页核对 / 合并</Link></div>
     </div>}
     {confirming ? <div className="space-y-4 rounded-lg border border-red-200 bg-red-50 p-4">
-      <p role="alert" className="text-sm leading-7 text-red-900">确认删除这条{label}（编号 {selection.record?.id}）？{reviewRequired ? "删除申请经超级管理员批准后才会生效。" : "这会立即移除公开资料，不能撤销。"}当前表单的修改不会保存。取消删除会保留输入。</p>
+      <p role="alert" className="text-sm leading-7 text-red-900">确认删除这条{label}（编号 {selection.record?.id}）？{reviewRequired ? "删除申请经超级管理员批准后生效。" : "立即移除公开资料，无法撤销。"}当前表单修改不会保存；取消删除可保留输入。</p>
       <div className="flex flex-wrap gap-5">
         <button type="submit" name="operation" value="delete" disabled={pending} className="rounded bg-red-800 px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? "提交删除审核" : "确认永久删除本条记录"}</button>
         <button type="button" disabled={pending} className={buttonClass} onClick={() => setConfirming(false)}>取消删除，继续编辑</button>
       </div>
     </div> : <div className="flex flex-wrap items-center gap-5 border-t border-line pt-5">
       <button type="submit" name="operation" value="save" disabled={pending} className="rounded bg-accent px-6 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在提交…" : reviewRequired ? `提交${label}审核` : `保存本条${label}`}</button>
-      <button type="button" disabled={pending} className={buttonClass} onClick={() => { if (!dirty || window.confirm("有未保存的修改，确定放弃本条编辑吗？")) onCancel(); }}>放弃本条编辑</button>
+      <button type="button" disabled={pending} className={buttonClass} onClick={() => { if (!dirty || window.confirm("当前有未保存修改，确定放弃本条编辑？")) onCancel(); }}>放弃本条编辑</button>
       {selection.record && <button type="button" disabled={pending} className={`${buttonClass} text-red-800`} onClick={() => setConfirming(true)}>删除本条记录…</button>}
     </div>}
   </form>;
@@ -149,17 +149,17 @@ export function HistoryForm({ history, reviewRequired = false, usefulLinks = [] 
   const [selection, setSelection] = useState<Selection | null>(null);
   const busy = selection !== null;
   return <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
-    <p className="text-sm leading-7 text-muted" role="status">{busy ? "正在编辑一条记录。请先保存或放弃本条编辑，再操作其他记录。其他记录暂不可编辑。" : `每次仅编辑一条历史来源或寻回记录；${reviewRequired ? "管理员提交后由超级管理员审核。" : "超级管理员保存后立即公开。"}来源、寻回、署名与基础资料共用版本，请勿在多个页面同时修改。`}</p>
+    <p className="text-sm leading-7 text-muted" role="status">{busy ? "正在编辑当前记录。请先保存或放弃修改，再操作其他记录。" : `每次仅编辑一条历史来源或寻回记录；${reviewRequired ? "管理员提交后由超级管理员审核。" : "超级管理员保存后立即公开。"}来源、寻回、署名与基础资料共用版本，请勿在多个页面同时修改。`}</p>
     {selection && <HistoryRecordForm key={`${selection.kind}-${selection.record?.id ?? "new"}`} midiId={history.entry.id} revision={history.entry.revision} selection={selection} reviewRequired={reviewRequired} usefulLinks={usefulLinks} onCancel={() => setSelection(null)} />}
     <section aria-labelledby="history-sources" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-sources" className="text-lg font-semibold">历史来源</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "source" })} className={buttonClass}>新增历史来源</button></div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-sources" className="text-lg font-semibold">历史来源</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "source" })} className={buttonClass}>新增来源</button></div>
       {history.historical_sources.length ? <ul className="space-y-6">{history.historical_sources.map(source => <li key={source.id} className="min-w-0 space-y-3 border-t border-line pt-5">
-        <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="min-w-0 font-semibold">{source.website_name}</h3><button type="button" disabled={busy} className={buttonClass} onClick={() => setSelection({ kind: "source", record: source })} aria-label={`编辑历史来源 ${source.website_name}（编号 ${source.id}）`}>编辑 / 删除</button></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="min-w-0 font-semibold">{source.website_name}</h3><button type="button" disabled={busy} className={buttonClass} onClick={() => setSelection({ kind: "source", record: source })} aria-label={`编辑来源 ${source.website_name}（编号 ${source.id}）`}>编辑 / 删除</button></div>
         <p className="text-xs leading-6 text-muted">编号 {source.id} · {source.source_type.split(",").map(type => sourceTypeLabels[type] ?? type).join("、")} · 人工可信度 {source.credibility}/5 · 最近核验：{utcLabel(source.checked_at)}<br />首次记录：{utcLabel(source.first_seen_at)} · 最后记录：{utcLabel(source.last_seen_at)}</p>
         <div className="flex flex-wrap gap-4 text-sm">{source.original_url ? <ExternalSource url={source.original_url} label="原始网址" /> : <span className="text-muted">原始网址未登记</span>}{source.wayback_url ? <ExternalSource url={source.wayback_url} label="历史快照" /> : <span className="text-muted">存档网址未登记</span>}</div>
         {source.notes ? <Markdown source={source.notes} className="text-sm" /> : <p className="text-sm text-muted">暂无补充说明。</p>}
         <EvidenceFiles midiId={history.entry.id} revision={history.entry.revision} kind="source" recordId={source.id} files={source.evidence_files ?? []} reviewRequired={reviewRequired} />
-      </li>)}</ul> : <p className="text-sm text-muted">尚未登记历史来源。可新增网站、原始网址及存档线索。</p>}
+      </li>)}</ul> : <p className="text-sm text-muted">尚未登记来源。可新增网站、原始网址及存档线索。</p>}
     </section>
     <section aria-labelledby="history-events" className="min-w-0 rounded-xl border border-line bg-white p-5 sm:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><h2 id="history-events" className="text-lg font-semibold">寻回记录</h2><button type="button" disabled={busy} onClick={() => setSelection({ kind: "event" })} className={buttonClass}>新增寻回记录</button></div>
@@ -179,7 +179,7 @@ function EvidenceDeleteForm({ midiId, evidenceId, revision, reviewRequired }: { 
   const [state, action, pending] = useActionState<EvidenceDeleteState, FormData>(deleteEvidenceAction, { error: "" });
   useEffect(() => { if (state.done) router.refresh(); }, [state.done, router]);
   return <form action={action} onSubmit={event => {
-    if (!window.confirm("确定删除此证据附件？删除后访客和管理员都无法再下载。")) event.preventDefault();
+    if (!window.confirm("确定删除此证据附件？删除后访客与管理员均无法下载。")) event.preventDefault();
   }} className="inline-block ml-3">
     <input type="hidden" name="midi_id" value={midiId} /><input type="hidden" name="evidence_id" value={evidenceId} />
     <input type="hidden" name="revision" value={revision} />
@@ -206,7 +206,7 @@ function EvidenceFiles({ midiId, revision, kind, recordId, files, reviewRequired
   </div>;
 }
 
-const commonSourceTypes = ["视觉小说", "视频网站", "论坛", "联系原作者", "搜索索引", "archive.org", "其它网站"];
+const commonSourceTypes = ["视觉小说", "视频网站", "论坛", "联系原作者", "搜索索引", "archive.org", "其他网站"];
 const sourceTypeLabels: Record<string, string> = {
   original_site: "原始网站", forum: "论坛", mailing_list: "邮件列表", archive: "网页档案",
   search_index: "搜索索引", personal_collection: "个人收藏", other: "其他 / 未知",

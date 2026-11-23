@@ -25,7 +25,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
       // Keep the latest acknowledged revision even if a later request fails.
       return { ...next, result: next.result ?? previous.result };
     } catch {
-      return { error: "连接中断或请求超时，无法确认导入结果。已保留所选文件，请先刷新检查已存记录，文件可能已经保存。", result: previous.result };
+      return { error: "连接中断或请求超时，无法确认导入结果。已保留所选文件，请先刷新查看已存记录，文件可能已保存。", result: previous.result };
     } finally { submitting.current = false; }
   }, { error: "" });
   const busy = pending || refreshing;
@@ -33,8 +33,8 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
   const currentRevision = Math.max(revision, state.result?.revision ?? 0);
 
   function fileError(file: File | undefined) {
-    if (!file || file.size === 0) return "请选择一个非空文件。";
-    if (file.size > limit) return `文件过大；最多 ${limit.toLocaleString("zh-CN")} 字节（不超过 20 MB）。`;
+    if (!file || file.size === 0) return "请选择非空文件。";
+    if (file.size > limit) return `文件过大，上限 ${limit.toLocaleString("zh-CN")} 字节（不超过 20 MB）。`;
     return "";
   }
 
@@ -48,15 +48,15 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
     <h2 className="text-lg font-semibold">导入单个音乐文件</h2>
     <input type="hidden" name="id" value={midiId} />
     <input type="hidden" name="revision" value={currentRevision} />
-    <p className="text-sm leading-7 text-muted">{reviewRequired ? "文件先提交审核，批准后保存。" : "文件保存后会列在当前条目中。"}下方复选框决定访客能否下载；不勾选仍可上传。文件、署名、来源与基础资料共用版本，请勿同时在其他页面修改。</p>
-    {!enabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入尚未启用或已暂停，已有文件仍可查看。</p>}
+    <p className="text-sm leading-7 text-muted">{reviewRequired ? "文件须先提交审核，批准后保存。" : "文件保存后将显示在当前条目中。"}下方复选框控制访客下载权限，不勾选仍可上传。文件、署名、来源与基础资料共用版本，请勿在其他页面同时修改。</p>
+    {!enabled && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">文件导入未启用或已暂停，已有文件仍可查看。</p>}
     <fieldset disabled={busy || !enabled} className="min-w-0 space-y-5 disabled:opacity-60">
       <legend className="sr-only">公开分发文件</legend>
       <label className="block text-sm">音乐文件 *
         <input ref={fileInput} type="file" name="file" required aria-describedby="midi-file-help" onChange={event => setClientError(fileError(event.target.files?.[0]))} className="mt-2 block w-full min-w-0 rounded-lg border border-line bg-white px-3 py-2.5 text-sm" />
       </label>
-      <p id="midi-file-help" className="text-xs leading-6 text-muted">不限文件格式，单个文件最大 20 MB（20,000,000 字节）。保留原始文件名和内容，不解析或转码；每次上传一个文件。</p>
-      <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" className="mt-2 shrink-0" />允许访客下载此文件（仅在确认有权公开分发时勾选）。</label>
+      <p id="midi-file-help" className="text-xs leading-6 text-muted">不限格式，单文件上限 20 MB（20,000,000 字节）。原样保留文件名与内容，不解析、不转码；每次限传一个文件。</p>
+      <label className="flex items-start gap-3 text-sm leading-7"><input ref={rightsInput} type="checkbox" name="rights_confirmed" value="true" className="mt-2 shrink-0" />允许访客下载此文件（确认有权公开分发时再勾选）。</label>
     </fieldset>
     {clientError && <p role="alert" className="text-sm text-red-900">{clientError}</p>}
     {state.error && <div role="alert" className="space-y-2 rounded-lg bg-red-50 p-4 text-sm leading-7 text-red-900">
@@ -67,7 +67,7 @@ export function MidiFilesForm({ midiId, revision, maxFileSize, enabled, reviewRe
       </div>
     </div>}
     {!state.error && state.result && <p role="status" className="rounded-lg bg-green-50 p-4 text-sm leading-7 text-green-900">
-      {state.result.duplicate ? "当前条目已存在相同文件，已去重，未重复新增。" : "文件已成功上传，下载权限见下方文件列表。"}
+      {state.result.duplicate ? "当前条目已有相同文件，已去重，未重复新增。" : "文件已上传，下载权限见下方文件列表。"}
       <br />{state.result.filename} · 文件编号 {state.result.fileId} · 返回版本 {state.result.revision}
     </p>}
     {!state.error && state.queued && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-7 text-amber-950">文件导入申请已提交，审核通过后保存。<Link className="ml-2 underline" href="/admin/submissions">查看申请进度</Link></p>}

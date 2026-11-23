@@ -16,7 +16,7 @@ function id(value: FormDataEntryValue | null) {
 export async function manageMusicFileAction(_: FileManagementState, form: FormData): Promise<FileManagementState> {
   try {
     if (!process.env.ADMIN_ORIGIN || (await headers()).get("origin") !== process.env.ADMIN_ORIGIN)
-      throw new Error("请求来源不正确，请从后台页面重试。");
+      throw new Error("请求来源无效，请从后台页面重试。");
     const midiId = id(form.get("midi_id")), fileId = id(form.get("file_id"));
     const revision = Number(id(form.get("revision")));
     if (!Number.isSafeInteger(revision)) throw new Error("条目版本无效，请刷新页面。");

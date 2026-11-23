@@ -13,12 +13,12 @@ async function checkOrigin() {
 function errorMessage(error: unknown) {
   if (!(error instanceof ApiError)) return "请求失败，请稍后重试。";
   const messages: Record<string, string> = {
-    INVALID_ORIGIN: "请求来源与后台配置不一致。", USER_EXISTS: "用户名已经被使用。",
-    INVALID_INPUT: "用户名、角色或密码格式不正确。", FORBIDDEN: "只有超级管理员可以管理用户。",
-    INVITATION_INVALID: "邀请链接无效或已过期。", LAST_SUPER_ADMIN: "至少需要保留一位启用的超级管理员。",
-    INVITATION_REQUIRED: "该账号没有已设置的密码，请重新发出邀请。",
-    USER_NOT_FOUND: "账号已不存在，请刷新页面。", CANNOT_DELETE_SELF: "不能删除当前登录账号。",
-    DELETE_CONFIRMATION_REQUIRED: "请输入与账号一致的用户名以确认删除。",
+    INVALID_ORIGIN: "请求来源与后台配置不一致。", USER_EXISTS: "用户名已被使用。",
+    INVALID_INPUT: "用户名、角色或密码格式不正确。", FORBIDDEN: "仅超级管理员可管理用户。",
+    INVITATION_INVALID: "邀请链接无效或已过期。", LAST_SUPER_ADMIN: "至少保留一位启用的超级管理员。",
+    INVITATION_REQUIRED: "该账号尚未设置密码，请重新发送邀请。",
+    USER_NOT_FOUND: "账号不存在，请刷新页面。", CANNOT_DELETE_SELF: "无法删除当前登录账号。",
+    DELETE_CONFIRMATION_REQUIRED: "请输入该账号的用户名以确认删除。",
   };
   return messages[error.code] ?? "服务暂时不可用，请稍后重试。";
 }

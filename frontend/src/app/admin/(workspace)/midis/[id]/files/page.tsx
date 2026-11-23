@@ -22,7 +22,7 @@ export default async function MidiFilesPage({ params }: { params: Promise<{ id: 
     throw error;
   }
   return <>
-    <AdminPageHeader eyebrow={`档案 / ${id} / 文件`} title={`音乐文件 · ${data.entry.title}`} description={session.role === "admin" ? "上传和文件管理操作会提交给超级管理员审核。" : "上传音乐文件，并管理文件列表与访客下载权限。"} />
+    <AdminPageHeader eyebrow={`档案 / ${id} / 文件`} title={`音乐文件 · ${data.entry.title}`} description={session.role === "admin" ? "上传与文件管理操作将提交超级管理员审核。" : "上传音乐文件，管理文件列表与访客下载权限。"} />
     <MidiSectionNav id={id} slug={data.entry.slug} current="files" />
     <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
       <MidiFilesForm key={id} midiId={id} revision={data.entry.revision} maxFileSize={data.max_file_size} enabled={data.enabled} reviewRequired={session.role === "admin"} />

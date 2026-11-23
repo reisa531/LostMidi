@@ -24,13 +24,13 @@ export function OverviewMetrics({ stats }: { stats: CatalogOverview["stats"] }) 
   ]} />;
 }
 export function DataNote() {
-  return <p className="text-xs leading-6 text-muted">有文件与可下载均按作品计数；可下载表示符合分发权限，不代表已验证存储或链接可用。</p>;
+  return <p className="text-xs leading-6 text-muted">“有文件”与“可下载”均按作品计数；“可下载”仅指符合分发权限，不代表存储或链接已验证可用。</p>;
 }
-export function EmptyState({ title = "暂无档案", description = "目前还没有符合条件的记录。", action }: { title?: string; description?: string; action?: React.ReactNode }) {
+export function EmptyState({ title = "暂无档案", description = "暂无符合条件的条目。", action }: { title?: string; description?: string; action?: React.ReactNode }) {
   return <div className="rounded-xl border border-dashed border-line bg-white/40 px-5 py-10 text-center"><p className="font-medium">{title}</p><p className="mx-auto mt-2 max-w-lg text-sm leading-7 text-muted">{description}</p>{action && <div className="mt-4 text-sm">{action}</div>}</div>;
 }
 export function InvalidQuery({ path }: { path: CatalogPath }) {
-  return <div role="alert"><EmptyState title="筛选参数无效" description="页码、筛选值或重复参数无法识别。请从默认列表重新选择，尚未执行查询。" action={<Link className="archive-link" href={path}>重置筛选</Link>} /></div>;
+  return <div role="alert"><EmptyState title="筛选参数无效" description={"无法识别页码、筛选值或重复参数，未执行查询。请从默认列表重新选择。"} action={<Link className="archive-link" href={path}>重置筛选</Link>} /></div>;
 }
 export function CatalogFilters({ path, query }: { path: CatalogPath; query: UrlQuery }) {
   const preserved = Object.entries(query).filter(([key, value]) => value !== undefined && !["page", "status", "sort"].includes(key));
@@ -44,13 +44,13 @@ export function CatalogFilters({ path, query }: { path: CatalogPath; query: UrlQ
   </form>;
 }
 export function CatalogTable({ entries, caption = "MIDI 档案列表" }: { entries: CatalogEntry[]; caption?: string }) {
-  if (!entries.length) return <EmptyState description="此页暂无符合条件的档案。可以调整筛选条件或返回第一页。" />;
+  if (!entries.length) return <EmptyState description={"此页暂无符合条件的条目。可调整筛选条件，或返回第一页。"} />;
   return <><ul aria-label={caption} className="space-y-3 md:hidden">{entries.map(entry => <li key={entry.id} className="min-w-0 rounded-xl border border-line bg-white/70 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><Link href={`/midis/${entry.slug}`} className="break-words font-medium text-accent underline-offset-4 hover:underline">{entry.title}</Link><p className="mt-1 text-xs text-muted">更新于 {dateLabel(entry.updated_at)}</p></div><CatalogStatus status={entry.archive_status} /></div>
     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4 text-xs leading-5"><div className="min-w-0"><dt className="text-muted">署名</dt><dd className="mt-1 break-words"><Credits credits={entry.credits} /></dd></div><div className="min-w-0"><dt className="text-muted">推测时间</dt><dd className="mt-1">{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</dd></div><div className="min-w-0"><dt className="text-muted">历史来源</dt><dd className="mt-1 break-words">{entry.sources.length ? entry.sources.map((source, index) => <span key={`${source}-${index}`}><Link className="underline" href={catalogHref("/map", { by: "source", group: source })}>{source}</Link>{index < entry.sources.length - 1 ? "、" : ""}</span>) : "待补"}</dd></div><div className="min-w-0"><dt className="text-muted">文件</dt><dd className="mt-1">{entry.file_count} 个 · {entry.downloadable_file_count} 个可下载</dd></div></dl>
   </li>)}</ul><div role="region" aria-label={caption} className="hidden min-w-0 max-w-full overflow-x-auto rounded-xl border border-line bg-white/70 md:block">
     <table className="w-full min-w-[760px] table-fixed text-left text-sm"><caption className="sr-only">{caption}：作品、署名、历史来源、归档状态及文件</caption>
-      <thead className="border-b border-line bg-wash text-xs text-muted"><tr><th scope="col" className="w-[28%] px-5 py-3 font-medium">作品 / 更新日期</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">署名</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">历史来源</th><th scope="col" className="w-[15%] px-4 py-3 font-medium">归档状态</th><th scope="col" className="w-[17%] px-4 py-3 font-medium">文件 / 下载资格</th></tr></thead>
+      <thead className="border-b border-line bg-wash text-xs text-muted"><tr><th scope="col" className="w-[28%] px-5 py-3 font-medium">作品 / 更新日期</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">署名</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">历史来源</th><th scope="col" className="w-[15%] px-4 py-3 font-medium">归档状态</th><th scope="col" className="w-[17%] px-4 py-3 font-medium">文件 / 下载权限</th></tr></thead>
       <tbody className="divide-y divide-line">{entries.map(entry => <tr key={entry.id} className="align-top transition hover:bg-surface">
         <th scope="row" className="px-5 py-4 text-left font-normal [overflow-wrap:anywhere]"><Link href={`/midis/${entry.slug}`} className="font-medium text-foreground hover:text-accent hover:underline">{entry.title}</Link><p className="mt-2 text-xs leading-5 text-muted">{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year === null ? "时间不详" : `约 ${entry.estimated_year} 年`}<br />更新于 {dateLabel(entry.updated_at)}</p></th>
         <td className="px-4 py-4 text-xs leading-5 [overflow-wrap:anywhere]"><Credits credits={entry.credits} /></td>

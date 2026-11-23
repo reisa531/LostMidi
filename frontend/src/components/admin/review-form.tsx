@@ -8,8 +8,8 @@ export function ReviewForm({ id }: { id: string }) {
   return <form action={action} className="flex flex-wrap items-center gap-2">
     <input type="hidden" name="id" value={id} />
     <input name="note" maxLength={2000} placeholder="审核备注（可选）" className="rounded border border-line px-3 py-2 text-sm" />
-    <button disabled={pending} name="decision" value="reject" className="rounded border border-line px-3 py-2 text-sm disabled:opacity-50">拒绝</button>
-    <button disabled={pending} name="decision" value="approve" className="rounded bg-accent px-3 py-2 text-sm text-white disabled:opacity-50">{pending ? "处理中…" : "批准并发布"}</button>
+    <button disabled={pending} name="decision" value="reject" className="rounded border border-line px-3 py-2 text-sm disabled:opacity-50">驳回</button>
+    <button disabled={pending} name="decision" value="approve" className="rounded bg-accent px-3 py-2 text-sm text-white disabled:opacity-50">{pending ? "处理中…" : "通过并发布"}</button>
     {state.error && <p role="alert" className="w-full text-xs text-red-800">{state.error}</p>}
     {state.success && <p role="status" className="w-full text-xs text-green-800">审核操作已完成。</p>}
   </form>;

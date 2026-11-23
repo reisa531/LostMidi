@@ -17,10 +17,10 @@ export type MapQuery = {
 export const archiveStates: { value: ArchiveStatus; label: string; description: string }[] = [
   { value: "lost", label: "待寻回", description: "等待寻回作品与线索" },
   { value: "verifying", label: "验证中", description: "正在核实作品资料" },
-  { value: "archived", label: "已归档", description: "资料已经核实归档" },
+  { value: "archived", label: "已归档", description: "资料已核实归档" },
 ];
 export class CatalogQueryError extends Error {
-  constructor() { super("筛选参数无效，请检查页码或重新选择筛选条件。"); }
+  constructor() { super("筛选参数无效，请检查页码或重新筛选。"); }
 }
 
 function checkKeys(raw: SearchParams, allowed: string[]) {

@@ -31,9 +31,9 @@ export default async function HistoryPage({ params, searchParams }: {
   const { saved, deleted, evidence } = await searchParams;
   const reviewRequired = session.role === "admin";
   return <>
-    <AdminPageHeader eyebrow={`档案 / ${id} / 历史`} title={`来源与寻回 · ${history.entry.title}`} description={reviewRequired ? "新增、修改、删除和证据附件会提交给超级管理员审核，通过后才公开。" : "按作品整理历史网站、存档线索、寻回经过与证据。每次只维护一条记录，保存或删除后立即反映到公开详情。"} />
+    <AdminPageHeader eyebrow={`档案 / ${id} / 历史`} title={`来源与寻回 · ${history.entry.title}`} description={reviewRequired ? "新增、修改、删除及证据附件均需超级管理员审核通过后公开。" : "整理该作品的历史站点、存档线索、寻回经过与证据。每次维护一条记录，保存或删除后立即同步至公开详情。"} />
     <MidiSectionNav id={id} slug={history.entry.slug} current="history" />
-    {session.role === "super_admin" && (saved === "1" || deleted === "1") && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">{deleted === "1" ? "本条记录已删除，公开详情已更新。" : "本条记录已保存并公开。"}</p>}
+    {session.role === "super_admin" && (saved === "1" || deleted === "1") && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">{deleted === "1" ? "记录已删除，公开详情已更新。" : "记录已保存并公开。"}</p>}
     {evidence === "uploaded" && session.role === "super_admin" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">证据附件已保存并公开。</p>}
     <HistoryForm key={`${id}-${history.entry.revision}`} history={history} reviewRequired={reviewRequired} usefulLinks={usefulLinks} />
   </>;

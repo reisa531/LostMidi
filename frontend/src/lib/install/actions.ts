@@ -35,19 +35,19 @@ export async function installAction(previous: InstallationActionState, form: For
     });
   } catch (error) {
     const messages: Record<string, string> = {
-      CONFIGURATION_REQUIRED: "请先完成部署变量配置并重新部署或重启前端，再进行初始化。",
-      INVALID_ORIGIN: "当前访问地址与 ADMIN_ORIGIN 不一致。请从配置的站点域名打开安装页。",
+      CONFIGURATION_REQUIRED: "请先配置部署变量，并重新部署或重启前端后再初始化。",
+      INVALID_ORIGIN: "当前访问地址与 ADMIN_ORIGIN 不一致，请通过配置的站点域名打开安装页。",
       TOKEN_FORMAT: "安装密钥须为 32–128 位字母、数字、下划线或连字符。",
       INVALID_INSTALLATION_TOKEN: "安装密钥不正确，请使用后端部署时设置的 INSTALLATION_TOKEN。",
       INSTALLATION_DISABLED: "后端未启用安装，请配置 INSTALLATION_TOKEN 并重启后端。",
-      ALREADY_INSTALLED: "站点已经安装，未覆盖任何设置。请刷新本页并前往管理员登录。",
-      INSTALLATION_RATE_LIMITED: "安装尝试过多，请等待一分钟再重试。",
+      ALREADY_INSTALLED: "站点已安装，未覆盖任何设置。请刷新本页并前往管理员登录。",
+      INSTALLATION_RATE_LIMITED: "安装尝试过多，请一分钟后重试。",
       INVALID_INPUT: "请检查站点名称、简介、用户名和密码的格式及 UTF-8 字节长度。",
       PASSWORD_MISMATCH: "两次输入的密码不一致。",
     };
     return {
       attempt: previous.attempt + 1,
-      error: (error instanceof ApiError && messages[error.code]) || "连接中断或服务异常，暂时无法确认安装结果。请先刷新本页确认状态；不要清空数据库或重新配置已有账号。",
+      error: (error instanceof ApiError && messages[error.code]) || "连接中断或服务异常，暂无法确认安装结果。请先刷新本页确认状态，切勿清空数据库或重新配置已有账号。",
     };
   }
   redirect("/install?complete=1");

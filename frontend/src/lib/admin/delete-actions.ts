@@ -39,16 +39,16 @@ export async function deleteEntryAction(_previous: DeleteState, form: FormData):
       if (error.status === 401 || error.code === "UNAUTHORIZED")
         return { error: "会话已过期，请在新页面登录后重试；当前确认和错误会保留。", unauthorized: true };
       const messages: Record<string, string> = {
-        INVALID_ORIGIN: "请求来源与后台配置不一致，请检查访问地址。",
-        INVALID_INPUT: "编号或版本不正确，请刷新编辑页并核对后重新确认删除。",
-        CONFIRMATION_REQUIRED: "请先勾选确认，明确同意删除此记录。",
-        STALE_ENTRY: "档案版本已变化，未执行删除。请先保留未保存的内容，刷新或重新打开编辑页，核对最新资料后重新确认删除；不要用旧版本直接重试。",
-        STALE_PERSON: "人物版本已变化，未执行删除。请先保留未保存的内容，刷新或重新打开编辑页，核对最新资料后重新确认删除；不要用旧版本直接重试。",
-        PERSON_IN_USE: "人物仍被作品署名或寻回记录引用，暂时不能移入回收站。请先处理这些关联后再试。",
+        INVALID_ORIGIN: "请求来源与后台配置不符，请检查访问地址。",
+        INVALID_INPUT: "编号或版本无效，请刷新编辑页核对后再确认删除。",
+        CONFIRMATION_REQUIRED: "请先勾选确认，同意删除此记录。",
+        STALE_ENTRY: "档案版本已变更，未执行删除。请保留未保存内容，刷新或重开编辑页核对最新资料后再确认删除，勿用旧版本重试。",
+        STALE_PERSON: "人物版本已变更，未执行删除。请保留未保存内容，刷新或重开编辑页核对最新资料后再确认删除，勿用旧版本重试。",
+        PERSON_IN_USE: "人物仍被作品署名或寻回记录引用，暂不可移入回收站。请先处理关联后再试。",
       };
       if (messages[error.code]) return { error: messages[error.code] };
       if (error.status < 500) return { error: "删除失败，请在新页面核对记录后再重试。" };
     }
-    return { error: "请求超时、连接中断或服务异常，无法确认删除结果，记录可能已删除。请先在新页面核对列表，再决定是否重试；重试时记录已不存在会视为删除完成。" };
+    return { error: "请求超时、连接中断或服务异常，无法确认删除结果，记录可能已删除。请先在新页面核对列表再决定是否重试；若记录已不存在，重试将视为删除完成。" };
   }
 }

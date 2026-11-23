@@ -17,7 +17,7 @@ export type SitemapUrl = { loc: string; lastModified?: string; changeFrequency: 
 type Kind = "midis" | "people" | "articles";
 const KINDS: Kind[] = ["midis", "people", "articles"];
 /** Public entry points; `/search` stays out of the sitemap by design. */
-const STATIC_PATHS = ["/", "/overview", "/midis", "/people", "/articles", "/recovery", "/map", "/about", "/sponsor", "/changelog"];
+const STATIC_PATHS = ["/", "/overview", "/midis", "/people", "/articles", "/recovery", "/map", "/about", "/changelog"];
 
 function isoDate(value: unknown): string | undefined {
   const date = new Date(typeof value === "string" ? value : "");
@@ -69,7 +69,7 @@ function latestReleaseDate(): string | undefined {
  * 静态入口的 lastmod。
  *
  * 只从可以核对的数据推导：/changelog 取发布记录，作品/人物/文章列表取各自采集结果里
- * 最新的更新时间，首页取三者与发布时间的较晚者。手写页面（/about、/sponsor）没有可
+ * 最新的更新时间，首页取三者与发布时间的较晚者。手写页面（/about）没有可
  * 核对的时间来源，宁可不给 lastmod，也不猜一个“看起来更新过”的时间。
  */
 export type StaticLastModified = { entry?: string; person?: string; article?: string; release?: string };
@@ -86,7 +86,6 @@ export function staticSitemapUrls(base: string, modified: StaticLastModified = {
     "/map": modified.entry,
     "/changelog": modified.release,
     "/about": undefined,
-    "/sponsor": undefined,
   };
   return STATIC_PATHS.map(path => ({
     loc: `${base}${path}`, lastModified: byPath[path],

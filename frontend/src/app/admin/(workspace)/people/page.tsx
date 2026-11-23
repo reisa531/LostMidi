@@ -10,7 +10,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   await requireAdmin();
   const { page: raw = "1", deleted, q: rawQuery } = await searchParams;
   const q = typeof rawQuery === "string" ? rawQuery.trim().slice(0, 200) : "";
-  const notice = deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">人物已移入回收站，可从后台回收站恢复。</p>;
+  const notice = deleted === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">人物已移入回收站，可在回收站中恢复。</p>;
   if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || Number(raw) > 1000000) return <>{notice}<p>页码无效。<Link href="/admin/people" className="underline">返回第一页</Link></p></>;
   const page = Number(raw);
   let result;
@@ -20,11 +20,11 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
     throw error;
   }
   const pages = Math.max(1, Math.ceil(result.pagination.total / result.pagination.pageSize));
-  return <><AdminPageHeader eyebrow="档案 / 人物" title="人物管理" description="维护人物名称、简介和历史昵称。在作品编辑页维护人物与作品的署名关系。" />
+  return <><AdminPageHeader eyebrow="档案 / 人物" title="人物管理" description={"维护人物名称、简介与历史昵称；署名关系请在作品编辑页设置。"} />
     {notice}
     <AdminPanel title={`人物 · ${result.pagination.total}`} action={<Link href="/admin/people/new" className="rounded bg-accent px-4 py-2 text-sm text-white">新增人物</Link>}>
       <form method="get" className="mb-5 flex flex-wrap gap-2"><input name="q" type="search" defaultValue={q} placeholder="搜索姓名或历史昵称" aria-label="搜索人物" className="min-w-0 flex-1 rounded border border-line px-3 py-2.5 text-sm" /><button className="rounded bg-accent px-4 py-2 text-sm text-white">搜索</button>{q && <Link href="/admin/people" className="self-center text-sm underline">清除</Link>}</form>
-      {result.data.length ? <ul className="divide-y divide-line">{result.data.map(person => <li key={person.id} className="flex flex-wrap items-center justify-between gap-4 py-5"><div><h2 className="font-medium"><Link href={`/admin/people/${person.id}/edit`} className="hover:underline">{person.display_name}</Link></h2><p className="mt-2 text-xs text-muted">人物编号 {person.id}</p></div><div className="flex gap-4 text-sm"><Link href={`/admin/people/${person.id}/edit`} className="underline">编辑</Link><Link href={`/people/${person.id}`} className="underline">公开资料</Link></div></li>)}</ul> : <p className="py-8 text-sm text-muted">{q ? "没有匹配的人物，请尝试其他名称。" : "本页暂无人物资料。"}</p>}
+      {result.data.length ? <ul className="divide-y divide-line">{result.data.map(person => <li key={person.id} className="flex flex-wrap items-center justify-between gap-4 py-5"><div><h2 className="font-medium"><Link href={`/admin/people/${person.id}/edit`} className="hover:underline">{person.display_name}</Link></h2><p className="mt-2 text-xs text-muted">人物编号 {person.id}</p></div><div className="flex gap-4 text-sm"><Link href={`/admin/people/${person.id}/edit`} className="underline">编辑</Link><Link href={`/people/${person.id}`} className="underline">公开资料</Link></div></li>)}</ul> : <p className="py-8 text-sm text-muted">{q ? "未找到匹配人物，请尝试其他名称。" : "本页暂无人物资料。"}</p>}
       <nav aria-label="人物分页" className="mt-6 flex justify-between gap-4 text-sm"><span>第 {page} 页 / 共 {pages} 页</span><div className="flex gap-4">{page > 1 && <Link href={`/admin/people?page=${page - 1}${q ? `&q=${encodeURIComponent(q)}` : ""}`}>上一页</Link>}{page < pages && <Link href={`/admin/people?page=${page + 1}${q ? `&q=${encodeURIComponent(q)}` : ""}`}>下一页</Link>}</div></nav>
     </AdminPanel></>;
 }

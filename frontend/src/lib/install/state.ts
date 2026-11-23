@@ -7,7 +7,7 @@ import { backendAddress, browserOrigin } from "./config";
 
 export const defaultSite = {
   name: "Lost MIDI Archive",
-  description: "记录早期网络 MIDI 的作品、人物、历史来源与寻回过程。",
+  description: "收录早期网络 MIDI 作品、人物、来源与寻回记录。",
 };
 export interface InstallationStatus {
   installed: boolean;

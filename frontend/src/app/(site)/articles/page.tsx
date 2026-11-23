@@ -12,7 +12,7 @@ export default async function ArticlesPage({ searchParams }: { searchParams: Pro
   let result;
   try { result = await getArticles(page); }
   catch (error) { if (error instanceof ApiError) return <Unavailable />; throw error; }
-  return <div><PageHeader eyebrow="研究 / 文章" title="档案文章" description="围绕 MIDI 作品、作者和历史来源的考证与记录。" />
+  return <div><PageHeader eyebrow="研究 / 文章" title="档案文章" description={"围绕 MIDI 作品、作者与来源的考证记录。"} />
     {result.data.length ? <ul className="article-directory">{result.data.map(article => <li key={article.id} className="py-6">
       <Link className="font-serif text-2xl" href={`/articles/${article.id}`}>{article.title}</Link>
       <p className="mt-2 text-sm text-muted">{article.updated_at.slice(0, 10)} · {article.author_username}</p>

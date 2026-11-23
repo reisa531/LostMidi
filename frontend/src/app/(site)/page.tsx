@@ -17,14 +17,14 @@ export const dynamic = "force-dynamic";
 
 type Stats = CatalogOverview["stats"];
 
-const homeKeywords = ["早期网络 MIDI", "MIDI 档案", "网络考古", "数字档案", "MIDI 作品", "历史来源", "寻回记录"];
+const homeKeywords = ["早期网络 MIDI", "MIDI 档案", "网络考古", "数字档案", "MIDI 作品", "来源", "寻回记录"];
 
 function homeTitle(siteName: string) { return `${siteName} · 早期网络 MIDI 数字档案`; }
 
 function homeDescription(siteDescription: string, stats?: Stats) {
   const base = siteDescription.trim();
   if (!stats || stats.entries <= 0) return base;
-  return `${base}已收录 ${stats.entries} 部作品、${stats.people} 位人物和 ${stats.sources} 个历史来源，并逐条记录归档状态、文件与下载权限。`;
+  return `${base}已收录 ${stats.entries} 部作品、${stats.people} 位人物与 ${stats.sources} 个来源，逐条记录归档状态、文件留存与下载权限。`;
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -84,11 +84,11 @@ export default async function Home() {
         <Image src="/images/archive-floppies.webp" alt="叠放在方格纸上的旧软盘" fill sizes="(min-width: 1200px) 520px, (min-width: 700px) 42vw, 100vw" preload />
       </div>
       <div className="hero-copy">
-        <h1 id="archive-title">早期网络<br /><span lang="en">MIDI</span> 档案馆</h1>
-        <p>追溯散落在旧网站、论坛和个人收藏中的 MIDI 作品，查找它们的作者、历史来源与寻回记录。</p>
+        <h1 id="archive-title">早期网络<br /><span lang="en">MIDI</span> 寻回档案</h1>
+        <p>查找旧网站、论坛、游戏包和私人收藏里的 MIDI，查看它们的署名、流传来源与寻回记录。</p>
         <ArchiveSearch />
         <nav className="hero-links" aria-label="按类别浏览">
-          <Link href="/midis">作品目录 ↗</Link><Link href="/people">人物索引 ↗</Link><Link href="/map?by=source">历史来源 ↗</Link>
+          <Link href="/midis">作品目录 ↗</Link><Link href="/people">人物索引 ↗</Link><Link href="/map?by=source">来源目录 ↗</Link>
         </nav>
       </div>
     </section>
@@ -97,14 +97,14 @@ export default async function Home() {
         {[
           { value: stats.entries, label: "收录作品", href: "/midis" },
           { value: stats.people, label: "档案人物", href: "/people" },
-          { value: stats.sources, label: "历史来源", href: "/map?by=source" },
+          { value: stats.sources, label: "来源", href: "/map?by=source" },
           { value: stats.files, label: "文件记录", href: "/overview" },
         ].map(item => <div key={item.label}><dt><Link href={item.href}>{item.label}</Link></dt><dd>{item.value.toLocaleString("zh-CN")}</dd></div>)}
       </dl>
       <div className="landing-columns">
         <section aria-labelledby="recent-heading" className="min-w-0">
           <div className="section-heading"><h2 id="recent-heading">最近更新</h2><Link href="/midis">全部作品 →</Link></div>
-          <EntryActivity entries={recent} empty="还没有收录作品。" />
+          <EntryActivity entries={recent} empty={"暂未收录作品。"} />
         </section>
         <section aria-labelledby="recovery-heading" className="recovery-index">
           <div className="section-heading"><h2 id="recovery-heading">寻回进度</h2><Link href="/recovery">查看全部 →</Link></div>
