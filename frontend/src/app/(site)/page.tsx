@@ -46,6 +46,11 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+function DailySaying({ value }: { value: string }) {
+  const parts = value.split(" | ");
+  const sourced = parts.length === 3 && /^BV[0-9A-Za-z]{10}$/.test(parts[2]);
+  return <aside className="saying"><span>一言</span> {sourced ? <>{parts[0]} <a className="archive-link ml-2 inline-block text-xs" href={`https://www.bilibili.com/video/${parts[2]}/`} target="_blank" rel="noopener noreferrer">{parts[1]} ↗</a></> : value}</aside>;
+}
 function editionDay() { return Math.floor(Date.now() / 86400000); }
 
 export default async function Home() {
@@ -87,7 +92,7 @@ export default async function Home() {
         <p>旧网站、同人游戏和私人收藏里留下的 MIDI。</p></div>
       <ArchiveSearch />
     </section>
-    {desk?.sayings.length ? <aside className="saying"><span>一言</span> {desk.sayings[editionDay() % desk.sayings.length]}</aside> : null}
+    {desk?.sayings.length ? <DailySaying value={desk.sayings[editionDay() % desk.sayings.length]} /> : null}
     <div className="edition-grid">
       <div>{desk && <DeskCarousel slides={desk.slides} />}
         <section aria-labelledby="recent-heading"><div className="section-heading"><h2 id="recent-heading">近期修订</h2><Link href="/midis">翻阅目录 →</Link></div>

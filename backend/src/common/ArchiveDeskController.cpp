@@ -98,6 +98,26 @@ void ApiController::registerArchiveDeskRoutes() {
             Json::Value result; result["id"]=field(row[0],"id"); return result;
         },201);
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/v1/admin/midis/{1}/download-sources", [this](const drogon::HttpRequestPtr& req, Callback&& cb, std::string id) {
+        dispatch(std::move(cb), [this, req, id] {
+            auth_.requireStaff(req->getHeader("authorization"));
+            if (!number(id) || id.size() > 18) throw ApiError(404, "NOT_FOUND", "Unknown record.");
+            const auto rows = db_->execSqlSync(
+                "SELECT DISTINCT ON (digest) digest, name, media_key, size FROM ("
+                "SELECT a.source_hash AS digest,a.filename AS name,'asset/'||a.id AS media_key,octet_length(a.content) AS size,0 AS priority "
+                "FROM listening_assets a JOIN midi_entries m ON a.midi_id=m.id WHERE m.id=$1 AND m.deleted_at IS NULL AND a.mime<>'image/webp' "
+                "UNION ALL SELECT f.sha256,f.original_filename,'file/'||f.id,f.file_size,1 FROM midi_files f "
+                "JOIN midi_entries m ON f.midi_id=m.id WHERE m.id=$1 AND m.deleted_at IS NULL) sources ORDER BY digest,priority,media_key", id);
+            Json::Value files(Json::arrayValue);
+            for (const auto& row : rows) {
+                Json::Value file;
+                for (auto column : {"digest","name","media_key"}) file[column] = field(row, column);
+                file["size"] = Json::Int64(row["size"].as<int64_t>());
+                files.append(file);
+            }
+            return files;
+        });
+    }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/admin/player", [this](const drogon::HttpRequestPtr& req, Callback&& cb) {
         dispatch(std::move(cb),[this,req] {
             auth_.requireStaff(req->getHeader("authorization"));
@@ -127,7 +147,7 @@ void ApiController::registerArchiveDeskRoutes() {
             if ((!asset && kind!="file") || !number(id) || id.size()>18) throw ApiError(404,"NOT_FOUND","Unknown media.");
             const auto rows=db_->execSqlSync(asset ?
                 "SELECT octet_length(a.content)::bigint AS size,mime FROM listening_assets a JOIN midi_entries m ON m.id=a.midi_id WHERE a.id=$1 AND m.deleted_at IS NULL" :
-                "SELECT f.file_size AS size,listening_mime(f.original_filename) AS mime,f.storage_key,p.file_id FROM midi_files f JOIN midi_entries m ON m.id=f.midi_id LEFT JOIN midi_private_files p ON p.file_id=f.id WHERE f.id=$1 AND listening_mime(f.original_filename) IS NOT NULL AND m.deleted_at IS NULL", id);
+                "SELECT f.file_size AS size,coalesce(listening_mime(f.original_filename),'application/octet-stream') AS mime,f.storage_key,p.file_id FROM midi_files f JOIN midi_entries m ON m.id=f.midi_id LEFT JOIN midi_private_files p ON p.file_id=f.id WHERE f.id=$1 AND m.deleted_at IS NULL", id);
             if (rows.empty()) throw ApiError(404,"NOT_FOUND","Media not found.");
             const auto size=static_cast<size_t>(rows[0]["size"].as<int64_t>());
             const auto range=req->getHeader("range");

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { fetchStaffFile, type StaffFile } from "@/lib/staff-file";
 
 const errorMessages: Record<number, string> = {
   403: "此文件尚未确认公开分发，或档案限制分发、仅公开资料，暂不提供下载。请通过联系我们说明用途。",
@@ -12,7 +13,7 @@ const errorMessages: Record<number, string> = {
 
 type DownloadState = { kind: "idle" | "loading" | "success" | "error"; message: string };
 
-export function MidiDownload({ slug, id, filename }: { slug: string; id: string; filename: string }) {
+export function MidiDownload({ slug, id, filename, staffFile }: { slug: string; id: string; filename: string; staffFile?: StaffFile }) {
   const [state, setState] = useState<DownloadState>({ kind: "idle", message: "" });
   const inFlight = useRef<AbortController | null>(null);
 
@@ -30,20 +31,26 @@ export function MidiDownload({ slug, id, filename }: { slug: string; id: string;
     let failureMessage = "下载失败，请检查网络后重试。";
     const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
     try {
-      const response = await fetch(`/api/midis/${encodeURIComponent(slug)}/files/${encodeURIComponent(id)}/download`, {
-        cache: "no-store", credentials: "omit", redirect: "error", signal: controller.signal,
-        headers: { Accept: "application/octet-stream" },
-      });
-      failureMessage = errorMessages[response.status] ?? "下载服务返回无效文件，请稍后重试。";
-      const lengthHeader = response.headers.get("Content-Length");
-      const length = Number(lengthHeader);
-      if (response.status !== 200 || response.headers.get("Content-Type")?.toLowerCase() !== "application/octet-stream"
-        || !lengthHeader || !/^[1-9][0-9]{0,7}$/.test(lengthHeader) || length > 20_000_000) {
-        void response.body?.cancel().catch(() => {});
-        throw new Error("Invalid download response");
+      let blob: Blob;
+      if (staffFile) {
+        failureMessage = "未能取得已核验的文件，请确认登录状态后重试。";
+        blob = await fetchStaffFile(staffFile, controller.signal);
+      } else {
+        const response = await fetch(`/api/midis/${encodeURIComponent(slug)}/files/${encodeURIComponent(id)}/download`, {
+          cache: "no-store", credentials: "omit", redirect: "error", signal: controller.signal,
+          headers: { Accept: "application/octet-stream" },
+        });
+        failureMessage = errorMessages[response.status] ?? "下载服务返回无效文件，请稍后重试。";
+        const lengthHeader = response.headers.get("Content-Length");
+        const length = Number(lengthHeader);
+        if (response.status !== 200 || response.headers.get("Content-Type")?.toLowerCase() !== "application/octet-stream"
+          || !lengthHeader || !/^[1-9][0-9]{0,7}$/.test(lengthHeader) || length > 20_000_000) {
+          void response.body?.cancel().catch(() => {});
+          throw new Error("Invalid download response");
+        }
+        blob = await response.blob();
+        if (blob.size !== length) throw new Error("Incomplete download");
       }
-      const blob = await response.blob();
-      if (blob.size !== length) throw new Error("Incomplete download");
       controller.signal.throwIfAborted();
       if (inFlight.current !== controller) return;
 

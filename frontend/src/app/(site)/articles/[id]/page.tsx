@@ -1,3 +1,4 @@
+import { RecordAccess, RecordEditLink } from "@/components/record-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -43,10 +44,10 @@ export default async function ArticlePage({ params }: { params: Promise<{ id: st
     { name: article.title, path: `/articles/${article.id}` },
   ];
   const headings = markdownHeadings(article.body_markdown);
-  return <article className="record-page">
+  return <RecordAccess key={article.id} kind="articles" id={String(article.id)}><article className="record-page">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} />
     <Breadcrumbs items={crumbs} />
-    <header className="record-header"><p className="eyebrow">档案文章</p><h1 className="my-5 break-words font-serif text-4xl leading-tight">{article.title}</h1>
+    <header className="record-header"><p className="eyebrow">档案文章</p><div className="flex flex-wrap items-baseline justify-between gap-x-4"><h1 className="my-5 break-words font-serif text-4xl leading-tight">{article.title}</h1><RecordEditLink href={`/admin/articles/${article.id}/edit`} label="编辑文章" /></div>
     <p className="mb-9 text-sm text-muted">{article.author_username} · 更新于 {article.updated_at.slice(0, 10)}</p>
     </header><div className="record-grid">
     <nav className="record-index" aria-label="文章目录"><p>本页目录</p>
@@ -56,5 +57,5 @@ export default async function ArticlePage({ params }: { params: Promise<{ id: st
     <section id="article-works" className="mt-12 border-t border-line pt-7"><h2 className="mb-4 font-serif text-2xl">关联 MIDI</h2><ul className="space-y-2">{article.midis.map(midi => <li key={midi.id}><Link className="archive-link" href={`/midis/${midi.slug}`}>{midi.title}</Link></li>)}</ul></section>
     {article.people.length > 0 && <section id="article-people" className="mt-8 border-t border-line pt-7"><h2 className="mb-4 font-serif text-2xl">关联人物</h2><ul className="space-y-2">{article.people.map(person => <li key={person.id}><Link className="archive-link" href={`/people/${person.public_id}`}>{person.display_name}</Link></li>)}</ul></section>}
     </div></div>
-  </article>;
+  </article></RecordAccess>;
 }

@@ -1,3 +1,4 @@
+import { RecordAccess, RecordEditLink } from "@/components/record-access";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getMidiByPublicId, getMidiBySlug } from "@/lib/api/midi";
@@ -62,11 +63,11 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     { name: "MIDI 档案", path: "/midis" },
     { name: entry.title, path: `/midis/${detail.entry.slug}` },
   ];
-  return <article className="record-page">
+  return <RecordAccess key={entry.id} kind="midis" id={String(entry.id)}><article className="record-page">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} />
     <Breadcrumbs items={crumbs} />
     <header className="record-header"><p className="eyebrow">档案编号 / {entry.id}</p>
-    <h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1>
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4"><h1 className="mb-5 mt-4 break-words font-serif text-4xl leading-tight">{entry.title}</h1><RecordEditLink href={`/admin/midis/${entry.id}/edit`} label="编辑 MIDI" /></div>
     <div className="mb-7 flex items-center gap-4"><Status status={entry.archive_status} /><span className="text-sm text-muted">推测时间：{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</span></div>
     </header>
     <div className="record-grid">
@@ -115,5 +116,5 @@ export default async function MidiDetailPage({ params }: { params: Promise<{ slu
     <Suspense fallback={<p className="text-sm text-muted">正在加载相关文章…</p>}><RelatedArticlesFor kind="midi" id={detail.entry.public_id} /></Suspense>
       </div>
     </div>
-  </article>;
+  </article></RecordAccess>;
 }

@@ -9,7 +9,7 @@ export function FrontDeskEditor({ desk, owner }: { desk: FrontDesk; owner: boole
   return <div className="desk-edit">
     <form action={save}><h2>首页栏目</h2><input type="hidden" name="revision" value={desk.revision} />
       <label>一言<textarea name="sayings" rows={4} defaultValue={desk.sayings.join("\n")} /></label>
-      <small>每行一句，每天轮换。引文请写明出处，AI 创作请标明来源。</small>
+      <small>每行一句，每天轮换。摘录视频标题可填写「原句 | 来源说明 | BV号」。</small>
       <label>轮播栏目<textarea name="slides" rows={5} defaultValue={desk.slides.map(s => s.title+" | "+s.href).join("\n")} /></label>
       <small>每行填写「标题 | 站内路径」，从上往下翻页。清空后隐藏该栏目。</small>
       <button disabled={saving}>保存栏目</button><p role="status">{status}</p>
