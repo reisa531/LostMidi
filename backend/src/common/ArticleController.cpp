@@ -117,8 +117,8 @@ void validateAssociations(const std::shared_ptr<drogon::orm::Transaction>& db,
     for (const auto id : input.midis) {
         const auto rows = db->execSqlSync("SELECT archive_status FROM midi_entries WHERE id=$1 AND deleted_at IS NULL FOR SHARE", id);
         if (rows.empty()) throw ApiError(400, "INVALID_ASSOCIATION", "A selected MIDI archive does not exist.");
-        if (actor.role != "super_admin" && rows[0]["archive_status"].as<std::string>() == "archived")
-            throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a super administrator may link an archived MIDI.");
+        if (!actor.isStaff() && rows[0]["archive_status"].as<std::string>() == "archived")
+            throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a administrator may link an archived MIDI.");
     }
     for (const auto id : input.people)
         if (db->execSqlSync("SELECT 1 FROM people WHERE id=$1 AND deleted_at IS NULL FOR SHARE", id).empty())
@@ -126,11 +126,11 @@ void validateAssociations(const std::shared_ptr<drogon::orm::Transaction>& db,
 }
 void rejectArchivedArticleEdit(const std::shared_ptr<drogon::orm::Transaction>& db,
                                const std::string& id, const auth::SessionPrincipal& actor) {
-    if (actor.role == "super_admin") return;
+    if (actor.isStaff()) return;
     const auto rows = db->execSqlSync(
         "SELECT 1 FROM article_midis am JOIN midi_entries m ON m.id=am.midi_id "
         "WHERE am.article_id=$1::uuid AND m.archive_status='archived' LIMIT 1", id);
-    if (!rows.empty()) throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a super administrator may edit an article linked to an archived MIDI.");
+    if (!rows.empty()) throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a administrator may edit an article linked to an archived MIDI.");
 }
 }
 
@@ -196,7 +196,7 @@ void ApiController::registerArticleRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/admin/articles", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
-            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+            const auto actor = auth_.requireStaff(request->getHeader("authorization"));
             if (request->method() == drogon::Get) {
                 const int page = pageNumber(request);
                 const auto& params = request->getParameters();
@@ -225,7 +225,7 @@ void ApiController::registerArticleRoutes() {
     }, {drogon::Get, drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/articles/{1}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string value) {
         dispatch(std::move(callback), [this, request, value = std::move(value)] {
-            const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
+            const auto actor = auth_.requireStaff(request->getHeader("authorization"));
             const auto id = articleId(value);
             if (request->method() == drogon::Get) return detail(db_, id, false);
             TransactionScope tx(db_);

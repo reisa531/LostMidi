@@ -167,7 +167,7 @@ Json::Value ApiController::completeStagedCreate(const auth::SessionPrincipal& ac
     entry.removeMember("request_id");
     midi::validateFilename(filename);
     midi::validateFileContent(bytes);
-    if (actor.role == "admin") {
+    if (!actor.isStaff()) {
         if (!importer_.enabled()) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled.");
         auto payload = entry;
         payload["request_id"] = requestId;
@@ -176,7 +176,7 @@ Json::Value ApiController::completeStagedCreate(const auth::SessionPrincipal& ac
         payload["file"]["rights_confirmed"] = publicDownload;
         return submitAdminChange(actor, "midi.create", 0, payload);
     }
-    if (actor.role != "super_admin") throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a super administrator.");
+    if (!actor.isStaff()) throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a administrator.");
     midi::MidiCreationFile upload{filename, bytes, publicDownload};
     const auto saved = importer_.create(entryOf(entry, false), requestId, upload);
     recordContributor(saved.id, actor.username);
@@ -187,7 +187,7 @@ void ApiController::registerAdminRoutes() {
     registerAdminReviewQueueRoutes();
     drogon::app().registerHandler("/api/v1/admin/changes/{1}/review", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string requestId) {
         dispatch(std::move(callback), [this, request, requestId = std::move(requestId)] {
-            const auto reviewer = auth_.requireSuperAdmin(request->getHeader("authorization"));
+            const auto reviewer = auth_.requireStaff(request->getHeader("authorization"));
             if (!std::regex_match(requestId, std::regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")))
                 throw ApiError(400, "INVALID_INPUT", "A valid request id is required.");
             const auto body = bodyOf(request); fieldsOf(body, {"decision", "note"});
@@ -404,7 +404,7 @@ void ApiController::registerAdminRoutes() {
             const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (type != "midi" && type != "person") throw ApiError(400, "INVALID_INPUT", "Unknown trash record type.");
             const auto id = idOf(value);
-            if (actor.role == "admin") {
+            if (!actor.isStaff()) {
                 return submitAdminChange(actor, type + ".restore", id, Json::Value(Json::objectValue));
             }
             TransactionScope tx(db_);
@@ -423,7 +423,7 @@ void ApiController::registerAdminRoutes() {
             const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (request->method() == drogon::Post) {
                 const auto body = bodyOf(request);
-                if (actor.role == "admin") return submitAdminChange(actor, "person.create", 0, body);
+                if (!actor.isStaff()) return submitAdminChange(actor, "person.create", 0, body);
                 const auto result = personWriter_.save(0, personOf(body, false));
                 logEvent("person_created"); return toJson(result);
             }
@@ -448,13 +448,13 @@ void ApiController::registerAdminRoutes() {
             if (request->method() == drogon::Delete) {
                 const auto body = bodyOf(request); fieldsOf(body, {"revision"});
                 const auto personId = idOf(id);
-                if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "person.delete", personId, body);
+                if (!actorPrincipal.isStaff()) return submitAdminChange(actorPrincipal, "person.delete", personId, body);
                 personWriter_.remove(personId, revisionOf(body), actor);
                 logEvent("person_deleted");
                 Json::Value result; result["deleted_id"] = std::to_string(personId); return result;
             }
             const auto body = bodyOf(request);
-            if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "person.update", idOf(id), body);
+            if (!actorPrincipal.isStaff()) return submitAdminChange(actorPrincipal, "person.update", idOf(id), body);
             const auto result = personWriter_.save(idOf(id), personOf(body, true));
             logEvent("person_updated"); return toJson(result);
         });
@@ -464,7 +464,7 @@ void ApiController::registerAdminRoutes() {
             const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return toJson(personWriter_.getCredits(idOf(id)));
             const auto body = bodyOf(request);
-            if (actor.role == "admin") return submitAdminChange(actor, "credits.update", idOf(id), body);
+            if (!actor.isStaff()) return submitAdminChange(actor, "credits.update", idOf(id), body);
             const auto result = personWriter_.saveCredits(idOf(id), creditsOf(body));
             recordContributor(idOf(id), actor.username);
             logEvent("midi_credits_updated"); return toJson(result);
@@ -483,7 +483,7 @@ void ApiController::registerAdminRoutes() {
     }, {drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/trash/{1}/{2}/purge", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string type, std::string value) {
         dispatch(std::move(callback), [this, request, type = std::move(type), value = std::move(value)] {
-            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization"));
+            const auto actor = auth_.requireStaff(request->getHeader("authorization"));
             if (type != "midi" && type != "person") throw ApiError(400, "INVALID_INPUT", "Unknown trash record type.");
             const auto id = idOf(value);
             const auto body = bodyOf(request);
@@ -576,7 +576,7 @@ void ApiController::registerAdminRoutes() {
             const auto passwordHash = auth::hashPassword(password);
             TransactionScope tx(db_);
             const auto rows = tx.db->execSqlSync(
-                "INSERT INTO admin_users(username,email,password_hash,role,status) VALUES($1,$2,$3,'admin','disabled') "
+                "INSERT INTO admin_users(username,email,password_hash,member_role,status) VALUES($1,$2,$3,'maintainer','active') "
                 "ON CONFLICT DO NOTHING RETURNING id::text", username, email, passwordHash);
             if (rows.empty()) throw ApiError(409, "USER_EXISTS", "Username or email is already registered.");
             const auto userId = rows[0]["id"].as<std::string>();
@@ -584,7 +584,7 @@ void ApiController::registerAdminRoutes() {
                 username, userId);
             tx.commit();
             Json::Value result;
-            result["id"] = userId; result["status"] = "disabled"; result["role"] = "admin";
+            result["id"] = userId; result["status"] = "active"; result["role"] = "maintainer";
             return result;
         }, 201);
     }, {drogon::Post});
@@ -601,11 +601,11 @@ void ApiController::registerAdminRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/admin/users", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
-            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization"));
+            const auto actor = auth_.requireOwner(request->getHeader("authorization"));
             if (request->method() == drogon::Get) {
                 Json::Value result(Json::arrayValue);
                 for (const auto& row : db_->execSqlSync(
-                    "SELECT id::text,username,email,role,status,created_by,created_at FROM admin_users ORDER BY created_at,id")) {
+                    "SELECT id::text,username,email,member_role AS role,status,created_by,created_at FROM admin_users ORDER BY created_at,id")) {
                     Json::Value item;
                     item["id"] = row["id"].as<std::string>(); item["username"] = row["username"].as<std::string>();
                     item["email"] = nullable<std::string>(row["email"]).value_or("");
@@ -619,15 +619,15 @@ void ApiController::registerAdminRoutes() {
             const auto username = stringOf(body, "username", 64);
             const auto role = stringOf(body, "role", 20);
             if (!std::regex_match(username, std::regex("^[A-Za-z0-9_.-]{3,64}$")) ||
-                (role != "admin" && role != "super_admin"))
+                (role != "admin" && role != "maintainer"))
                 throw ApiError(400, "INVALID_INPUT", "A valid username and role are required.");
             const auto token = auth::randomToken();
             const auto tokenHash = auth::digest(token);
             TransactionScope tx(db_);
             const auto created = tx.db->execSqlSync(
-                "INSERT INTO admin_users(username,role,status,invitation_hash,invitation_expires_at,created_by) "
+                "INSERT INTO admin_users(username,member_role,status,invitation_hash,invitation_expires_at,created_by) "
                 "VALUES($1,$2,'invited',$3,CURRENT_TIMESTAMP+INTERVAL '48 hours',$4) "
-                "ON CONFLICT(username) DO UPDATE SET role=EXCLUDED.role,status='invited',invitation_hash=EXCLUDED.invitation_hash, "
+                "ON CONFLICT(username) DO UPDATE SET member_role=EXCLUDED.member_role,status='invited',invitation_hash=EXCLUDED.invitation_hash, "
                 "invitation_expires_at=EXCLUDED.invitation_expires_at,created_by=EXCLUDED.created_by "
                 "WHERE admin_users.status='disabled' AND admin_users.password_hash IS NULL "
                 "RETURNING id::text,invitation_expires_at",
@@ -650,7 +650,7 @@ void ApiController::registerAdminRoutes() {
     }, {drogon::Get, drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/users/{1}", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string userId) {
         dispatch(std::move(callback), [this, request, userId = std::move(userId)] {
-            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization"));
+            const auto actor = auth_.requireOwner(request->getHeader("authorization"));
             if (!std::regex_match(userId, std::regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")))
                 throw ApiError(400, "INVALID_INPUT", "A valid user id is required.");
             if (request->method() == drogon::Delete) {
@@ -659,18 +659,13 @@ void ApiController::registerAdminRoutes() {
                 TransactionScope tx(db_);
                 tx.db->execSqlSync("SELECT pg_advisory_xact_lock(741032, 2)");
                 const auto current = tx.db->execSqlSync(
-                    "SELECT username,role,status FROM admin_users WHERE id=$1::uuid FOR UPDATE", userId);
+                    "SELECT username,member_role AS role,status FROM admin_users WHERE id=$1::uuid FOR UPDATE", userId);
                 if (current.empty()) throw ApiError(404, "USER_NOT_FOUND", "Administrator account does not exist.");
                 const auto username = current[0]["username"].as<std::string>();
                 if (confirmation != username) throw ApiError(400, "DELETE_CONFIRMATION_REQUIRED", "Type the username to confirm deletion.");
                 if (actor.userId == userId) throw ApiError(400, "CANNOT_DELETE_SELF", "You cannot delete your own account.");
-                if (current[0]["role"].as<std::string>() == "super_admin" &&
-                    current[0]["status"].as<std::string>() == "active") {
-                    const auto count = tx.db->execSqlSync(
-                        "SELECT count(*) AS n FROM admin_users WHERE role='super_admin' AND status='active'")[0]["n"].as<std::int64_t>();
-                    if (count <= 1 && !auth_.hasEnvironmentCredentials())
-                        throw ApiError(409, "LAST_SUPER_ADMIN", "At least one active super administrator must remain.");
-                }
+                if (current[0]["role"].as<std::string>() == "owner")
+                    throw ApiError(403, "FORBIDDEN", "The site owner cannot be deleted.");
                 Json::Value detail; detail["id"] = userId; detail["username"] = username;
                 tx.db->execSqlSync("INSERT INTO admin_user_audit(actor,action,detail) VALUES($1,'deleted',$2::jsonb)",
                     actor.username, detail.toStyledString());
@@ -680,25 +675,19 @@ void ApiController::registerAdminRoutes() {
             }
             const auto body = bodyOf(request); fieldsOf(body, {"role", "status"});
             const auto role = stringOf(body, "role", 20); const auto status = stringOf(body, "status", 20);
-            if ((role != "admin" && role != "super_admin") || (status != "invited" && status != "active" && status != "disabled"))
+            if ((role != "admin" && role != "maintainer") || (status != "invited" && status != "active" && status != "disabled"))
                 throw ApiError(400, "INVALID_INPUT", "A valid role and status are required.");
             TransactionScope tx(db_);
             tx.db->execSqlSync("SELECT pg_advisory_xact_lock(741032, 2)");
-            const auto current = tx.db->execSqlSync("SELECT username,role,status,password_hash FROM admin_users WHERE id=$1::uuid FOR UPDATE", userId);
+            const auto current = tx.db->execSqlSync("SELECT username,member_role AS role,status,password_hash FROM admin_users WHERE id=$1::uuid FOR UPDATE", userId);
             if (current.empty()) throw ApiError(404, "USER_NOT_FOUND", "Administrator account does not exist.");
             const auto username = current[0]["username"].as<std::string>();
-            const auto oldRole = current[0]["role"].as<std::string>(); const auto oldStatus = current[0]["status"].as<std::string>();
+            if (current[0]["role"].as<std::string>() == "owner")
+                throw ApiError(403, "FORBIDDEN", "The site owner cannot be reassigned.");
             if (status == "active" && current[0]["password_hash"].isNull())
-                throw ApiError(409, "INVITATION_REQUIRED", "An invited account must accept a fresh invitation before activation.");
-            if (actor.userId == userId && (role != "super_admin" || status != "active"))
-                throw ApiError(400, "CANNOT_DISABLE_SELF", "You cannot remove your own super administrator access.");
-            if (oldRole == "super_admin" && oldStatus == "active" && (role != "super_admin" || status != "active")) {
-                const auto count = tx.db->execSqlSync("SELECT count(*) AS n FROM admin_users WHERE role='super_admin' AND status='active'")[0]["n"].as<std::int64_t>();
-                if (count <= 1 && !auth_.hasEnvironmentCredentials())
-                    throw ApiError(409, "LAST_SUPER_ADMIN", "At least one active super administrator must remain.");
-            }
+                throw ApiError(409, "INVITATION_REQUIRED", "An invited account must set a password first.");
             if (status == "invited") throw ApiError(400, "INVALID_INPUT", "Use the invitation flow to create an invited account.");
-            tx.db->execSqlSync("UPDATE admin_users SET role=$2,status=$3,invitation_hash=NULL,invitation_expires_at=NULL "
+            tx.db->execSqlSync("UPDATE admin_users SET member_role=$2,status=$3,invitation_hash=NULL,invitation_expires_at=NULL "
                 "WHERE id=$1::uuid", userId, role, status);
             tx.db->execSqlSync("DELETE FROM admin_invitations WHERE user_id=$1::uuid", userId);
             Json::Value detail; detail["username"] = username; detail["role"] = role; detail["status"] = status;
@@ -756,7 +745,7 @@ void ApiController::registerAdminRoutes() {
             if (hasFile && !body.isMember("request_id"))
                 throw ApiError(400, "INVALID_INPUT", "A file requires request_id for safe retries.");
             if (!body.isMember("request_id")) {
-                if (actor.role == "admin") {
+                if (!actor.isStaff()) {
                     if (body.isMember("file"))
                         throw ApiError(400, "INVALID_INPUT", "A request_id is required when proposing a MIDI file.");
                     return submitAdminChange(actor, "midi.create", 0, body);
@@ -765,7 +754,7 @@ void ApiController::registerAdminRoutes() {
                 recordContributor(entry.id, actor.username);
                 logEvent("midi_created"); return toJson(entry);
             }
-            if (actor.role == "admin") {
+            if (!actor.isStaff()) {
                 if (hasFile) {
                     if (!importer_.enabled()) throw ApiError(503, "IMPORT_DISABLED", "File import is disabled.");
                     const auto& file = body["file"];
@@ -792,7 +781,7 @@ void ApiController::registerAdminRoutes() {
                 upload->bytes = midi::decodeMidiContentBase64(file["content_base64"].asString());
                 body.removeMember("file");
             }
-            if (actor.role != "super_admin") throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a super administrator.");
+            if (!actor.isStaff()) throw ApiError(403, "SUPER_ADMIN_REQUIRED", "File import requires a administrator.");
             const auto entry = importer_.create(entryOf(body, false), requestId, upload);
             recordContributor(entry.id, actor.username);
             logEvent("midi_created"); return toJson(entry);
@@ -805,13 +794,13 @@ void ApiController::registerAdminRoutes() {
             if (request->method() == drogon::Delete) {
                 const auto body = bodyOf(request); fieldsOf(body, {"revision"});
                 const auto midiId = idOf(id);
-                if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "midi.delete", midiId, body);
+                if (!actorPrincipal.isStaff()) return submitAdminChange(actorPrincipal, "midi.delete", midiId, body);
                 writer_.remove(midiId, revisionOf(body), actorPrincipal.username);
                 logEvent("midi_deleted");
                 Json::Value result; result["deleted_id"] = std::to_string(midiId); return result;
             }
             const auto body = bodyOf(request);
-            if (actorPrincipal.role == "admin") return submitAdminChange(actorPrincipal, "midi.update", idOf(id), body);
+            if (!actorPrincipal.isStaff()) return submitAdminChange(actorPrincipal, "midi.update", idOf(id), body);
             const auto entry = writer_.update(idOf(id), entryOf(body, true));
             recordContributor(entry.id, actorPrincipal.username);
             logEvent("midi_updated"); return toJson(entry);

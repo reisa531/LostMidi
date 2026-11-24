@@ -44,7 +44,7 @@ Json::Value changePage(const drogon::orm::DbClientPtr& db, const drogon::HttpReq
 void ApiController::registerAdminReviewQueueRoutes() {
     drogon::app().registerHandler("/api/v1/admin/changes", [this](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request] {
-            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization"));
+            const auto actor = auth_.requireStaff(request->getHeader("authorization"));
             return changePage(db_, request, actor, false);
         });
     }, {drogon::Get});
@@ -56,7 +56,7 @@ void ApiController::registerAdminReviewQueueRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/admin/changes/{1}/close", [this](const drogon::HttpRequestPtr& request, Callback&& callback, std::string requestId) {
         dispatch(std::move(callback), [this, request, requestId = std::move(requestId)] {
-            const auto actor = auth_.requireSuperAdmin(request->getHeader("authorization"));
+            const auto actor = auth_.requireStaff(request->getHeader("authorization"));
             if (!std::regex_match(requestId, std::regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")))
                 throw ApiError(400, "INVALID_INPUT", "A valid request id is required.");
             const auto body = request->getJsonObject();

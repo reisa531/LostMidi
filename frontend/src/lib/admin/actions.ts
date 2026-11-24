@@ -15,12 +15,12 @@ function message(error: unknown) {
   if (!(error instanceof ApiError)) return "请求失败，请稍后重试。";
   const messages: Record<string, string> = {
     INVALID_CREDENTIALS: "用户名或密码不正确。", LOGIN_RATE_LIMITED: "登录尝试过多，请一分钟后重试。",
-    ACCOUNT_DISABLED: "账号未启用，请联系超级管理员（见“关于我们”页）启用。",
+    ACCOUNT_DISABLED: "账号已停用。如需恢复，请在「关于」页联系站长。",
     ADMIN_DISABLED: "尚未配置管理员账号，请联系部署维护者。", INVALID_ORIGIN: "请求来源与后台配置不符，请检查访问地址。",
     SLUG_CONFLICT: "此 slug 已被占用，请更换。", STALE_ENTRY: "作品资料已被他处修改。请保留当前内容，重新打开编辑页合并。",
     INVALID_INPUT: "字段格式或长度不符要求，请检查标题、slug、年份与文字长度。",
     MIDI_NOT_FOUND: "该档案已不存在。", UNAUTHORIZED: "会话已过期，请重新登录。",
-    ARCHIVE_SUPER_ADMIN_REQUIRED: "已归档档案及归档操作仅限超级管理员。",
+    ARCHIVE_SUPER_ADMIN_REQUIRED: "已归档档案及归档操作仅限管理员。",
     USER_EXISTS: "账号或邮箱已存在。",
     REGISTRATION_RATE_LIMITED: "注册请求过多，请一分钟后重试。",
     CAPTCHA_INVALID: registrationCopy.registrationRejected,

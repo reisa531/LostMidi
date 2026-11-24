@@ -12,8 +12,8 @@ export default async function CreditsPage({ params, searchParams }: { params: Pr
   const { id } = await params;
   if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > BigInt("9223372036854775807")) notFound();
   let data;
-  let role: "admin" | "super_admin";
-  try { [data, role] = await Promise.all([Promise.all([adminRequest<CreditEdit>(`/api/v1/admin/midis/${id}/credits`), getPeople(), adminRequest<MidiEntry>(`/api/v1/admin/midis/${id}`)]), adminRequest<{ role: "admin" | "super_admin" }>("/api/v1/admin/session").then(session => session.role)]); }
+  let role: "admin" | "owner" | "maintainer";
+  try { [data, role] = await Promise.all([Promise.all([adminRequest<CreditEdit>(`/api/v1/admin/midis/${id}/credits`), getPeople(), adminRequest<MidiEntry>(`/api/v1/admin/midis/${id}`)]), adminRequest<{ role: "admin" | "owner" | "maintainer" }>("/api/v1/admin/session").then(session => session.role)]); }
   catch (error) {
     if (error instanceof ApiError && error.status === 401) redirect("/admin/login");
     if (error instanceof ApiError && error.status === 404) notFound();
@@ -25,5 +25,5 @@ export default async function CreditsPage({ params, searchParams }: { params: Pr
   return <><AdminPageHeader eyebrow={`档案 / ${id} / 署名`} title={`作品署名 · ${midi.title}`} description={"维护作品的作曲、编曲与音序制作署名。档案贡献者由后台提交记录自动生成；署名与作品资料共用保存版本。"} />
     {saved === "1" && <p role="status" className="mb-6 rounded bg-green-50 p-4 text-sm text-green-900">署名已保存。<Link href={`/midis/${midi.slug}`} className="ml-4 underline">查看公开详情</Link></p>}
     <MidiSectionNav id={id} slug={midi.slug} current="credits" />
-    <CreditsForm key={`${id}-${entry.revision}`} midiId={id} entry={entry} people={people} reviewRequired={role === "admin"} /></>;
+    <CreditsForm key={`${id}-${entry.revision}`} midiId={id} entry={entry} people={people} reviewRequired={role === "maintainer"} /></>;
 }

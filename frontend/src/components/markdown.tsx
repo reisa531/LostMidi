@@ -1,3 +1,5 @@
+import { BilibiliVideo } from "./bilibili-video";
+import { videoSource } from "@/lib/bilibili";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -39,7 +41,10 @@ export function Markdown({ source, className = "" }: { source: string; className
       h1: ({ children }) => renderHeading(1, children), h2: ({ children }) => renderHeading(2, children),
       h3: ({ children }) => renderHeading(3, children), h4: ({ children }) => renderHeading(4, children),
       h5: ({ children }) => renderHeading(5, children), h6: ({ children }) => renderHeading(6, children),
-      a: ({ href, children }) => <a href={href} {...(href?.startsWith("/") || href?.startsWith("#") ? {} : { rel: "noopener noreferrer", target: "_blank" })} className="archive-link">{children}</a>,
+      a: ({ href, children }) => {
+        const video = href && children === "B站视频" && videoSource(href);
+        if (video && href) return <BilibiliVideo source={video} link={href} />;
+        return <a href={href} {...(href?.startsWith("/") || href?.startsWith("#") ? {} : { rel: "noopener noreferrer", target: "_blank" })} className="archive-link">{children}</a>; },
       img: () => null,
       table: ({ children }) => <div className="max-w-full overflow-x-auto"><table className="w-full border-collapse text-left text-sm">{children}</table></div>,
       th: ({ children }) => <th className="border border-line bg-white/70 px-3 py-2">{children}</th>,

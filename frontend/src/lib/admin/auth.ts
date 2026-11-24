@@ -27,9 +27,15 @@ export async function adminRequest<T>(path: string, options: RequestInit = {}, t
   return result;
 }
 export async function requireAdmin() {
-  try { return await adminRequest<{ username: string; role: "super_admin" | "admin"; user_id: string | null; midi_import_enabled: boolean }>("/api/v1/admin/session"); }
+  try { return await adminRequest<{ username: string; role: "admin" | "owner" | "maintainer"; user_id: string | null; midi_import_enabled: boolean }>("/api/v1/admin/session"); }
   catch (error) {
     if (error instanceof ApiError && error.status === 401) redirect("/admin/login");
     throw error;
   }
+}
+
+export async function requireStaff() {
+  const session = await requireAdmin();
+  if (session.role !== "owner" && session.role !== "admin") redirect("/admin");
+  return session;
 }

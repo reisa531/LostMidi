@@ -40,7 +40,7 @@ export async function installAction(previous: InstallationActionState, form: For
       TOKEN_FORMAT: "安装密钥须为 32–128 位字母、数字、下划线或连字符。",
       INVALID_INSTALLATION_TOKEN: "安装密钥不正确，请使用后端部署时设置的 INSTALLATION_TOKEN。",
       INSTALLATION_DISABLED: "后端未启用安装，请配置 INSTALLATION_TOKEN 并重启后端。",
-      ALREADY_INSTALLED: "站点已安装，未覆盖任何设置。请刷新本页并前往管理员登录。",
+      ALREADY_INSTALLED: "站点已安装，未覆盖任何设置。请刷新本页并前往成员登录。",
       INSTALLATION_RATE_LIMITED: "安装尝试过多，请一分钟后重试。",
       INVALID_INPUT: "请检查站点名称、简介、用户名和密码的格式及 UTF-8 字节长度。",
       PASSWORD_MISMATCH: "两次输入的密码不一致。",

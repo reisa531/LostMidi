@@ -73,7 +73,7 @@ protected:
         db_->execSqlSync("CREATE TABLE recovery_events (recovered_at TIMESTAMPTZ, recovered_by_name TEXT)");
         db_->execSqlSync("CREATE TABLE historical_sources (credibility SMALLINT)");
         db_->execSqlSync("CREATE TABLE historical_evidence (id BIGINT)");
-        db_->execSqlSync("CREATE TABLE admin_users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), username TEXT UNIQUE, email TEXT, password_hash TEXT, role TEXT, status TEXT)");
+        db_->execSqlSync("CREATE TABLE admin_users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), username TEXT UNIQUE, email TEXT, password_hash TEXT, role TEXT, member_role TEXT, status TEXT)");
         db_->execSqlSync("CREATE FUNCTION allocate_archive_id(TEXT) RETURNS BIGINT LANGUAGE SQL AS $$ SELECT 1::BIGINT $$");
         db_->execSqlSync("CREATE TABLE admin_invitations (token_hash TEXT)");
         db_->execSqlSync("CREATE TABLE admin_change_requests (id UUID, entity_public_id UUID)");

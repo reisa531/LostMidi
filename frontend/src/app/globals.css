@@ -221,3 +221,48 @@ body { background: var(--background); color: var(--foreground); font-family: var
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Archive desk — paper, letterpress rules and a radio-green display. */
+:root { --background:#efe6d2; --foreground:#2a2418; --muted:#5a4e3a; --line:#c2b495; --surface:#f9f3e5; --wash:#e6dabf; --accent:#903423; }
+body { background-image:repeating-linear-gradient(0deg, transparent 0 3px, #44352104 3px 4px); }
+.masthead { border-block:5px solid var(--foreground); border-bottom:3px double var(--foreground); }
+.masthead-inner { min-height:4rem; }
+.site-width { max-width:70rem; }
+.workspace aside.workspace-rail { background:#302d22; border-right:4px double #ad9e7c; }
+.workspace :where(.rounded-lg,.rounded-xl,.rounded-2xl), .public-site :where(.rounded-lg,.rounded-xl,.rounded-2xl) {border-radius:2px}
+.workspace .bg-white, .public-site .bg-white {background-color:var(--surface)}
+.catalog-heading {border-block-start:3px double var(--foreground);padding-top:1.2rem}
+.front-mast {display:grid;grid-template-columns:1.25fr minmax(16rem,.75fr);align-items:end;gap:2rem;border-bottom:1px solid var(--foreground);padding:0 0 1.5rem}
+.front-mast h1 {font:800 clamp(2.8rem,7vw,5.8rem)/1.13 var(--font-serif);letter-spacing:-.07em}
+.front-mast p {margin-top:.7rem;font:1rem/1.65 var(--font-serif);color:var(--muted)}
+.saying {padding:.8rem 0;border-bottom:3px double var(--foreground);font-family:var(--font-serif)}
+.saying span,.desk-carousel h2 {font:600 .78rem/1.4 var(--font-mono);letter-spacing:.09em;color:var(--accent)}
+.saying span {border:1px solid currentColor;padding:.12rem .35rem;margin-right:.45rem}
+.edition-grid {display:grid;grid-template-columns:minmax(0,2fr) minmax(13rem,1fr);gap:clamp(1.25rem,4vw,4rem);margin-top:2rem}
+.edition-margin {border-left:1px solid var(--line);padding-left:1.5rem;overflow-wrap:anywhere}
+.edition-margin h2,.desk-edit h2,.listening-room h2 {font:700 1.5rem/1.5 var(--font-serif)}
+.edition-margin section {border-block:3px double var(--foreground);padding:1rem 0}
+.edition-margin p {font-size:.9rem;line-height:1.8;margin:.7rem 0}
+.edition-margin details {border-top:1px dashed var(--line);padding:.65rem 0}
+.edition-margin small,.edition-ledger {color:var(--muted)}
+.desk-carousel {border:1px solid var(--foreground);border-left:5px solid var(--accent);padding:1rem 1.2rem;background:var(--surface);margin-bottom:1.5rem}
+.feature-link {font:600 clamp(1.45rem,3vw,2.5rem)/1.5 var(--font-serif);overflow-wrap:anywhere}
+.desk-carousel button,.cookie-slip button,.desk-edit button,.listen-controls button,.library-tabs button {min-height:44px;padding:0 .65rem;border:1px solid var(--line);background:var(--surface);color:var(--foreground)}
+.cookie-slip {position:fixed;z-index:45;bottom:1rem;right:1rem;width:min(27rem,calc(100% - 2rem));padding:.9rem 1.05rem;background:var(--surface);border:1px solid var(--foreground);border-top:3px double var(--foreground);box-shadow:3px 3px 0 #392d1f38;display:grid;grid-template-columns:1fr auto;gap:.25rem .7rem}
+.cookie-slip[hidden]{display:none}.cookie-slip strong{font-family:var(--font-serif)}.cookie-slip p{font-size:.8rem;line-height:1.6;grid-column:1}.cookie-slip button{grid-column:2;grid-row:1/3;align-self:center}
+.desk-title{font:700 clamp(2rem,4vw,3.3rem)/1.2 var(--font-serif);padding-bottom:.8rem;border-bottom:3px double var(--foreground);margin-bottom:1.4rem}
+.desk-edit {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:1.5rem}
+.desk-edit form {align-self:start;display:grid;gap:.75rem;background:var(--surface);padding:1.25rem;border:1px solid var(--line)}
+.desk-edit label{display:grid;gap:.36rem;font-weight:600}.desk-edit :is(textarea,input){border:1px solid var(--line);padding:.5rem;background:var(--background);font-weight:400}
+.desk-edit small{color:var(--muted)}.desk-edit button{justify-self:start}
+.bili-film{display:block;border-left:3px solid var(--accent);padding:.5rem .8rem;background:var(--wash)}
+.bili-film button{min-height:44px;background:var(--surface);padding:.2rem .8rem}.bili-film a{margin-left:.6rem;font-size:.8rem}.bili-film iframe{width:100%;aspect-ratio:16/9;border:0}
+@media(max-width:740px){.front-mast,.edition-grid{grid-template-columns:1fr}.front-mast{gap:1rem}.edition-margin{padding:0;border:0}.desk-carousel{padding:.8rem}.workspace-rail{border-right:0}}
+.turntable{display:grid;grid-template-columns:minmax(9rem,15rem) minmax(0,1fr);gap:clamp(1rem,3vw,2.4rem);padding:clamp(1rem,2.7vw,2rem);background:#353126;border:4px double #a68e5e;color:#f3e9d1}
+.record-sleeve{aspect-ratio:1;display:grid;place-items:center;background:#201f18;border:1px solid #aa946e;overflow:hidden}
+.record-sleeve img{width:100%;height:100%;object-fit:contain}.blank-sleeve{padding:1rem;color:#cabd9b;font-family:var(--font-serif);border-block:3px double}
+.record-panel{display:grid;align-content:center;gap:.45rem;min-width:0}.record-panel h2{background:#182719;color:#c1e19f;border:2px inset #837453;padding:.5rem .75rem;overflow-wrap:anywhere;font-size:clamp(1.3rem,3vw,2rem)}
+.record-panel input{width:100%;min-height:36px;accent-color:#c8d793}.record-filename{overflow-wrap:anywhere;font-family:var(--font-mono);font-size:.85rem}.listen-controls,.library-tabs{display:flex;flex-wrap:wrap;gap:.5rem}
+.library-tabs{border-bottom:2px solid var(--foreground);margin:1.5rem 0 .8rem}.library-tabs button[aria-pressed=true]{background:var(--foreground);color:var(--surface)}.library-search{display:flex;align-items:center;gap:1rem;font-size:.9rem}.library-search input{padding:.55rem;border:1px solid var(--line);background:var(--surface);width:min(20rem,65%)}
+.play-list{margin:1rem 0}.play-list li{padding:.55rem .75rem;border-block-start:1px solid var(--line);display:grid;grid-template-columns:minmax(8rem,1fr) minmax(0,2fr);gap:.2rem 1rem;align-items:baseline}.play-list li:nth-child(odd){background:#5a492608}.play-list strong{font-family:var(--font-serif);overflow-wrap:anywhere}.track-row{grid-column:2;display:flex;justify-content:space-between;align-items:center;gap:.5rem}.track-row button{min-height:44px;text-align:left;color:var(--accent);overflow-wrap:anywhere}.track-row button:last-child{flex:none;font-size:.8rem}.play-list small{color:var(--muted)}
+@media(max-width:600px){.turntable{grid-template-columns:5.5rem minmax(0,1fr);padding:.65rem;gap:.7rem}.record-panel h2{font-size:1.24rem}.listen-controls{gap:.2rem}.listen-controls button{padding:.2rem;font-size:.77rem}.play-list li{grid-template-columns:1fr}.track-row{grid-column:1}}

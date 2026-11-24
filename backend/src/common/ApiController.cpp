@@ -88,7 +88,7 @@ auth::SessionPrincipal ApiController::requireFilePrincipal(const drogon::HttpReq
 Json::Value ApiController::submitAdminChange(const auth::SessionPrincipal& actor, const std::string& type,
                                               std::int64_t entityId, const Json::Value& payload) {
     if ((type == "midi.create" || type == "midi.update") && payload["archive_status"] == "archived")
-        throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a super administrator may archive an entry.");
+        throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a administrator may archive an entry.");
     const bool midiChange = type.starts_with("midi.") || type.starts_with("history.") ||
         type == "credits.update" || type.starts_with("evidence.") || type.starts_with("file.");
     std::optional<std::string> entityPublicId;
@@ -99,7 +99,7 @@ Json::Value ApiController::submitAdminChange(const auth::SessionPrincipal& actor
         if (rows.empty()) throw ApiError(404, "ARCHIVE_NOT_FOUND", "The archive record no longer exists.");
         entityPublicId = rows[0]["public_id"].as<std::string>();
         if (midiChange && type != "midi.restore" && rows[0]["archive_status"].as<std::string>() == "archived")
-            throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a super administrator may modify an archived entry.");
+            throw ApiError(403, "ARCHIVE_SUPER_ADMIN_REQUIRED", "Only a administrator may modify an archived entry.");
     }
     const auto rows = db_->execSqlSync(
         "INSERT INTO admin_change_requests(request_type,entity_id,entity_public_id,proposed_by,payload) "
@@ -110,7 +110,7 @@ Json::Value ApiController::submitAdminChange(const auth::SessionPrincipal& actor
     result["request_id"] = rows[0]["id"].as<std::string>();
     result["status"] = "pending";
     result["created_at"] = rows[0]["created_at"].as<std::string>();
-    result["message"] = "Submitted for super administrator review.";
+    result["message"] = "Submitted for administrator review.";
     return result;
 }
 
@@ -119,6 +119,7 @@ void ApiController::registerRoutes() {
     registerAdminRecoveryRoutes();
     registerInstallationRoutes();
     registerAdminFileRoutes();
+    registerArchiveDeskRoutes();
     registerCatalogRoutes();
     registerArticleRoutes();
     drogon::app().setCustomErrorHandler([](drogon::HttpStatusCode status) {

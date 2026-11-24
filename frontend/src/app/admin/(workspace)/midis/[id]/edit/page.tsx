@@ -9,7 +9,7 @@ import { DeleteConfirmation } from "@/components/admin/delete-confirmation";
 import { MidiSectionNav } from "@/components/admin/midi-section-nav";
 export const metadata = { title: "编辑音乐条目" };
 export default async function EditMidi({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string }> }) {
-  const session = await adminRequest<{ role: "admin" | "super_admin" }>("/api/v1/admin/session");
+  const session = await adminRequest<{ role: "admin" | "owner" | "maintainer" }>("/api/v1/admin/session");
   const { id } = await params;
   if (!/^[1-9]\d{0,18}$/.test(id)) notFound();
   let entry: MidiEntry;
@@ -24,9 +24,9 @@ export default async function EditMidi({ params, searchParams }: { params: Promi
   return <><AdminPageHeader eyebrow={`档案 / ${entry.id}`} title={"编辑音乐条目"} description={"维护作品基础资料。署名、来源与寻回记录在独立页面管理，与基础资料共用保存版本；切换页面前请先保存。"} />
     {saved === "1" && <p role="status" className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-900">档案已保存。<Link className="ml-3 underline" href={`/midis/${entry.slug}`}>查看公开详情 ↗</Link></p>}
     <MidiSectionNav id={entry.id} slug={entry.slug} current="edit" />
-    {entry.archive_status === "archived" && session.role === "admin"
-      ? <p role="status" className="rounded-lg border border-line bg-white p-5 text-sm">此档案已归档，仅超级管理员可修改。</p>
-      : <><MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} reviewRequired={session.role === "admin"} />
-        <DeleteConfirmation key={`delete-${entry.id}-${entry.revision}`} resource="midis" id={entry.id} revision={entry.revision} name={entry.title} reviewRequired={session.role === "admin"} /></>}
+    {entry.archive_status === "archived" && session.role === "maintainer"
+      ? <p role="status" className="rounded-lg border border-line bg-white p-5 text-sm">此档案已归档，仅管理员可修改。</p>
+      : <><MidiForm key={`${entry.id}-${entry.revision}`} entry={entry} reviewRequired={session.role === "maintainer"} />
+        <DeleteConfirmation key={`delete-${entry.id}-${entry.revision}`} resource="midis" id={entry.id} revision={entry.revision} name={entry.title} reviewRequired={session.role === "maintainer"} /></>}
   </>;
 }

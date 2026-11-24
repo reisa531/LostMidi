@@ -43,7 +43,7 @@ export async function purgeTrashAction(_previous: PurgeState, form: FormData): P
     if (result.purged_id !== id) throw new ApiError(502, "INVALID_RESPONSE");
     return { error: "", purged: true, cleanupPending: result.cleanup_pending };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 403) return { error: "仅超级管理员可彻底删除。" };
+    if (error instanceof ApiError && error.status === 403) return { error: "仅管理员可彻底删除。" };
     if (error instanceof ApiError && error.code === "REVIEW_IN_PROGRESS") return { error: "该档案正在审核，请稍后重试。" };
     if (error instanceof ApiError && error.code === "ARTICLE_IN_USE") return { error: "该档案仍有关联文章，请先在文章管理中解除关联或删除文章后再试。" };
     if (error instanceof ApiError && error.status === 404) return { error: "记录已不存在，请刷新页面。" };

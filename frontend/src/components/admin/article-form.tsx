@@ -47,12 +47,12 @@ function AssociationList({ kind, title, selected, setSelected, initial, canChoos
     {error && <p role="alert" className="mb-2 text-xs text-red-800">{error}</p>}
     <div className="max-h-52 space-y-1 overflow-auto">{loading ? <p className="py-3 text-sm text-muted">正在加载…</p> : options.length ? options.map(option => <label key={option.id} className="flex items-start gap-2 rounded px-2 py-1.5 text-sm hover:bg-background">
       <input type="checkbox" checked={selected.includes(option.id)} disabled={option.archived && !canChooseArchived} onChange={event => toggle(option.id, event.target.checked)} className="mt-1" />
-      <span className="break-words">{option.label}{option.archived && !canChooseArchived ? " · 已归档，仅超级管理员可关联" : ""}</span>
+      <span className="break-words">{option.label}{option.archived && !canChooseArchived ? " · 已归档，仅管理员可关联" : ""}</span>
     </label>) : <p className="py-3 text-sm text-muted">没有匹配的档案。</p>}</div>
     {total > 20 && <div className="mt-3 flex items-center gap-4 text-xs"><button type="button" disabled={page === 1 || loading} onClick={() => setPage(page - 1)} className="archive-link disabled:opacity-50">上一页</button><span>第 {page} / {Math.ceil(total / 20)} 页</span><button type="button" disabled={page * 20 >= total || loading} onClick={() => setPage(page + 1)} className="archive-link disabled:opacity-50">下一页</button></div>}
   </fieldset>;
 }
-export function ArticleForm({ article, role }: { article?: ArticleDetail; role: "admin" | "super_admin" }) {
+export function ArticleForm({ article, role }: { article?: ArticleDetail; role: "admin" | "owner" | "maintainer" }) {
   const router = useRouter();
   const draftKey = `article:${article?.id ?? "new"}:${article?.revision ?? 0}`;
   const { attachForm, dirty, hasDraft, saveDraft, clearDraft, discardDraft, restoreDraft } = useFormDraft(draftKey);
@@ -80,7 +80,7 @@ export function ArticleForm({ article, role }: { article?: ArticleDetail; role: 
   const [formError, setFormError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const archived = article?.midis.some(item => item.archive_status === "archived") ?? false;
-  const canEdit = role === "super_admin" || !archived;
+  const canEdit = role !== "maintainer" || !archived;
   const [state, action, pending] = useActionState(async (previous: { error: string; savedId?: string }, form: FormData) => {
     const next = await saveArticleAction(previous, form);
     if (next.savedId) { discard(); clearDraft(); router.push(`/admin/articles/${next.savedId}/edit?saved=1`); router.refresh(); }
@@ -88,7 +88,7 @@ export function ArticleForm({ article, role }: { article?: ArticleDetail; role: 
   }, { error: "" });
   const initialMidis: Option[] = article?.midis.map(item => ({ id: item.id, label: `${item.title} · #${item.id}`, archived: item.archive_status === "archived" })) ?? [];
   const initialPeople: Option[] = article?.people.map(item => ({ id: item.id, label: `${item.display_name} · #${item.id}`, archived: false })) ?? [];
-  return <div className="space-y-8">{!canEdit && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">本文关联了已归档 MIDI，仅超级管理员可修改或删除。</p>}
+  return <div className="space-y-8">{!canEdit && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">本文关联了已归档 MIDI，仅管理员可修改或删除。</p>}
     {canEdit && <form ref={attachForm} action={action} onInputCapture={saveDraft} onChangeCapture={saveDraft} className="space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8" onSubmit={event => { if (!midiIds.length) { event.preventDefault(); setFormError("请至少关联一条音乐条目。"); } else setFormError(""); }}>
       <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restore} discard={discard} />
       {article && <><input type="hidden" name="id" value={article.id} /><input type="hidden" name="revision" value={article.revision} /></>}
@@ -96,7 +96,7 @@ export function ArticleForm({ article, role }: { article?: ArticleDetail; role: 
       <fieldset disabled={pending} className="space-y-6 disabled:opacity-70"><legend className="sr-only">文章内容与关联档案</legend>
       <label className="block text-sm">标题 *<input name="title" required maxLength={300} value={title} onChange={event => setTitle(event.target.value)} className="mt-2 block w-full rounded-lg border border-line px-3 py-2.5" /></label>
       <MarkdownField name="body_markdown" label="正文（Markdown）*" value={body} onChange={setBody} required maxLength={100000} rows={10} disabled={pending} />
-      <div className="grid gap-5 lg:grid-cols-2"><AssociationList kind="midi" title="关联 MIDI" initial={initialMidis} selected={midiIds} setSelected={ids => setLinks("midi", ids)} canChooseArchived={role === "super_admin"} />
+      <div className="grid gap-5 lg:grid-cols-2"><AssociationList kind="midi" title="关联 MIDI" initial={initialMidis} selected={midiIds} setSelected={ids => setLinks("midi", ids)} canChooseArchived={role !== "maintainer"} />
         <AssociationList kind="person" title="关联人物" initial={initialPeople} selected={personIds} setSelected={ids => setLinks("person", ids)} canChooseArchived /></div>
       <label className="block text-sm">发布状态<select name="status" value={status} onChange={event => setStatus(event.target.value as "draft" | "published")} className="mt-2 block w-full rounded-lg border border-line bg-white px-3 py-2.5"><option value="draft">草稿（仅后台可见）</option><option value="published">已发布</option></select></label>
       </fieldset>

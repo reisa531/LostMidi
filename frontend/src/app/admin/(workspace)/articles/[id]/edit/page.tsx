@@ -12,7 +12,7 @@ export const metadata = { title: "编辑文章" };
 export default async function EditArticlePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)) notFound();
-  let article: ArticleDetail, role: "admin" | "super_admin";
+  let article: ArticleDetail, role: "admin" | "owner" | "maintainer";
   try { const result = await Promise.all([adminRequest<ArticleDetail>(`/api/v1/admin/articles/${id}`), requireAdmin()]); article = result[0]; role = result[1].role; }
   catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); if (error instanceof ApiError) return <AdminUnavailable />; throw error; }
   const saved = (await searchParams).saved === "1";

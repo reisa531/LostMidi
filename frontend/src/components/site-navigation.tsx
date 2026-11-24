@@ -63,7 +63,7 @@ export function SiteNavigation() {
       onClick={event => { if (event.target === dialog.current) dialog.current.close(); }}>
       <div className="drawer-content">
         <header><h2 id="site-menu-title">浏览档案</h2><button type="button" aria-label="关闭导航菜单" onClick={() => dialog.current?.close()}>×</button></header>
-        <nav aria-label="全部页面">{catalog.map(item)}{item({ href: "/search", label: "搜索" })}{more.map(item)}{item({ href: "/admin", label: "管理工作台" })}</nav>
+        <nav aria-label="全部页面">{catalog.map(item)}{item({ href: "/search", label: "搜索" })}{more.map(item)}</nav>
       </div>
     </dialog>
   </div>;

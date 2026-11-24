@@ -2,7 +2,7 @@ import Link from "next/link";
 import { installedSite, requireInstallation } from "@/lib/install/state";
 import { SiteNavigation } from "@/components/site-navigation";
 import { ArchiveMark } from "@/components/archive-brand";
-import releases from "@/lib/changelog.json";
+import { CookieDetails } from "@/components/cookie-notice";
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const installed = await requireInstallation();
@@ -18,7 +18,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
     </main>
     <footer className="site-footer"><div className="site-width footer-inner">
       <Link className="wordmark" href="/"><ArchiveMark /><span>{site.name}</span></Link>
-      <nav aria-label="页脚导航"><Link href="/overview">档案总览</Link><Link href="/map">关系图谱</Link><Link href="/about#contact">联系我们</Link><Link href="/changelog">更新日志 · v{releases[0].version}</Link><Link href="/admin">工作台 ↗</Link></nav>
+      <nav aria-label="页脚导航"><Link href="/about#contact">联系站长</Link><CookieDetails /><Link href="/admin">成员工作台 ↗</Link></nav>
     </div></footer>
   </div>;
 }

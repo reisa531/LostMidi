@@ -37,6 +37,7 @@ private:
     void registerAdminRecoveryRoutes();
     void registerInstallationRoutes();
     void registerAdminFileRoutes();
+    void registerArchiveDeskRoutes();
     void registerCatalogRoutes();
     void registerArticleRoutes();
     void recordContributor(std::int64_t midiId, const std::string& username);

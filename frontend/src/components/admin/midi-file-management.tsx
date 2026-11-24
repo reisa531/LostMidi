@@ -30,7 +30,7 @@ export function MidiFileManagement({ midiId, fileId, revision, publicDownload, d
       </form>
     </div>
     {(visibility.error || deletion.error) && <p role="alert" className="text-sm text-red-800">{visibility.error || deletion.error}</p>}
-    {(visibility.queued || deletion.queued) && <p role="status" className="text-sm text-amber-900">{reviewRequired ? "申请已提交，等待超级管理员审核。" : "申请已提交。"}</p>}
+    {(visibility.queued || deletion.queued) && <p role="status" className="text-sm text-amber-900">{reviewRequired ? "申请已提交，等待管理员审核。" : "申请已提交。"}</p>}
     {(visibility.done || deletion.done) && <p role="status" className="text-sm text-green-900">操作已完成，正在刷新文件列表。</p>}
   </div>;
 }

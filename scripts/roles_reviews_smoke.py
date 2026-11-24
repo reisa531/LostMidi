@@ -46,28 +46,28 @@ def main():
             assert "no-store" in response.headers.get("Cache-Control", "")
             return data if binary else json.loads(data)
 
-    super_token = request("/api/v1/admin/login", "POST", {
+    owner_token = request("/api/v1/admin/login", "POST", {
         "username": os.environ["ADMIN_TEST_USERNAME"], "password": os.environ["ADMIN_TEST_PASSWORD"]})["token"]
-    assert request("/api/v1/admin/session", token=super_token)["role"] == "super_admin"
+    assert request("/api/v1/admin/session", token=owner_token)["role"] == "owner"
     assert request("/api/v1/admin/session", expected=401)["error"]["code"] == "UNAUTHORIZED"
     assert request("/api/v1/admin/people", "POST", {}, expected=401)["error"]["code"] == "UNAUTHORIZED"
     marker = uuid.uuid4().hex
     username = "review_" + marker[:12]
-    invitation = request("/api/v1/admin/users", "POST", {"username": username, "role": "admin"}, super_token, 201)
+    invitation = request("/api/v1/admin/users", "POST", {"username": username, "role": "maintainer"}, owner_token, 201)
     password = secrets.token_urlsafe(24)
     request("/api/v1/admin/invitations/accept", "POST", {"token": invitation["invitation_token"], "password": password})
-    admin_token = request("/api/v1/admin/login", "POST", {"username": username, "password": password})["token"]
-    assert request("/api/v1/admin/session", token=admin_token)["role"] == "admin"
-    assert request("/api/v1/admin/users", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
+    member_token = request("/api/v1/admin/login", "POST", {"username": username, "password": password})["token"]
+    assert request("/api/v1/admin/session", token=member_token)["role"] == "maintainer"
+    assert request("/api/v1/admin/users", token=member_token, expected=403)["error"]["code"] == "FORBIDDEN"
     assert request("/api/v1/admin/users/" + invitation["id"], "DELETE",
-                   {"confirm_username": username}, admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
-    assert request("/api/v1/admin/changes", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
+                   {"confirm_username": username}, member_token, expected=403)["error"]["code"] == "FORBIDDEN"
+    assert request("/api/v1/admin/changes", token=member_token, expected=403)["error"]["code"] == "FORBIDDEN"
 
     origin = os.environ.get("ADMIN_ORIGIN", "http://localhost:3000")
-    cookie_auth = {"Origin": origin, "Cookie": "lostmidi_admin=" + admin_token}
+    cookie_auth = {"Origin": origin, "Cookie": "lostmidi_admin=" + member_token}
 
     def changes(token):
-        path = "/api/v1/admin/changes" if token == super_token else "/api/v1/admin/submissions"
+        path = "/api/v1/admin/changes" if token == owner_token else "/api/v1/admin/submissions"
         rows = request(path, token=token)["data"]
         for item in rows:
             assert isinstance(item["payload"], str), "Review payload must remain a JSON string"
@@ -78,28 +78,28 @@ def main():
         return rows
 
     def proposed_payload(change_id):
-        return json.loads(next(item for item in changes(admin_token) if item["id"] == change_id)["payload"])
+        return json.loads(next(item for item in changes(member_token) if item["id"] == change_id)["payload"])
 
     def propose(path, method, body, change_type, expected=200, headers=None, cookie=False):
         outgoing = {**(headers or {}), **(cookie_auth if cookie else {})}
-        result = request(path, method, body, None if cookie else admin_token, expected, outgoing)
+        result = request(path, method, body, None if cookie else member_token, expected, outgoing)
         assert result["status"] == "pending" and result["request_id"]
-        for actor in (admin_token, super_token):
+        for actor in (member_token, owner_token):
             assert any(item["id"] == result["request_id"] and item["type"] == change_type and item["status"] == "pending"
                        for item in changes(actor))
-        denied = request("/api/v1/admin/changes/" + result["request_id"] + "/review", "POST", {"decision": "approve"}, admin_token, 403)
+        denied = request("/api/v1/admin/changes/" + result["request_id"] + "/review", "POST", {"decision": "approve"}, member_token, 403)
         assert denied["error"]["code"] == "FORBIDDEN"
         return result["request_id"]
 
     def approve(change_id):
-        result = request("/api/v1/admin/changes/" + change_id + "/review", "POST", {"decision": "approve", "note": "isolated smoke"}, super_token)
+        result = request("/api/v1/admin/changes/" + change_id + "/review", "POST", {"decision": "approve", "note": "isolated smoke"}, owner_token)
         assert result["status"] == "approved"
-        assert any(item["id"] == change_id and item["status"] == "approved" for item in changes(admin_token))
+        assert any(item["id"] == change_id and item["status"] == "approved" for item in changes(member_token))
 
     def reject(change_id):
-        result = request("/api/v1/admin/changes/" + change_id + "/review", "POST", {"decision": "reject", "note": "isolated smoke"}, super_token)
+        result = request("/api/v1/admin/changes/" + change_id + "/review", "POST", {"decision": "reject", "note": "isolated smoke"}, owner_token)
         assert result["status"] == "rejected"
-        assert any(item["id"] == change_id and item["status"] == "rejected" for item in changes(admin_token))
+        assert any(item["id"] == change_id and item["status"] == "rejected" for item in changes(member_token))
 
     def public_download(slug, file, content):
         path = "/api/v1/midis/" + slug + "/files/" + file["id"] + "/download"
@@ -117,9 +117,9 @@ def main():
 
     person_name = "审核测试人物 " + marker
     change = propose("/api/v1/admin/people", "POST", {"display_name": person_name, "biography": None, "aliases": []}, "person.create", 201)
-    assert not any(row["display_name"] == person_name for row in request("/api/v1/admin/people?page=1&pageSize=100", token=admin_token)["data"])
+    assert not any(row["display_name"] == person_name for row in request("/api/v1/admin/people?page=1&pageSize=100", token=member_token)["data"])
     approve(change)
-    person = next(row for row in request("/api/v1/admin/people?page=1&pageSize=100", token=admin_token)["data"] if row["display_name"] == person_name)
+    person = next(row for row in request("/api/v1/admin/people?page=1&pageSize=100", token=member_token)["data"] if row["display_name"] == person_name)
     assert person["public_id"] and person["revision"] == 1
 
     slug = "review-" + marker
@@ -140,9 +140,9 @@ def main():
               "first_seen_at": None, "last_seen_at": None, "notes": "原始线索",
               "source_type": "archive", "credibility": 4, "checked_at": None}
     change = propose(base + "/sources", "POST", source, "history.source.create", 201)
-    assert not request(base + "/history", token=admin_token)["historical_sources"]
+    assert not request(base + "/history", token=member_token)["historical_sources"]
     approve(change)
-    history = request(base + "/history", token=admin_token)
+    history = request(base + "/history", token=member_token)
     source_id = history["historical_sources"][0]["id"]
     assert history["historical_sources"][0]["credibility"] == 4
 
@@ -151,10 +151,10 @@ def main():
                      {"Content-Type": "application/octet-stream", "X-File-Name": "proof.pdf",
                       "X-Evidence-Media-Type": "application/pdf", "X-Entry-Revision": str(history["entry"]["revision"])})
     approve(change)
-    history = request(base + "/history", token=admin_token)
+    history = request(base + "/history", token=member_token)
     evidence = history["historical_sources"][0]["evidence_files"][0]
     assert evidence["sha256"] == hashlib.sha256(pdf).hexdigest()
-    assert request(base + "/evidence/" + evidence["id"], token=admin_token, binary=True) == pdf
+    assert request(base + "/evidence/" + evidence["id"], token=member_token, binary=True) == pdf
     assert request(base + "/evidence/" + evidence["id"], expected=401)["error"]["code"] == "UNAUTHORIZED"
 
     # Evidence stays at 1 MiB, independently of the relaxed music-file limit.
@@ -164,44 +164,44 @@ def main():
     evidence_headers = {"Content-Type": "application/octet-stream", "X-File-Name": "boundary.txt",
                         "X-Evidence-Media-Type": "text/plain", "X-Entry-Revision": str(history["entry"]["revision"])}
     evidence_path = base + "/sources/" + source_id + "/evidence"
-    before_changes = {item["id"] for item in changes(admin_token)}
-    for actor in (admin_token, super_token):
+    before_changes = {item["id"] for item in changes(member_token)}
+    for actor in (member_token, owner_token):
         result = request(evidence_path, "POST", text + b"x", actor, 413, evidence_headers)
         assert result["error"]["code"] == "INVALID_FILE"
-    assert {item["id"] for item in changes(admin_token)} == before_changes
-    assert request(base + "/history", token=admin_token) == history
+    assert {item["id"] for item in changes(member_token)} == before_changes
+    assert request(base + "/history", token=member_token) == history
     change = propose(evidence_path, "POST", text, "evidence.upload", 201, evidence_headers)
     assert proposed_payload(change)["filename"] == "boundary.txt"
     approve(change)
-    history = request(base + "/history", token=admin_token)
+    history = request(base + "/history", token=member_token)
     boundary_evidence = next(item for item in history["historical_sources"][0]["evidence_files"] if item["filename"] == "boundary.txt")
     assert boundary_evidence["file_size"] == evidence_limit
     assert boundary_evidence["sha256"] == hashlib.sha256(text).hexdigest()
-    assert request(base + "/evidence/" + boundary_evidence["id"], token=admin_token, binary=True) == text
+    assert request(base + "/evidence/" + boundary_evidence["id"], token=member_token, binary=True) == text
 
     midi_bytes = midi_file(marker)
     change = propose(base + "/files", "POST", midi_bytes, "file.import", 200,
                      {"Content-Type": "application/octet-stream", "X-File-Name": "proof.mid",
                       "X-Entry-Revision": str(history["entry"]["revision"]), "X-Rights-Confirmed": "true"})
     approve(change)
-    files = request(base + "/files", token=admin_token)["files"]
+    files = request(base + "/files", token=member_token)["files"]
     assert len(files) == 1 and files[0]["sha256"] == hashlib.sha256(midi_bytes).hexdigest()
 
-    current = request(base, token=admin_token)
+    current = request(base, token=member_token)
     allowed = {key: value for key, value in draft.items() if key != "request_id"}
     allowed.update(revision=current["revision"], distribution_permission="permission_granted")
     approve(propose(base, "PUT", allowed, "midi.update"))
     raw_bytes = raw_file(MAX_FILE_SIZE, "approved-" + marker)
     assert evidence_limit < len(raw_bytes) <= MAX_FILE_SIZE and not raw_bytes.startswith(b"MThd")
     file_headers = {"Content-Type": "application/octet-stream", "X-File-Name": quote("审核原始.zip", safe=""),
-                    "X-Entry-Revision": str(request(base, token=admin_token)["revision"]), "X-Rights-Confirmed": "true"}
-    before_files = request(base + "/files", token=admin_token)
+                    "X-Entry-Revision": str(request(base, token=member_token)["revision"]), "X-Rights-Confirmed": "true"}
+    before_files = request(base + "/files", token=member_token)
     change = propose(base + "/files", "POST", raw_bytes, "file.import", headers=file_headers, cookie=True)
     proposed = proposed_payload(change)
     assert proposed["filename"] == "审核原始.zip" and proposed["rights_confirmed"] is True
-    assert request(base + "/files", token=admin_token) == before_files
+    assert request(base + "/files", token=member_token) == before_files
     approve(change)
-    after_files = request(base + "/files", token=admin_token)
+    after_files = request(base + "/files", token=member_token)
     assert len(after_files["files"]) == 2 and after_files["entry"]["revision"] == before_files["entry"]["revision"] + 1
     raw_saved = next(item for item in after_files["files"] if item["original_filename"] == "审核原始.zip")
     assert raw_saved["file_size"] == len(raw_bytes) and raw_saved["sha256"] == hashlib.sha256(raw_bytes).hexdigest()
@@ -210,9 +210,9 @@ def main():
     rejected_bytes = raw_file(2_000_001, "rejected-" + marker)
     rejected_headers = {**file_headers, "X-File-Name": "not-midi.mid", "X-Entry-Revision": str(after_files["entry"]["revision"])}
     rejected = propose(base + "/files", "POST", rejected_bytes, "file.import", headers=rejected_headers, cookie=True)
-    assert request(base + "/files", token=admin_token) == after_files
+    assert request(base + "/files", token=member_token) == after_files
     reject(rejected)
-    assert request(base + "/files", token=admin_token) == after_files
+    assert request(base + "/files", token=member_token) == after_files
     assert all(item["sha256"] != hashlib.sha256(rejected_bytes).hexdigest() for item in request("/api/v1/midis/" + slug)["files"])
 
     # Combined creation also queues raw bytes, but neither review list exposes them.
@@ -243,7 +243,7 @@ def main():
     assert request("/api/v1/people/" + person["public_id"], expected=404)["error"]["code"] == "PERSON_NOT_FOUND"
     approve(propose("/api/v1/admin/trash/person/" + person["id"] + "/restore", "POST", None, "person.restore"))
     assert request("/api/v1/people/" + person["public_id"])["person"]["id"] == person["id"]
-    current = request(base, token=admin_token)
+    current = request(base, token=member_token)
     approve(propose(base, "DELETE", {"revision": current["revision"]}, "midi.delete"))
     assert request("/api/v1/midis/by-id/" + entry["public_id"], expected=404)["error"]["code"] == "MIDI_NOT_FOUND"
     approve(propose("/api/v1/admin/trash/midi/" + midi_id + "/restore", "POST", None, "midi.restore"))
@@ -254,26 +254,28 @@ def main():
                        {"display_name": rejected_name, "biography": None, "aliases": []}, "person.create", 201)
     reject(rejected)
     assert not any(row["display_name"] == rejected_name for row in request(
-        "/api/v1/admin/people?page=1&pageSize=100", token=admin_token)["data"])
+        "/api/v1/admin/people?page=1&pageSize=100", token=member_token)["data"])
 
     user_path = "/api/v1/admin/users/" + invitation["id"]
-    request(user_path, "PUT", {"role": "super_admin", "status": "active"}, super_token)
-    assert request("/api/v1/admin/session", token=admin_token)["role"] == "super_admin"
-    assert isinstance(request("/api/v1/admin/users", token=admin_token), list)
-    request(user_path, "PUT", {"role": "admin", "status": "active"}, super_token)
-    assert request("/api/v1/admin/session", token=admin_token)["role"] == "admin"
-    assert request("/api/v1/admin/users", token=admin_token, expected=403)["error"]["code"] == "FORBIDDEN"
-    request(user_path, "PUT", {"role": "admin", "status": "disabled"}, super_token)
-    assert request("/api/v1/admin/session", token=admin_token, expected=401)["error"]["code"] == "UNAUTHORIZED"
-    assert request("/api/v1/admin/login", "POST", {"username": username, "password": password}, expected=401)["error"]["code"] == "INVALID_CREDENTIALS"
+    request(user_path, "PUT", {"role": "admin", "status": "active"}, owner_token)
+    assert request("/api/v1/admin/session", token=member_token)["role"] == "admin"
+    request("/api/v1/admin/player", token=member_token)
+    request("/api/v1/admin/users", token=member_token, expected=403)
+    request(user_path, "PUT", {"role": "maintainer", "status": "active"}, owner_token)
+    assert request("/api/v1/admin/session", token=member_token)["role"] == "maintainer"
+    assert request("/api/v1/admin/users", token=member_token, expected=403)["error"]["code"] == "FORBIDDEN"
+    request("/api/v1/admin/player", token=member_token, expected=403)
+    request(user_path, "PUT", {"role": "maintainer", "status": "disabled"}, owner_token)
+    assert request("/api/v1/admin/session", token=member_token, expected=401)["error"]["code"] == "UNAUTHORIZED"
+    assert request("/api/v1/admin/login", "POST", {"username": username, "password": password}, expected=403)["error"]["code"] == "ACCOUNT_DISABLED"
     assert request(base + "/files", "POST", raw_bytes, expected=401,
                    headers={**file_headers, **cookie_auth})["error"]["code"] == "UNAUTHORIZED"
     assert request("/api/v1/admin/midis", "POST", combined, expected=401,
                    headers=cookie_auth)["error"]["code"] == "UNAUTHORIZED"
-    assert request(user_path, "DELETE", {"confirm_username": "wrong"}, super_token,
+    assert request(user_path, "DELETE", {"confirm_username": "wrong"}, owner_token,
                    expected=400)["error"]["code"] == "DELETE_CONFIRMATION_REQUIRED"
-    assert request(user_path, "DELETE", {"confirm_username": username}, super_token)["deleted_id"] == invitation["id"]
-    assert all(user["id"] != invitation["id"] for user in request("/api/v1/admin/users", token=super_token))
+    assert request(user_path, "DELETE", {"confirm_username": username}, owner_token)["deleted_id"] == invitation["id"]
+    assert all(user["id"] != invitation["id"] for user in request("/api/v1/admin/users", token=owner_token))
     assert request("/api/v1/admin/register", method="POST", body={
         "username": "captcha_" + marker[:12], "email": marker + "@example.test",
         "password": "registration-password-42", "password_confirmation": "registration-password-42",

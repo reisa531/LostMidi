@@ -101,7 +101,7 @@ void ApiController::registerAdminFileRoutes() {
             Json::Value payload; payload["revision"] = Json::Int64(revision); payload["file_id"] = std::to_string(fileId);
             const auto visibility = request->method() == drogon::Put;
             if (visibility) payload["public_download_enabled"] = (*body)["public_download_enabled"].asBool();
-            if (actor.role == "admin") return submitAdminChange(actor, visibility ? "file.visibility" : "file.delete", midiId, payload);
+            if (!actor.isStaff()) return submitAdminChange(actor, visibility ? "file.visibility" : "file.delete", midiId, payload);
             auto result = manageMidiFile(midiId, fileId, revision,
                 visibility ? std::optional<bool>(payload["public_download_enabled"].asBool()) : std::nullopt);
             recordContributor(midiId, actor.username);
@@ -191,7 +191,7 @@ void ApiController::registerAdminFileRoutes() {
                         throw ApiError(400, "INVALID_INPUT", "An entry id and revision are required.");
                     const auto midiId = positiveId((*body)["id"].asString());
                     const auto revision = positiveId((*body)["revision"].asString());
-                    if (actor.role == "admin") {
+                    if (!actor.isStaff()) {
                         Json::Value payload; payload["revision"] = Json::Int64(revision); payload["filename"] = filename;
                         payload["content_base64"] = base64(bytes); payload["rights_confirmed"] = publicDownload;
                         result = submitAdminChange(actor, "file.import", midiId, payload);
@@ -244,7 +244,7 @@ void ApiController::registerAdminFileRoutes() {
             const auto rightsConfirmed = request->getHeader("x-rights-confirmed") == "true";
             const auto revision = positiveId(request->getHeader("x-entry-revision"));
             const auto bytes = std::as_bytes(std::span(body.data(), body.size()));
-            if (actor.role == "admin") {
+            if (!actor.isStaff()) {
                 midi::validateFilename(filename); midi::validateFileContent(bytes);
                 Json::Value payload; payload["revision"] = Json::Int64(revision); payload["filename"] = filename;
                 payload["content_base64"] = base64(bytes); payload["rights_confirmed"] = rightsConfirmed;

@@ -102,7 +102,7 @@ void InstallationRepository::create(const Site& site, const std::string& usernam
         site.name, site.description, username, passwordHash);
     if (rows.empty()) alreadyInstalled();
     transaction.db->execSqlSync(
-        "INSERT INTO admin_users(username,password_hash,role,status) VALUES($1,$2,'super_admin','active') "
+        "INSERT INTO admin_users(username,password_hash,role,member_role,status) VALUES($1,$2,'super_admin','owner','active') "
         "ON CONFLICT(username) DO NOTHING", username, passwordHash);
     transaction.commit();
 }

@@ -87,7 +87,7 @@ export function RegisterForm({ siteKey }: { siteKey: string }) {
   const status = useRef<HTMLParagraphElement>(null);
 
   if (state.registered) return <div role="status" className="rounded-xl border border-line bg-white p-6 text-sm leading-7">
-    <p>{copy.success}</p>
+    <p>{copy.success}</p><p><Link className="archive-link" href="/admin/login">登录工作台 →</Link></p>
     <Link className="archive-link" href="/about#contact">{copy.contact}</Link>
   </div>;
 

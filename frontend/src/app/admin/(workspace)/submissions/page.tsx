@@ -22,15 +22,15 @@ const labels: Record<string, string> = {
 
 export default async function SubmissionsPage({ searchParams }: { searchParams: Promise<{ submitted?: string; page?: string; status?: string }> }) {
   const admin = await requireAdmin();
-  if (admin.role === "super_admin") redirect("/admin/changes");
+  if (admin.role !== "maintainer") redirect("/admin/changes");
   const { submitted, page: rawPage, status: rawStatus } = await searchParams;
   const page = rawPage && /^[1-9]\d*$/.test(rawPage) && Number(rawPage) <= 1000000 ? Number(rawPage) : 1;
   const status = ["all", "pending", "reviewing", "failed", "approved", "rejected", "stale"].includes(rawStatus ?? "") ? rawStatus! : "all";
   const response = await getOwnSubmissions(page, status).catch(() => null);
   const result = response && Array.isArray(response.data) && typeof response.pagination?.total === "number" ? response : null;
   return <>
-    <AdminPageHeader eyebrow="工作台 / 我的申请" title="我的申请" description={"查看已提交的档案变更与审核结果；仅超级管理员可通过或驳回申请。"} />
-    {submitted === "1" && <p role="status" className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">申请已提交，待超级管理员审核通过后执行。</p>}
+    <AdminPageHeader eyebrow="工作台 / 我的申请" title="我的申请" description={"查看已提交的档案变更与审核结果；仅管理员可通过或驳回申请。"} />
+    {submitted === "1" && <p role="status" className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">申请已提交，待管理员审核通过后执行。</p>}
     {!result ? <AdminPanel title={"暂时无法读取申请"}><p role="alert" className="text-sm text-muted">请稍后刷新重试；若持续报错，请确认后端已更新至支持申请查询接口的版本。</p></AdminPanel> : <>
       <nav aria-label="申请状态" className="mb-5 flex flex-wrap gap-2 text-sm">{[["all", "全部"], ["pending", "待审核"], ["approved", "已通过"], ["failed", "执行失败"]].map(([value, label]) => <Link key={value} href={`/admin/submissions?status=${value}`} aria-current={status === value ? "page" : undefined} className={`rounded-lg border px-3 py-2 ${status === value ? "border-accent bg-accent text-white" : "border-line"}`}>{label}</Link>)}</nav>
       <p className="mb-4 text-sm text-muted">共 {result.pagination.total} 项 · 第 {page} 页</p>

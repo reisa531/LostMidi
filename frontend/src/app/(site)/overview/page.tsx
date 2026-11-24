@@ -15,7 +15,7 @@ export default async function Overview() {
   if ("unavailable" in state) return <Unavailable />;
   const overview = state.overview;
   return <>
-    <PageHeader eyebrow="档案 / 总览" title="档案总览" description={"从一首作品、一位作者或一个旧站点出发，追溯早期网络 MIDI 的来处。以下为档案当前记录。"} action={<Link href="/midis" className={secondaryLink}>浏览全部 MIDI <span aria-hidden="true" className="ml-4">→</span></Link>} />
+    <PageHeader title="档案总览" description={"从一首作品、一位作者或一个旧站点出发，追溯早期网络 MIDI 的来处。以下为档案当前记录。"} action={<Link href="/midis" className={secondaryLink}>浏览全部 MIDI <span aria-hidden="true" className="ml-4">→</span></Link>} />
     <OverviewMetrics stats={overview.stats} />
     <section className="mb-8 mt-8"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-serif text-xl">寻回进度</h2><Link href="/recovery" className="archive-link text-xs">查看状态明细 →</Link></div><StatusSummary stats={overview.stats} /></section>
     <div className="grid items-start gap-5 lg:grid-cols-2">

@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { adminNavigation } from "@/lib/admin/modules";
 
-export function AdminNavigation({ superAdmin = false }: { superAdmin?: boolean }) {
+export function AdminNavigation({ role }: { role: "owner" | "admin" | "maintainer" }) {
   const pathname = usePathname();
-  const links = [...adminNavigation, ...(superAdmin
-    ? [{ href: "/admin/changes", label: "内容审核" }, { href: "/admin/users", label: "用户管理" }]
-    : [{ href: "/admin/submissions", label: "我的申请" }])];
+  const staff = role === "admin" || role === "owner";
+  const links = [...adminNavigation.filter(link => staff || !["/admin/articles","/admin/useful-links"].includes(link.href)), ...(staff
+    ? [{ href: "/admin/changes", label: "内容审核" }, { href: "/admin/front-desk", label: "首页编排" }, { href: "/admin/player", label: "唱片室" }]
+    : [{ href: "/admin/submissions", label: "我的申请" }]), ...(role === "owner" ? [{href:"/admin/users",label:"成员名册"}] : [])];
   const items = links.map(link => {
       const active = link.href === "/admin" ? pathname === link.href : pathname.startsWith(`${link.href}/`) || pathname === link.href;
       return <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined}

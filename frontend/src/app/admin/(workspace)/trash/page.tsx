@@ -22,11 +22,11 @@ export default async function TrashPage({ searchParams }: { searchParams: Promis
   let result: TrashPage;
   try { result = await adminRequest<TrashPage>(`/api/v1/admin/trash?page=${page}&pageSize=20`); }
   catch (error) { if (error instanceof ApiError) return <><AdminPageHeader eyebrow="档案 / 回收站" title="回收站" description={"已删除记录仍保留原有关联与文件，可在此恢复。"} /><AdminUnavailable /></>; throw error; }
-  return <><AdminPageHeader eyebrow="档案 / 回收站" title="回收站与操作记录" description={admin.role === "admin" ? "可提交恢复申请，由超级管理员审核；近期删除与恢复操作将记录于此。" : "已删除记录仍保留原有关联与文件，可在此恢复；近期删除与恢复操作亦记录于此。"} />
+  return <><AdminPageHeader eyebrow="档案 / 回收站" title="回收站与操作记录" description={admin.role === "maintainer" ? "可提交恢复申请，由管理员审核；近期删除与恢复操作将记录于此。" : "已删除记录仍保留原有关联与文件，可在此恢复；近期删除与恢复操作亦记录于此。"} />
     <AdminPanel title={`保留中的记录 · ${result.pagination.total}`}>
       {result.data.length ? <ul className="divide-y divide-line">{result.data.map(item => <li key={`${item.entity_type}-${item.entity_id}`} className="flex flex-wrap items-center justify-between gap-4 py-4">
         <div className="min-w-0"><p className="break-words font-medium">{item.entity_label}</p><p className="mt-1 text-xs text-muted">{item.entity_type === "midi" ? "音乐条目" : "人物"} · 编号 {item.entity_id} · {new Date(item.deleted_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC · 操作人 {item.deleted_by}</p></div>
-        <div className="flex flex-wrap items-end gap-3"><RestoreButton type={item.entity_type} id={item.entity_id} reviewRequired={admin.role === "admin"} />{admin.role === "super_admin" && <PurgeButton type={item.entity_type} id={item.entity_id} />}</div>
+        <div className="flex flex-wrap items-end gap-3"><RestoreButton type={item.entity_type} id={item.entity_id} reviewRequired={admin.role === "maintainer"} />{admin.role !== "maintainer" && <PurgeButton type={item.entity_type} id={item.entity_id} />}</div>
       </li>)}</ul> : <p className="py-8 text-center text-sm text-muted">{page > 1 ? "本页暂无记录，请返回第一页。" : "回收站为空。"}</p>}
     </AdminPanel>
     <nav aria-label="回收站分页" className="my-6 flex flex-wrap justify-between gap-4 text-sm"><span className="text-muted">第 {page} 页 · 共 {Math.max(1, Math.ceil(result.pagination.total / 20))} 页</span><div className="flex gap-5">{page > 1 && <Link href="/admin/trash" className="archive-link">第一页</Link>}{page > 1 && <Link href={`/admin/trash?page=${page - 1}`} className="archive-link">上一页</Link>}{page * 20 < result.pagination.total && <Link href={`/admin/trash?page=${page + 1}`} className="archive-link">下一页</Link>}</div></nav>

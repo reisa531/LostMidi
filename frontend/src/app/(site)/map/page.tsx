@@ -36,7 +36,7 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   const selectedLabel = query.missing ? (query.by === "author" ? "未署名" : "来源待补") : selectedGroup?.label ?? (query.by === "source" ? query.group : selectedPersonName ?? `人物 ID ${query.group}`);
   const clearSelection = { ...query, group: undefined, missing: undefined, page: undefined };
   return <>
-    <PageHeader eyebrow="档案 / 关系图谱" title="关系图谱 · 档案分组" description={"按作者或来源归拢作品，查看各组的文件留存与下载权限。"} />
+    <PageHeader title="关系图谱 · 档案分组" description={"按作者或来源归拢作品，查看各组的文件留存与下载权限。"} />
     <nav aria-label="分组方式" className="mb-5 inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-line bg-white/60 p-1">
       {(["author", "source"] as const).map(by => <Link key={by} href={catalogHref("/map", { ...query, by, group: undefined, missing: undefined, groupPage: undefined, page: undefined })} aria-current={query.by === by ? "page" : undefined} className={`rounded-md px-5 py-2.5 text-sm ${query.by === by ? "bg-accent font-medium text-white" : "text-muted hover:bg-wash hover:text-accent"}`}>{by === "author" ? "按作者" : "按来源"}</Link>)}
     </nav>

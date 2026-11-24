@@ -9,7 +9,7 @@ void AuthRepository::create(const std::string& hash, const std::string& identity
     db_->execSqlSync(
         "INSERT INTO admin_sessions(token_hash, credential_id, expires_at, user_id, actor_username, role) "
         "VALUES ($1,$2,CURRENT_TIMESTAMP + INTERVAL '8 hours',NULLIF($3,'')::uuid,$4,$5)",
-        hash, identity, credentials.userId, credentials.username, credentials.role);
+        hash, identity, credentials.userId, credentials.username, credentials.role == "owner" ? std::string("super_admin") : std::string("admin"));
 }
 bool AuthRepository::valid(const std::string& hash, const std::string& identity) {
     return !db_->execSqlSync("SELECT 1 FROM admin_sessions WHERE token_hash = $1 AND credential_id = $2 AND expires_at > CURRENT_TIMESTAMP", hash, identity).empty();
@@ -17,38 +17,41 @@ bool AuthRepository::valid(const std::string& hash, const std::string& identity)
 void AuthRepository::remove(const std::string& hash) { db_->execSqlSync("DELETE FROM admin_sessions WHERE token_hash = $1", hash); }
 std::optional<Credentials> AuthRepository::credentials(const std::string& username) {
     const auto users = db_->execSqlSync(
-        "SELECT id::text,username,password_hash,role FROM admin_users WHERE username=$1 AND status='active' AND password_hash IS NOT NULL", username);
+        "SELECT id::text,username,password_hash,member_role AS role FROM admin_users WHERE username=$1 AND status='active' AND password_hash IS NOT NULL", username);
     if (!users.empty()) return Credentials{users[0]["username"].as<std::string>(), users[0]["password_hash"].as<std::string>(),
         users[0]["id"].as<std::string>(), users[0]["role"].as<std::string>()};
     return std::nullopt;
 }
 std::optional<Credentials> AuthRepository::disabledCredentials(const std::string& username) {
     const auto users = db_->execSqlSync(
-        "SELECT id::text,username,password_hash,role FROM admin_users WHERE username=$1 AND status='disabled' AND password_hash IS NOT NULL", username);
+        "SELECT id::text,username,password_hash,member_role AS role FROM admin_users WHERE username=$1 AND status='disabled' AND password_hash IS NOT NULL", username);
     if (users.empty()) return std::nullopt;
     return Credentials{users[0]["username"].as<std::string>(), users[0]["password_hash"].as<std::string>(),
         users[0]["id"].as<std::string>(), users[0]["role"].as<std::string>()};
 }
 std::optional<Credentials> AuthRepository::credentialsById(const std::string& userId) {
-    const auto rows = db_->execSqlSync("SELECT id::text,username,password_hash,role FROM admin_users WHERE id=$1::uuid AND status='active' AND password_hash IS NOT NULL", userId);
+    const auto rows = db_->execSqlSync("SELECT id::text,username,password_hash,member_role AS role FROM admin_users WHERE id=$1::uuid AND status='active' AND password_hash IS NOT NULL", userId);
     if (rows.empty()) return std::nullopt;
     return Credentials{rows[0]["username"].as<std::string>(), rows[0]["password_hash"].as<std::string>(),
         rows[0]["id"].as<std::string>(), rows[0]["role"].as<std::string>()};
 }
 std::optional<SessionPrincipal> AuthRepository::session(const std::string& hash) {
     const auto rows = db_->execSqlSync(
-        "SELECT s.actor_username,s.role AS session_role,s.user_id::text,u.username,u.role,u.password_hash,u.status,s.credential_id "
+        "SELECT s.actor_username,s.role AS session_role,s.user_id::text,u.username,u.member_role AS role,u.password_hash,u.status,s.credential_id "
         "FROM admin_sessions s LEFT JOIN admin_users u ON u.id=s.user_id "
         "WHERE s.token_hash=$1 AND s.expires_at>CURRENT_TIMESTAMP", hash);
     if (rows.empty()) return std::nullopt;
     if (rows[0]["user_id"].isNull())
-        return SessionPrincipal{rows[0]["actor_username"].as<std::string>(), "super_admin", "", rows[0]["credential_id"].as<std::string>()};
+        return SessionPrincipal{rows[0]["actor_username"].as<std::string>(), "owner", "", rows[0]["credential_id"].as<std::string>()};
     if (rows[0]["status"].isNull() || rows[0]["status"].as<std::string>() != "active" || rows[0]["password_hash"].isNull()) return std::nullopt;
     return SessionPrincipal{rows[0]["username"].as<std::string>(), rows[0]["role"].as<std::string>(),
         rows[0]["user_id"].as<std::string>(), rows[0]["credential_id"].as<std::string>()};
 }
 bool AuthRepository::hasDatabaseCredentials() {
     return !db_->execSqlSync("SELECT 1 FROM admin_users WHERE status='active' AND password_hash IS NOT NULL LIMIT 1").empty();
+}
+bool AuthRepository::hasDatabaseOwner() {
+    return !db_->execSqlSync("SELECT 1 FROM admin_users WHERE member_role='owner' LIMIT 1").empty();
 }
 AuthService::AuthService(AuthRepository& repository, std::string username, std::string passwordHash)
     : repository_(repository), environment_{std::move(username), std::move(passwordHash)} {
@@ -63,8 +66,8 @@ bool AuthService::isEnvironmentUsername(const std::string& username) const {
     return hasEnvironmentCredentials() && username == environment_.username;
 }
 std::optional<Credentials> AuthService::credentials(const std::string& username) {
-    if (hasEnvironmentCredentials() && username == environment_.username)
-        return Credentials{environment_.username, environment_.passwordHash, "", "super_admin"};
+    if (hasEnvironmentCredentials() && username == environment_.username && !repository_.hasDatabaseOwner())
+        return Credentials{environment_.username, environment_.passwordHash, "", "owner"};
     // Do not cache: another instance may just have completed installation or changed a user.
     return repository_.credentials(username);
 }
@@ -86,7 +89,7 @@ std::string AuthService::login(const std::string& username, const std::string& p
     if (!current || !passwordMatches) {
         const auto disabled = current ? std::nullopt : repository_.disabledCredentials(username);
         if (disabled && verifyPassword(password, disabled->passwordHash))
-            throw ApiError(403, "ACCOUNT_DISABLED", "Contact a super administrator through the About page to enable this account.");
+            throw ApiError(403, "ACCOUNT_DISABLED", "This account has been disabled. Contact the site owner.");
         throw ApiError(401, "INVALID_CREDENTIALS", "Invalid username or password.");
     }
     const auto token = randomToken();
@@ -108,19 +111,24 @@ SessionPrincipal AuthService::requirePrincipal(const std::string& authorization)
     if (!session) throw ApiError(401, "UNAUTHORIZED", "Administrator session is invalid or expired.");
     if (!session->userId.empty()) {
         const auto current = repository_.credentialsById(session->userId);
-        if (!current || (hasEnvironmentCredentials() && current->username == environment_.username) ||
+        if (!current || (isEnvironmentUsername(current->username) && !repository_.hasDatabaseOwner()) ||
             session->credentialId != digest(current->username + ":" + current->passwordHash))
             throw ApiError(401, "UNAUTHORIZED", "Administrator session is invalid or expired.");
         return {current->username, current->role, current->userId, session->credentialId};
     }
     const auto current = credentials(session->username);
-    if (!current || session->credentialId != digest(current->username + ":" + current->passwordHash))
+    if (!current || !current->userId.empty() || session->credentialId != digest(current->username + ":" + current->passwordHash))
         throw ApiError(401, "UNAUTHORIZED", "Administrator session is invalid or expired.");
     return {current->username, current->role, current->userId, session->credentialId};
 }
-SessionPrincipal AuthService::requireSuperAdmin(const std::string& authorization) {
+SessionPrincipal AuthService::requireStaff(const std::string& authorization) {
     auto principal = requirePrincipal(authorization);
-    if (principal.role != "super_admin") throw ApiError(403, "FORBIDDEN", "Super administrator access is required.");
+    if (!principal.isStaff()) throw ApiError(403, "FORBIDDEN", "Administrator access is required.");
+    return principal;
+}
+SessionPrincipal AuthService::requireOwner(const std::string& authorization) {
+    auto principal = requirePrincipal(authorization);
+    if (principal.role != "owner") throw ApiError(403, "FORBIDDEN", "Site owner access is required.");
     return principal;
 }
 void AuthService::logout(const std::string& authorization) {

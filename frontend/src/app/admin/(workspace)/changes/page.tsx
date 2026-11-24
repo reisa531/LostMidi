@@ -37,7 +37,7 @@ function reviewPayload(raw: unknown) {
 
 export default async function ChangeReviewPage({ searchParams }: { searchParams: Promise<{ submitted?: string; page?: string; status?: string }> }) {
   const admin = await requireAdmin();
-  if (admin.role !== "super_admin") redirect("/admin/submissions");
+  if (admin.role === "maintainer") redirect("/admin/submissions");
   const { submitted, page: rawPage, status: rawStatus } = await searchParams;
   const page = rawPage && /^[1-9]\d*$/.test(rawPage) && Number(rawPage) <= 1000000 ? Number(rawPage) : 1;
   const status = ["all", "pending", "reviewing", "failed", "approved", "rejected", "stale"].includes(rawStatus ?? "") ? rawStatus! : "pending";
@@ -46,7 +46,7 @@ export default async function ChangeReviewPage({ searchParams }: { searchParams:
   const requests = result?.data ?? [];
   return <>
     <AdminPageHeader eyebrow="审核" title="内容审核" description={"审核管理员提交的内容申请。通过后即执行变更，并按对应权限公开。"} />
-    {submitted === "1" && <p role="status" className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">申请已提交，待超级管理员审核通过后执行。</p>}
+    {submitted === "1" && <p role="status" className="mb-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">申请已提交，待管理员审核通过后执行。</p>}
     {!result && <AdminPanel title={"无法读取审核队列"}><p role="alert" className="text-sm text-muted">请稍后刷新页面；若其他后台模块正常，请确认后端已更新至包含审核队列接口的版本。</p></AdminPanel>}
     {result && <>
     <nav aria-label="审核状态" className="mb-5 flex flex-wrap gap-2 text-sm">{[["pending", "待审核"], ["reviewing", "执行中"], ["failed", "执行失败"], ["all", "全部"]].map(([value, label]) => <Link key={value} href={`/admin/changes?status=${value}`} aria-current={status === value ? "page" : undefined} className={`rounded-lg border px-3 py-2 ${status === value ? "border-accent bg-accent text-white" : "border-line"}`}>{label}</Link>)}</nav>

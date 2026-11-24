@@ -75,13 +75,16 @@ TEST(PostgresIntegration, MultipleAdministratorAccountsCarryLiveRoles) {
         drogon::orm::DbClientPtr db; std::string username;
         ~Cleanup() { try { db->execSqlSync("DELETE FROM admin_users WHERE username=$1", username); } catch (...) {} }
     } cleanup{db, username};
-    db->execSqlSync("INSERT INTO admin_users(username,password_hash,role,status) VALUES($1,$2,'admin','active')", username, hash);
+    db->execSqlSync("INSERT INTO admin_users(username,password_hash,member_role,status) VALUES($1,$2,'maintainer','active')", username, hash);
     auth::AuthRepository repository(db);
     auth::AuthService service(repository, "", "");
     const auto token = service.login(username, "integration-only-password");
+    EXPECT_EQ(service.requirePrincipal("Bearer " + token).role, "maintainer");
+    expectApiError([&] { service.requireStaff("Bearer " + token); }, 403, "FORBIDDEN");
+    db->execSqlSync("UPDATE admin_users SET member_role='admin' WHERE username=$1", username);
     EXPECT_EQ(service.requirePrincipal("Bearer " + token).role, "admin");
-    db->execSqlSync("UPDATE admin_users SET role='super_admin' WHERE username=$1", username);
-    EXPECT_EQ(service.requirePrincipal("Bearer " + token).role, "super_admin");
+    EXPECT_EQ(service.requireStaff("Bearer " + token).role, "admin");
+    expectApiError([&] { service.requireOwner("Bearer " + token); }, 403, "FORBIDDEN");
     db->execSqlSync("UPDATE admin_users SET status='disabled' WHERE username=$1", username);
     expectApiError([&] { service.require("Bearer " + token); }, 401, "UNAUTHORIZED");
     expectApiError([&] { service.login(username, "integration-only-password"); }, 403, "ACCOUNT_DISABLED");

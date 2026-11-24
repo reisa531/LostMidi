@@ -169,7 +169,7 @@ void ApiController::registerAdminRecoveryRoutes() {
             dispatch(std::move(callback), [this, request, id = std::move(id)] {
                 const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
                 const auto body = bodyOf(request);
-                if (actor.role == "admin") return submitAdminChange(actor, "history.source.create", idOf(id), body);
+                if (!actor.isStaff()) return submitAdminChange(actor, "history.source.create", idOf(id), body);
                 const auto result = recoveryWriter_.saveSource(idOf(id), 0, revisionOf(body), sourceOf(body));
                 recordContributor(idOf(id), actor.username); logEvent("historical_source_created");
                 return toJson(result);
@@ -182,12 +182,12 @@ void ApiController::registerAdminRecoveryRoutes() {
                 auto body = bodyOf(request);
                 if (request->method() == drogon::Delete) {
                     fieldsOf(body, {"revision"});
-                    if (actor.role == "admin") { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.delete", idOf(id), body); }
+                    if (!actor.isStaff()) { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.delete", idOf(id), body); }
                     const auto result = recoveryWriter_.deleteSource(idOf(id), idOf(sourceId), revisionOf(body));
                     recordContributor(idOf(id), actor.username); logEvent("historical_source_deleted");
                     return toJson(result);
                 }
-                if (actor.role == "admin") { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.update", idOf(id), body); }
+                if (!actor.isStaff()) { body["record_id"] = sourceId; return submitAdminChange(actor, "history.source.update", idOf(id), body); }
                 const auto result = recoveryWriter_.saveSource(idOf(id), idOf(sourceId), revisionOf(body), sourceOf(body));
                 recordContributor(idOf(id), actor.username); logEvent("historical_source_updated");
                 return toJson(result);
@@ -198,7 +198,7 @@ void ApiController::registerAdminRecoveryRoutes() {
             dispatch(std::move(callback), [this, request, id = std::move(id)] {
                 const auto actor = auth_.requirePrincipal(request->getHeader("authorization"));
                 const auto body = bodyOf(request);
-                if (actor.role == "admin") return submitAdminChange(actor, "history.event.create", idOf(id), body);
+                if (!actor.isStaff()) return submitAdminChange(actor, "history.event.create", idOf(id), body);
                 const auto result = recoveryWriter_.saveEvent(idOf(id), 0, revisionOf(body), eventOf(body));
                 recordContributor(idOf(id), actor.username); logEvent("recovery_event_created");
                 return toJson(result);
@@ -211,12 +211,12 @@ void ApiController::registerAdminRecoveryRoutes() {
                 auto body = bodyOf(request);
                 if (request->method() == drogon::Delete) {
                     fieldsOf(body, {"revision"});
-                    if (actor.role == "admin") { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.delete", idOf(id), body); }
+                    if (!actor.isStaff()) { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.delete", idOf(id), body); }
                     const auto result = recoveryWriter_.deleteEvent(idOf(id), idOf(eventId), revisionOf(body));
                     recordContributor(idOf(id), actor.username); logEvent("recovery_event_deleted");
                     return toJson(result);
                 }
-                if (actor.role == "admin") { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.update", idOf(id), body); }
+                if (!actor.isStaff()) { body["record_id"] = eventId; return submitAdminChange(actor, "history.event.update", idOf(id), body); }
                 const auto result = recoveryWriter_.saveEvent(idOf(id), idOf(eventId), revisionOf(body), eventOf(body));
                 recordContributor(idOf(id), actor.username); logEvent("recovery_event_updated");
                 return toJson(result);
@@ -244,7 +244,7 @@ void ApiController::registerAdminRecoveryRoutes() {
             const auto childId = idOf(relationId);
             const auto revision = idOf(request->getHeader("x-entry-revision"));
             const auto digest = storage::sha256(bytes);
-            if (actor.role == "admin") {
+            if (!actor.isStaff()) {
                 Json::Value payload; payload["revision"] = Json::Int64(revision); payload["record_id"] = std::to_string(childId);
                 payload["relation_type"] = source ? "source" : "event"; payload["filename"] = filename;
                 payload["media_type"] = mediaType; payload["content_base64"] = base64(bytes); payload["sha256"] = digest;
@@ -304,7 +304,7 @@ void ApiController::registerAdminRecoveryRoutes() {
                 const auto body = bodyOf(request);
                 const auto revision = revisionOf(body);
                 Json::Value payload; payload["revision"] = Json::Int64(revision); payload["evidence_id"] = std::to_string(evidenceId);
-                if (actor.role == "admin") return submitAdminChange(actor, "evidence.delete", midiId, payload);
+                if (!actor.isStaff()) return submitAdminChange(actor, "evidence.delete", midiId, payload);
                 auto result = deleteEvidence(midiId, evidenceId, revision);
                 recordContributor(midiId, actor.username); logEvent("historical_evidence_deleted");
                 return result;

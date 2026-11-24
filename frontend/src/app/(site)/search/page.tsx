@@ -46,7 +46,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const peoplePages = Math.max(1, Math.ceil((people?.pagination.total ?? 0) / 10));
   const href = (kind: "midiPage" | "peoplePage", nextPage: number) => `/search?${new URLSearchParams({ ...(q ? { q } : {}), ...(personId ? { person: personId } : {}), midiPage: String(kind === "midiPage" ? nextPage : midiPage), ...(!personId ? { peoplePage: String(kind === "peoplePage" ? nextPage : peoplePage) } : {}) })}`;
   return <>
-    <PageHeader eyebrow="档案 / 搜索" title="搜索档案" description="按作品名称、slug、人物姓名、历史昵称或来源名称查找。" />
+    <PageHeader title="搜索档案" description="按作品名称、slug、人物姓名、历史昵称或来源名称查找。" />
     <div className="mb-8 max-w-3xl"><ArchiveSearch key={JSON.stringify([personId, q])} query={q} person={personId} /></div>
     {!q && !personId ? <EmptyState title="输入关键词开始搜索" description="支持作品名称、slug、人物姓名、历史昵称和历史来源。" /> : <>
       {personId && selectedPerson && <p className="mb-4 rounded-lg border border-line bg-white/70 p-3 text-sm">人物：{selectedPerson.person.display_name} {q && `· 关键词：“${q}”`} <Link className="archive-link ml-3" href={q ? `/search?q=${encodeURIComponent(q)}` : "/search"}>清除人物筛选</Link></p>}

@@ -39,7 +39,7 @@ export async function saveArticleAction(_previous: ArticleSaveState, form: FormD
     return { error: "", savedId: article.id };
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof ApiError && error.code === "INVALID_INPUT") return { error: "请填写标题、正文，并至少关联一条音乐条目。" };
-    if (error instanceof ApiError && error.code === "ARCHIVE_SUPER_ADMIN_REQUIRED") return { error: "关联已归档 MIDI 的文章仅限超级管理员修改。" };
+    if (error instanceof ApiError && error.code === "ARCHIVE_SUPER_ADMIN_REQUIRED") return { error: "关联已归档 MIDI 的文章仅限管理员修改。" };
     if (error instanceof ApiError && error.code === "STALE_ARTICLE") return { error: "文章已被其他页面修改，请重新打开后合并内容。" };
     if (error instanceof ApiError && error.code === "INVALID_ASSOCIATION") return { error: "关联的 MIDI 或人物已不存在，请刷新页面。" };
     if (error instanceof ApiError && error.status === 401) return { error: "会话已过期，请重新登录。" };

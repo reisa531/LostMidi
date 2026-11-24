@@ -71,7 +71,7 @@ export async function saveCreditsAction(_previous: { error: string }, form: Form
   try {
     await checkOrigin();
     id = idOf(form.get("midi_id"));
-    const session = await adminRequest<{ role: "admin" | "super_admin" }>("/api/v1/admin/session");
+    const session = await adminRequest<{ role: "admin" | "owner" | "maintainer" }>("/api/v1/admin/session");
     const people = form.getAll("person_id");
     const roles = form.getAll("role");
     if (people.length !== roles.length) throw new ApiError(400, "INVALID_INPUT");
@@ -79,7 +79,7 @@ export async function saveCreditsAction(_previous: { error: string }, form: Form
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ revision: Number(form.get("revision")), credits: people.map((person, index) => ({ person_id: idOf(person), role: String(roles[index]) })) }),
     });
-    queued = session.role === "admin" && "request_id" in result;
+    queued = session.role === "maintainer" && "request_id" in result;
   } catch (error) { return { error: errorMessage(error) }; }
   if (queued) redirect("/admin/submissions?submitted=1");
   redirect(`/admin/midis/${id}/credits?saved=1`);

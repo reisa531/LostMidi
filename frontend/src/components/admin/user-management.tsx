@@ -3,11 +3,11 @@
 import { useActionState } from "react";
 import { deleteAdminUserAction, inviteAdminAction, updateAdminUserAction, type InviteState } from "@/lib/admin/user-actions";
 
-type AdminUser = { id: string; username: string; email?: string; role: "super_admin" | "admin"; status: "invited" | "active" | "disabled"; created_by: string; created_at: string };
+type AdminUser = { id: string; username: string; email?: string; role: "admin" | "owner" | "maintainer"; status: "invited" | "active" | "disabled"; created_by: string; created_at: string };
 const initial: InviteState = { error: "" };
 function UserUpdateForm({ user }: { user: AdminUser }) {
   const [state, action, pending] = useActionState(updateAdminUserAction, { error: "", success: false });
-  return <form action={action} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={user.id} /><label className="sr-only" htmlFor={`role-${user.id}`}>调整 {user.username} 的身份</label><select id={`role-${user.id}`} name="role" defaultValue={user.role} className="rounded border border-line bg-white p-2 text-sm"><option value="admin">管理员</option><option value="super_admin">超级管理员</option></select><label className="sr-only" htmlFor={`status-${user.id}`}>调整 {user.username} 的状态</label><select id={`status-${user.id}`} name="status" defaultValue={user.status === "invited" ? "disabled" : user.status} className="rounded border border-line bg-white p-2 text-sm"><option value="active">已启用</option><option value="disabled">停用</option></select><button disabled={pending} className="rounded border border-line px-3 py-2 text-sm disabled:opacity-50">{pending ? "保存中…" : "保存"}</button>{state.error && <p role="alert" className="w-full text-xs text-red-800">{state.error}</p>}{state.success && <p role="status" className="w-full text-xs text-green-800">账号已更新。</p>}</form>;
+  return <form action={action} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={user.id} /><label className="sr-only" htmlFor={`role-${user.id}`}>调整 {user.username} 的身份</label><select id={`role-${user.id}`} name="role" defaultValue={user.role} className="rounded border border-line bg-white p-2 text-sm"><option value="admin">管理员</option><option value="maintainer">维护者</option></select><label className="sr-only" htmlFor={`status-${user.id}`}>调整 {user.username} 的状态</label><select id={`status-${user.id}`} name="status" defaultValue={user.status === "invited" ? "disabled" : user.status} className="rounded border border-line bg-white p-2 text-sm"><option value="active">已启用</option><option value="disabled">停用</option></select><button disabled={pending} className="rounded border border-line px-3 py-2 text-sm disabled:opacity-50">{pending ? "保存中…" : "保存"}</button>{state.error && <p role="alert" className="w-full text-xs text-red-800">{state.error}</p>}{state.success && <p role="status" className="w-full text-xs text-green-800">账号已更新。</p>}</form>;
 }
 function UserDeleteForm({ user }: { user: AdminUser }) {
   const [state, action, pending] = useActionState(deleteAdminUserAction, { error: "", deleted: false });
@@ -34,7 +34,7 @@ export function UserManagement({ users, currentUserId }: { users: AdminUser[]; c
       <p className="mt-2 text-sm leading-6 text-muted">新管理员须在 48 小时内打开邀请页并设置密码。邀请令牌仅显示一次，请妥善转交。</p>
       <form action={action} className="mt-5 flex flex-wrap items-end gap-3">
         <label className="min-w-48 flex-1 text-sm">用户名<input name="username" required minLength={3} maxLength={64} pattern="[A-Za-z0-9_.-]+" className="mt-2 block w-full rounded border border-line p-3" /></label>
-        <label className="text-sm">身份<select name="role" className="mt-2 block rounded border border-line bg-white p-3"><option value="admin">管理员</option><option value="super_admin">超级管理员</option></select></label>
+        <label className="text-sm">身份<select name="role" className="mt-2 block rounded border border-line bg-white p-3"><option value="admin">管理员</option><option value="maintainer">维护者</option></select></label>
         <button disabled={pending} className="rounded bg-accent px-5 py-3 text-sm text-white disabled:opacity-50">{pending ? "正在创建…" : "生成邀请"}</button>
       </form>
       {state.error && <p role="alert" className="mt-4 text-sm text-red-800">{state.error}</p>}
@@ -43,9 +43,9 @@ export function UserManagement({ users, currentUserId }: { users: AdminUser[]; c
     <section className="rounded-xl border border-line bg-white p-5 sm:p-7">
       <h2 className="mb-4 font-semibold">用户账号 · {users.length}</h2>
       {users.length ? <ul className="divide-y divide-line">{users.map(user => <li key={user.id} className="flex flex-wrap items-center justify-between gap-4 py-4">
-        <div><p className="font-medium">{user.username}{user.id === currentUserId && <span className="ml-2 text-xs text-muted">（当前账号）</span>}</p><p className="mt-1 text-xs text-muted">{user.email && <>{user.email} · </>}{user.role === "super_admin" ? "超级管理员" : "管理员"} · {user.status === "active" ? "已启用" : user.status === "invited" ? "等待接受邀请" : "已停用"} · 创建于 {new Date(user.created_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC</p></div>
-        <div className="w-full space-y-2 lg:w-auto"><UserUpdateForm user={user} />
-          {user.id !== currentUserId && <UserDeleteForm user={user} />}</div>
+        <div><p className="font-medium">{user.username}{user.id === currentUserId && <span className="ml-2 text-xs text-muted">（当前账号）</span>}</p><p className="mt-1 text-xs text-muted">{user.email && <>{user.email} · </>}{user.role === "owner" ? "站长" : user.role === "admin" ? "管理员" : "维护者"} · {user.status === "active" ? "已启用" : user.status === "invited" ? "等待接受邀请" : "已停用"} · 创建于 {new Date(user.created_at).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC</p></div>
+        <div className="w-full space-y-2 lg:w-auto">{user.role !== "owner" && <UserUpdateForm user={user} />}
+          {user.role !== "owner" && user.id !== currentUserId && <UserDeleteForm user={user} />}</div>
       </li>)}</ul> : <p className="py-5 text-sm text-muted">暂无账号。</p>}
     </section>
   </div>;

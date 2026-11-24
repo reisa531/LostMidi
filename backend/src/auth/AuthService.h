@@ -8,13 +8,14 @@ struct Credentials {
     std::string username;
     std::string passwordHash;
     std::string userId;
-    std::string role = "super_admin";
+    std::string role = "owner";
 };
 struct SessionPrincipal {
     std::string username;
     std::string role;
     std::string userId;
     std::string credentialId;
+    bool isStaff() const { return role == "owner" || role == "admin"; }
 };
 class AuthRepository {
 public:
@@ -27,6 +28,7 @@ public:
     std::optional<Credentials> credentialsById(const std::string& userId);
     std::optional<SessionPrincipal> session(const std::string& hash);
     bool hasDatabaseCredentials();
+    bool hasDatabaseOwner();
 private:
     drogon::orm::DbClientPtr db_;
 };
@@ -36,7 +38,8 @@ public:
     std::string login(const std::string& username, const std::string& password);
     std::string require(const std::string& authorization);
     SessionPrincipal requirePrincipal(const std::string& authorization);
-    SessionPrincipal requireSuperAdmin(const std::string& authorization);
+    SessionPrincipal requireOwner(const std::string& authorization);
+    SessionPrincipal requireStaff(const std::string& authorization);
     void logout(const std::string& authorization);
     bool hasEnvironmentCredentials() const;
     bool isEnvironmentUsername(const std::string& username) const;

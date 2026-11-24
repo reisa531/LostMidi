@@ -8,8 +8,8 @@ export const secondaryLink = "min-h-11 inline-flex items-center justify-center r
 export function CatalogStatus({ status }: { status: ArchiveStatus }) {
   return <Status status={status} />;
 }
-export function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
-  return <header className="catalog-heading"><div className="min-w-0 max-w-2xl"><p className="eyebrow">{eyebrow}</p><h1 className="mb-3 mt-3 font-serif text-3xl tracking-tight sm:text-4xl">{title}</h1><p className="text-sm leading-7 text-muted">{description}</p></div>{action}</header>;
+export function PageHeader({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+  return <header className="catalog-heading"><div className="min-w-0 max-w-2xl"><h1 className="mb-3 mt-3 font-serif text-3xl tracking-tight sm:text-4xl">{title}</h1><p className="text-sm leading-7 text-muted">{description}</p></div>{action}</header>;
 }
 export function MetricGrid({ items }: { items: { label: string; value: number; note: string; href?: string }[] }) {
   return <dl className={`metric-grid grid grid-cols-2 ${items.length > 4 ? "lg:grid-cols-6 sm:grid-cols-3" : items.length === 3 ? "sm:grid-cols-3" : "lg:grid-cols-4"}`}>

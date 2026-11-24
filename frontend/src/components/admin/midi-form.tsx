@@ -74,7 +74,7 @@ export function MidiForm({ entry, importEnabled = false, reviewRequired = false 
     }
     submitting.current = true;
   }} aria-busy={pending} className="min-w-0 space-y-6 rounded-xl border border-line bg-white p-5 sm:p-8">
-    <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由超级管理员审核，通过后发布。" : entry ? "保存后，基础资料立即在公开档案中显示。" : "填写作品资料，可同时上传音乐文件；暂无文件也可先建寻回档案。"}</p>
+    <p className="text-sm leading-6 text-muted">{reviewRequired ? "提交后由管理员审核，通过后发布。" : entry ? "保存后，基础资料立即在公开档案中显示。" : "填写作品资料，可同时上传音乐文件；暂无文件也可先建寻回档案。"}</p>
     <DraftNotice hasDraft={hasDraft} dirty={dirty} restore={restoreDraft} discard={discardDraft} />
     {entry && <><input type="hidden" name="id" value={entry.id} /><input type="hidden" name="revision" value={entry.revision} /></>}
     <fieldset disabled={pending || state.retryOnly} className="min-w-0 space-y-6 disabled:opacity-70"><legend className="editor-heading">作品资料</legend>

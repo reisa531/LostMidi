@@ -24,7 +24,7 @@ void ApiController::registerCatalogRoutes() {
     }, {drogon::Get});
     drogon::app().registerHandler("/api/v1/admin/useful-links", [this, linksJson](const drogon::HttpRequestPtr& request, Callback&& callback) {
         dispatch(std::move(callback), [this, request, linksJson] {
-            auth_.require(request->getHeader("authorization"));
+            auth_.requireStaff(request->getHeader("authorization"));
             if (request->method() == drogon::Get) return linksJson();
             const auto body = request->getJsonObject();
             if (!body || !body->isObject() || !(*body)["title"].isString() || !(*body)["url"].isString() || !(*body)["description"].isString() || !(*body)["sort_order"].isInt())
@@ -39,7 +39,7 @@ void ApiController::registerCatalogRoutes() {
     }, {drogon::Get, drogon::Post});
     drogon::app().registerHandler("/api/v1/admin/useful-links/{1}", [this, linksJson](const drogon::HttpRequestPtr& request, Callback&& callback, std::string value) {
         dispatch(std::move(callback), [this, request, value = std::move(value), linksJson] {
-            auth_.require(request->getHeader("authorization"));
+            auth_.requireStaff(request->getHeader("authorization"));
             std::int64_t id = 0;
             const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), id);
             if (error != std::errc{} || end != value.data() + value.size() || id < 1) throw ApiError(400, "INVALID_INPUT", "Invalid link id.");
