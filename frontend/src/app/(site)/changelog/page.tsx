@@ -8,7 +8,7 @@ export const metadata = {
 };
 
 export default function ChangelogPage() {
-  return <article className="mx-auto max-w-3xl">
+  return <article className="reading-page">
     <header className="mb-10 border-b border-line pb-8">
       <p className="eyebrow">项目进展</p>
       <h1 className="my-5 font-serif text-4xl">更新日志</h1>

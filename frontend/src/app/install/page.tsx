@@ -10,7 +10,7 @@ export default async function InstallPage() {
   const config = deploymentConfig();
   const installed = state.kind === "reachable" && state.status.installed;
   const canInstall = state.kind === "reachable" && !state.status.installed && state.status.installation_enabled && config.ready;
-  return <main id="main" className="mx-auto max-w-4xl px-5 py-10 sm:px-8 sm:py-16 [overflow-wrap:anywhere]">
+  return <main id="main" className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-16 [overflow-wrap:anywhere]">
     <header className="install-heading bg-foreground px-6 py-9 text-white sm:px-10 sm:py-12">
       <p className="text-[10px] tracking-[0.25em] text-rail-muted">LOST MIDI ARCHIVE / 初始化向导</p>
       <h1 className="mt-5 font-serif text-3xl leading-snug sm:text-4xl">{installed ? "站点已安装" : "初始化档案馆"}</h1>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export function InstallationUnavailable() {
-  return <main id="main" className="mx-auto max-w-2xl px-6 py-24">
+  return <main id="main" className="mx-auto max-w-3xl px-6 py-24">
     <p className="eyebrow">Lost MIDI Archive / 连接状态</p>
     <h1 className="my-6 font-serif text-3xl">暂时无法连接站点服务</h1>
     <p className="text-sm leading-8 text-muted">无法确认安装状态：后端可能离线、地址配置有误，或版本尚未支持安装向导。这不代表站点未安装，也不会开放重新初始化。</p>

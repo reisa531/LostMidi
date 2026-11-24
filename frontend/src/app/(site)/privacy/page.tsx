@@ -10,7 +10,7 @@ export const metadata = {
 };
 
 export default function PrivacyPage() {
-  return <article className="mx-auto max-w-3xl">
+  return <article className="reading-page">
     <h1 className="my-6 font-serif text-4xl">Cookie 与隐私说明</h1>
     <p>你可以只用必要功能浏览 LostMidi。访问统计和外部视频由你分别选择，随时可以撤回。</p>
     <p className="my-5"><CookieDetails /></p>

@@ -20,11 +20,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <AdminNavigation role={admin.role} />
 
     </aside>
-    <div className="min-w-0"><header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white/70 px-5 py-4 lg:px-8">
+    <div className="min-w-0"><header className="border-b border-line bg-white/70"><div className="site-width flex flex-wrap items-center justify-between gap-3 py-4">
       <p className="text-sm font-medium">档案工作台</p>
       <div className="flex min-w-0 flex-wrap items-center gap-4 text-xs"><span className="min-w-0 rounded-full bg-tint px-3 py-1.5 text-accent [overflow-wrap:anywhere]">{admin.username} · {{ owner:"站长", admin:"管理员", maintainer:"维护者" }[admin.role]}</span><LogoutForm /><Link href="/" className="text-muted hover:text-accent">返回网站 ↗</Link></div>
-    </header>
-    <main id="main" className="mx-auto min-w-0 max-w-7xl px-5 py-8 sm:px-8">{children}</main>
-    <footer className="mx-auto max-w-7xl px-6 pb-8 text-xs text-muted lg:px-10">Lost MIDI Archive · 管理工作台　<CookieDetails /></footer></div>
+    </div></header>
+    <main id="main" className="site-width min-w-0 py-8">{children}</main>
+    <footer className="site-width pb-8 text-xs text-muted">Lost MIDI Archive · 管理工作台　<CookieDetails /></footer></div>
   </div>;
 }

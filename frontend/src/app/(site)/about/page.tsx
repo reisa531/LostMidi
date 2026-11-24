@@ -15,7 +15,7 @@ export const metadata = {
 export default async function AboutPage() {
   const usefulLinks = await getUsefulLinks().catch(() => []);
   const origin = siteOrigin();
-  return <article className="mx-auto max-w-3xl"><p className="eyebrow">关于我们</p><h1 className="my-6 font-serif text-4xl">关于本档案</h1>
+  return <article className="reading-page"><p className="eyebrow">关于我们</p><h1 className="my-6 font-serif text-4xl">关于本档案</h1>
     <nav aria-label="关于档案馆" className="about-links"><a href="#about-intro">项目介绍</a><a href="#archive-rights">权利说明</a><a href="#archive-cite">引用方式</a><a href="#contact">联系我们</a></nav>
     <section aria-labelledby="about-intro" className="mb-10 rounded-xl border border-dashed border-line bg-white/50 p-6"><h2 id="about-intro" className="font-semibold">项目介绍</h2>
       <div className="mt-3 space-y-4 leading-8 text-muted">

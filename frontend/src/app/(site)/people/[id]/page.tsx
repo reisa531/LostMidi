@@ -97,7 +97,7 @@ export default async function PersonPage({ params, searchParams }: {
   const worksPage = typeof requestedPage === "string" && /^[1-9]\d{0,5}$/.test(requestedPage) ? Number(requestedPage) : 1;
   const headings = markdownHeadings(detail.person.biography ?? "");
   const neighbors = [detail.previous, detail.next].filter(Boolean);
-  return <article className="mx-auto max-w-6xl"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} /><Breadcrumbs items={crumbs} />
+  return <article className="record-page"><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }} /><Breadcrumbs items={crumbs} />
     <header className="record-header"><div className="mb-4 flex min-w-0 items-center gap-5"><PersonAvatar avatar={profile.avatar} name={detail.person.display_name} size={96} /><h1 className="min-w-0 break-words font-serif text-4xl">{detail.person.display_name}</h1></div><p className="mb-8 max-w-3xl text-lg leading-8 text-muted">{summary}</p></header>
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem]"><div className="min-w-0 space-y-8">
     <section aria-labelledby="bio-title"><h2 id="bio-title" className="mb-4 font-serif text-2xl">人物简介</h2>{detail.person.biography ? <Markdown source={detail.person.biography} /> : <p className="text-muted">人物生平尚待补充。</p>}</section>

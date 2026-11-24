@@ -9,6 +9,9 @@
   --surface: #fcfaf5;
   --wash: #ece7dc;
   --tint: #f3e3d9;
+  --site-gutter: clamp(1rem, 3vw, 4rem);
+  --site-width: 116rem;
+  --detail-width: 100rem;
 }
 
 @theme inline {
@@ -41,7 +44,7 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .archive-link:hover { text-decoration-color: currentColor; }
 .eyebrow { font: 600 .75rem/1.6 var(--font-sans); letter-spacing: .09em; color: var(--muted); }
 .public-site { display: flex; min-height: 100dvh; flex-direction: column; }
-.site-width { width: min(100% - clamp(2rem, 8vw, 7rem), 77rem); margin-inline: auto; }
+.site-width { width: min(calc(100% - 2 * var(--site-gutter)), var(--site-width)); margin-inline: auto; }
 .masthead { border-block: 3px solid var(--foreground); border-bottom: 1px solid var(--line); }
 .masthead-inner, .site-tools, .desktop-links, .wordmark, .footer-inner, .nav-search, .menu-trigger { display: flex; align-items: center; }
 .masthead-inner { justify-content: space-between; gap: 1.25rem; min-height: 4.75rem; }
@@ -132,21 +135,23 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .catalog-heading h1, .record-header h1 { font: 650 clamp(2.2rem, 4.2vw, 3.6rem)/1.16 var(--font-serif); letter-spacing: -.055em; }
 .metric-grid { background: var(--line); border: 1px solid var(--line); gap: 1px; }
 .metric-grid > div { background: var(--surface); }
-.directory-grid { display: grid; grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr); gap: 1.75rem; align-items: start; }
+.directory-grid { display: grid; grid-template-columns: clamp(13rem, 14vw, 16rem) minmax(0, 1fr); gap: 1.75rem; align-items: start; }
 .directory-filters { background: var(--wash); padding: 1.1rem; border-top: 2px solid var(--foreground); }
 .directory-filters h2 { font-family: var(--font-serif); font-size: 1.15rem; font-weight: 650; }
 .directory-filters form { display: grid; margin: 1rem 0 0; padding: 0; border: 0; background: transparent; }
 .directory-filters select { width: 100%; }
 .directory-filters a { text-align: center; }
-.record-page { max-width: 65rem; margin-inline: auto; }
+.record-page { max-width: var(--detail-width); margin-inline: auto; }
 .record-header { border-block: 2px solid var(--foreground); border-bottom-width: 1px; padding-top: 1.5rem; margin-bottom: 2rem; }
-.record-grid { display: grid; grid-template-columns: 12rem minmax(0, 44rem); gap: clamp(2rem, 5vw, 5rem); }
+.record-grid { display: grid; grid-template-columns: clamp(12rem, 14vw, 16rem) minmax(0, 1fr); gap: clamp(2rem, 5vw, 5rem); }
 .record-index { display: grid; align-self: start; position: sticky; top: 1rem; border-top: 3px solid var(--accent); background: var(--wash); padding: .9rem 1.1rem; }
 .record-index p { font-weight: 650; margin-bottom: .5rem; }
 .record-index a { font-size: .88rem; padding: .6rem 0; border-top: 1px solid var(--line); }
 .record-index a:hover, .record-section:target > h2 { color: var(--accent); }
 .record-section { scroll-margin-top: 1rem; }
 .record-section h2 { font-weight: 620; }
+.reading-page { max-width: 64rem; margin-inline: auto; }
+.record-page .markdown-body :is(p, ul, ol, blockquote), .reading-page :is(p, li) { max-width: 52em; }
 .record-body { min-width: 0; overflow-wrap: anywhere; }
 .workspace { --background: #f3f2ef; --surface: #fff; --line: #d5d2cc; background: var(--background); }
 .workspace-rail { border-top: 3px solid var(--accent); }
@@ -156,7 +161,7 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .editor-tabs a { padding: .65rem .9rem; font-size: .85rem; }
 .editor-tabs a[aria-current] { background: var(--foreground); color: white; }
 .account-page { display: grid; align-content: center; min-height: 100dvh; padding: 2rem 1rem; background: var(--wash); }
-.account-sheet { width: min(100%, 29rem); margin: auto; padding: clamp(1.4rem, 4vw, 2.6rem); background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--accent); }
+.account-sheet { width: min(100%, 32rem); margin: auto; padding: clamp(1.4rem, 4vw, 2.6rem); background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--accent); }
 .account-sheet .wordmark { font-size: 1.2rem; }
 .account-sheet h1 { margin: 2rem 0 .65rem; font: 650 2rem/1.35 var(--font-serif); }
 .account-description { margin-bottom: 1.5rem; color: var(--muted); font-size: .9rem; line-height: 1.8; }
@@ -227,7 +232,6 @@ body { background: var(--background); color: var(--foreground); font-family: var
 body { background-image:repeating-linear-gradient(0deg, transparent 0 3px, #44352104 3px 4px); }
 .masthead { border-block:5px solid var(--foreground); border-bottom:3px double var(--foreground); }
 .masthead-inner { min-height:4rem; }
-.site-width { max-width:70rem; }
 .workspace aside.workspace-rail { background:#302d22; border-right:4px double #ad9e7c; }
 .workspace :where(.rounded-lg,.rounded-xl,.rounded-2xl), .public-site :where(.rounded-lg,.rounded-xl,.rounded-2xl) {border-radius:2px}
 .workspace .bg-white, .public-site .bg-white {background-color:var(--surface)}
