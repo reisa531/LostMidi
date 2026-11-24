@@ -6,7 +6,6 @@ import { loadOverview } from "@/lib/api/overview";
 import type { CatalogOverview } from "@/lib/api/types";
 import { jsonLd, siteOgImage, siteOrigin } from "@/lib/seo";
 import { datasetId, datasetSchema, webSiteId } from "@/lib/schema";
-import { DeskCarousel } from "@/components/desk-carousel";
 import type { FrontDesk } from "@/lib/front-desk";
 import { Suspense } from "react";
 import { ArchiveSearch } from "@/components/archive-search";
@@ -94,11 +93,9 @@ export default async function Home() {
     </section>
     {desk?.sayings.length ? <Saying value={desk.sayings[randomInt(desk.sayings.length)]} /> : null}
     <div className="edition-grid">
-      <div>{desk && <DeskCarousel slides={desk.slides} />}
-        <section aria-labelledby="recent-heading"><div className="section-heading"><h2 id="recent-heading">近期修订</h2><Link href="/midis">翻阅目录 →</Link></div>
-          {overview ? <EntryActivity entries={recent} empty="暂未收录作品。" /> : <p role="status">馆藏数据暂时无法读取，请稍后刷新。</p>}
-        </section>
-      </div>
+      <section aria-labelledby="recent-heading"><div className="section-heading"><h2 id="recent-heading">近期修订</h2><Link href="/midis">翻阅目录 →</Link></div>
+        {overview ? <EntryActivity entries={recent} empty="暂未收录作品。" /> : <p role="status">馆藏数据暂时无法读取，请稍后刷新。</p>}
+      </section>
       <aside className="edition-margin">
         <section><h2>公告栏</h2>
           {desk ? desk.announcements.length ? desk.announcements.map((n,i) => <details key={n.id} open={i===0}>

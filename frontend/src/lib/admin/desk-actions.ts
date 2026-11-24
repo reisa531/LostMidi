@@ -1,6 +1,7 @@
 "use server";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
+import type { Slide } from "@/lib/front-desk";
 import { adminRequest } from "./auth";
 import { ApiError } from "@/lib/api/client";
 
@@ -12,19 +13,14 @@ function feedback(error: unknown) {
   if (error instanceof ApiError && error.status === 403) return "当前账号没有这项权限。";
   return "保存失败，请核对内容后重试。";
 }
-export async function saveDesk(_prev: string, form: FormData) {
+export async function saveDesk(slides: Slide[], _prev: string, form: FormData) {
   try {
     await verifyOrigin();
-    const lines = (field: string) => String(form.get(field) ?? "").split(/\r?\n/).map(t => t.trim()).filter(Boolean);
-    const slides = lines("slides").map(line => {
-      const bar = line.indexOf("|");
-      if (bar < 1) throw new Error();
-      return { title: line.slice(0,bar).trim(), href: line.slice(bar+1).trim() };
-    });
+    const sayings = String(form.get("sayings") ?? "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     await adminRequest("/api/v1/admin/front-desk", { method: "PUT", headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ slides, sayings: lines("sayings"), revision: Number(form.get("revision")) }) });
+      body: JSON.stringify({ slides, sayings, revision: Number(form.get("revision")) }) });
     revalidatePath("/"); revalidatePath("/admin/front-desk");
-    return "栏目已保存。";
+    return "一言已保存。";
   } catch (error) { return feedback(error); }
 }
 export async function publishAnnouncement(_prev: string, form: FormData) {
