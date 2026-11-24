@@ -1,3 +1,4 @@
+import { CookieDetails } from "@/components/cookie-notice";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArchiveMark } from "@/components/archive-brand";
@@ -24,6 +25,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <div className="flex min-w-0 flex-wrap items-center gap-4 text-xs"><span className="min-w-0 rounded-full bg-tint px-3 py-1.5 text-accent [overflow-wrap:anywhere]">{admin.username} · {{ owner:"站长", admin:"管理员", maintainer:"维护者" }[admin.role]}</span><LogoutForm /><Link href="/" className="text-muted hover:text-accent">返回网站 ↗</Link></div>
     </header>
     <main id="main" className="mx-auto min-w-0 max-w-7xl px-5 py-8 sm:px-8">{children}</main>
-    <footer className="mx-auto max-w-7xl px-6 pb-8 text-xs text-muted lg:px-10">Lost MIDI Archive · 管理工作台</footer></div>
+    <footer className="mx-auto max-w-7xl px-6 pb-8 text-xs text-muted lg:px-10">Lost MIDI Archive · 管理工作台　<CookieDetails /></footer></div>
   </div>;
 }

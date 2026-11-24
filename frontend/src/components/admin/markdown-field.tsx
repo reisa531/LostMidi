@@ -25,6 +25,7 @@ export function MarkdownField({ name, label, value, onChange, rows = 5, required
     document.body.style.overflow = "hidden";
     editor.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (event.key === "Escape") { setOpen(false); return; }
       if (event.key !== "Tab" || !dialog.current) return;
       const focusable = Array.from(dialog.current.querySelectorAll<HTMLElement>("button:not([disabled]),input,iframe,textarea:not([disabled]),a[href]"));
@@ -34,6 +35,7 @@ export function MarkdownField({ name, label, value, onChange, rows = 5, required
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     const keepFocusInside = (event: FocusEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (dialog.current && event.target instanceof Node && !dialog.current.contains(event.target))
         editor.current?.focus();
     };

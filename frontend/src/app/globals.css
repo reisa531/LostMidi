@@ -247,9 +247,26 @@ body { background-image:repeating-linear-gradient(0deg, transparent 0 3px, #4435
 .edition-margin small,.edition-ledger {color:var(--muted)}
 .desk-carousel {border:1px solid var(--foreground);border-left:5px solid var(--accent);padding:1rem 1.2rem;background:var(--surface);margin-bottom:1.5rem}
 .feature-link {font:600 clamp(1.45rem,3vw,2.5rem)/1.5 var(--font-serif);overflow-wrap:anywhere}
-.desk-carousel button,.cookie-slip button,.desk-edit button,.listen-controls button,.library-tabs button {min-height:44px;padding:0 .65rem;border:1px solid var(--line);background:var(--surface);color:var(--foreground)}
-.cookie-slip {position:fixed;z-index:45;bottom:1rem;right:1rem;width:min(27rem,calc(100% - 2rem));padding:.9rem 1.05rem;background:var(--surface);border:1px solid var(--foreground);border-top:3px double var(--foreground);box-shadow:3px 3px 0 #392d1f38;display:grid;grid-template-columns:1fr auto;gap:.25rem .7rem}
-.cookie-slip[hidden]{display:none}.cookie-slip strong{font-family:var(--font-serif)}.cookie-slip p{font-size:.8rem;line-height:1.6;grid-column:1}.cookie-slip button{grid-column:2;grid-row:1/3;align-self:center}
+.desk-carousel button,.desk-edit button,.listen-controls button,.library-tabs button {min-height:44px;padding:0 .65rem;border:1px solid var(--line);background:var(--surface);color:var(--foreground)}
+/* A printed slip at the bottom of the page, with equal weight for either choice. */
+.cookie-banner { position: sticky; bottom: 0; z-index: 45; max-height: 60dvh; overflow: auto; border-top: 3px double var(--foreground); background: #f3ead8; padding: .9rem max(1rem, env(safe-area-inset-right)) max(.9rem, env(safe-area-inset-bottom)); }
+.cookie-wrap { max-width: 64rem; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.cookie-banner h2,.cookie-panel h2 { font: 600 1.3rem/1.3 var(--font-serif); margin-bottom: .35rem; }
+.cookie-banner p,.cookie-panel p,.cookie-desc { font-size: .875rem; line-height: 1.65; }
+.cookie-banner a,.cookie-panel a { color: var(--accent); text-decoration: underline; text-underline-offset: .18em; }
+.cookie-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.cookie-actions button { min-height: 44px; padding: .4rem .85rem; white-space: nowrap; border: 1px solid var(--foreground); background: var(--surface); color: var(--foreground); }
+.cookie-actions button:hover { background: var(--wash); }
+.cookie-banner :focus-visible,.cookie-panel :focus-visible { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.cookie-panel { margin: auto; color: var(--foreground); background: var(--surface); padding: clamp(1rem,4vw,1.6rem); width: min(31rem,calc(100% - 2rem)); max-height: 88dvh; overflow: auto; border: 1px solid var(--foreground); border-top: 3px double var(--foreground); }
+.cookie-panel::backdrop { background: #23201b66; }
+.cookie-option { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .25rem .65rem; border-top: 1px solid var(--line); padding: .7rem 0; }
+.cookie-option:first-of-type { margin-top: .8rem; }
+.cookie-option p,.cookie-desc { grid-column: 1 / -1; }
+.cookie-option input { width: 1.2rem; height: 1.2rem; accent-color: var(--accent); }
+.cookie-panel .cookie-actions { margin-top: 1rem; }
+@media(min-width: 44rem) { .cookie-wrap .cookie-actions { flex-wrap: nowrap; } }
+@media(max-width: 44rem) { .cookie-wrap { display: grid; gap: .6rem; } .cookie-actions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); } .cookie-actions button { padding-inline: .25rem; } }
 .desk-title{font:700 clamp(2rem,4vw,3.3rem)/1.2 var(--font-serif);padding-bottom:.8rem;border-bottom:3px double var(--foreground);margin-bottom:1.4rem}
 .desk-edit {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:1.5rem}
 .desk-edit form {align-self:start;display:grid;gap:.75rem;background:var(--surface);padding:1.25rem;border:1px solid var(--line)}
