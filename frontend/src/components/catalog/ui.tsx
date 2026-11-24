@@ -1,3 +1,4 @@
+import { CatalogFileAccess, CatalogFileCell } from "./file-cell";
 import Link from "next/link";
 import { Credits, Status, dateLabel } from "@/components/archive";
 import { archiveStates, catalogHref, type CatalogPath, type UrlQuery } from "@/lib/api/catalog";
@@ -43,23 +44,31 @@ export function CatalogFilters({ path, query }: { path: CatalogPath; query: UrlQ
     <button type="submit" className={primaryLink}>应用筛选</button><Link href={catalogHref(path, reset)} className="px-2 py-2.5 text-xs text-muted hover:text-accent hover:underline">重置状态与排序</Link>
   </form>;
 }
+function catalogEra(entry: CatalogEntry) {
+  if (entry.estimated_date) return `约 ${entry.estimated_date}`;
+  return entry.estimated_year === null ? "年代不详" : `约 ${entry.estimated_year} 年`;
+}
+function fileCell(entry: CatalogEntry) {
+  return <CatalogFileCell id={entry.id} slug={entry.slug} title={entry.title}
+    hasFiles={entry.file_count > 0} hasPublicDownload={entry.downloadable_file_count > 0} />;
+}
 export function CatalogTable({ entries, caption = "MIDI 档案列表" }: { entries: CatalogEntry[]; caption?: string }) {
   if (!entries.length) return <EmptyState description={"此页暂无符合条件的条目。可调整筛选条件，或返回第一页。"} />;
-  return <><ul aria-label={caption} className="space-y-3 md:hidden">{entries.map(entry => <li key={entry.id} className="min-w-0 rounded-xl border border-line bg-white/70 p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><Link href={`/midis/${entry.slug}`} className="break-words font-medium text-accent underline-offset-4 hover:underline">{entry.title}</Link><p className="mt-1 text-xs text-muted">更新于 {dateLabel(entry.updated_at)}</p></div><CatalogStatus status={entry.archive_status} /></div>
-    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4 text-xs leading-5"><div className="min-w-0"><dt className="text-muted">署名</dt><dd className="mt-1 break-words"><Credits credits={entry.credits} /></dd></div><div className="min-w-0"><dt className="text-muted">推测时间</dt><dd className="mt-1">{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year ? `约 ${entry.estimated_year} 年` : "不详"}</dd></div><div className="min-w-0"><dt className="text-muted">历史来源</dt><dd className="mt-1 break-words">{entry.sources.length ? entry.sources.map((source, index) => <span key={`${source}-${index}`}><Link className="underline" href={catalogHref("/map", { by: "source", group: source })}>{source}</Link>{index < entry.sources.length - 1 ? "、" : ""}</span>) : "待补"}</dd></div><div className="min-w-0"><dt className="text-muted">文件</dt><dd className="mt-1">{entry.file_count} 个 · {entry.downloadable_file_count} 个可下载</dd></div></dl>
+  return <CatalogFileAccess><ul aria-label={caption} className="space-y-3 md:hidden">{entries.map(entry => <li key={entry.id} className="min-w-0 rounded-xl border border-line bg-white/70 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><Link href={`/midis/${entry.slug}`} className="break-words font-medium text-accent underline-offset-4 hover:underline">{entry.title}</Link><p className="mt-1 text-xs text-muted">{catalogEra(entry)}</p></div><CatalogStatus status={entry.archive_status} /></div>
+    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4 text-xs leading-5"><div className="min-w-0"><dt className="text-muted">署名</dt><dd className="mt-1 break-words"><Credits credits={entry.credits} /></dd></div><div className="min-w-0"><dt className="text-muted">历史来源</dt><dd className="mt-1 break-words">{entry.sources.length ? entry.sources.map((source, index) => <span key={`${source}-${index}`}><Link className="underline" href={catalogHref("/map", { by: "source", group: source })}>{source}</Link>{index < entry.sources.length - 1 ? "、" : ""}</span>) : "待补"}</dd></div><div className="min-w-0"><dt className="text-muted">文件</dt><dd className="mt-1">{fileCell(entry)}</dd></div></dl>
   </li>)}</ul><div role="region" aria-label={caption} className="hidden min-w-0 max-w-full overflow-x-auto rounded-xl border border-line bg-white/70 md:block">
     <table className="w-full min-w-[760px] table-fixed text-left text-sm"><caption className="sr-only">{caption}：作品、署名、历史来源、归档状态及文件</caption>
-      <thead className="border-b border-line bg-wash text-xs text-muted"><tr><th scope="col" className="w-[28%] px-5 py-3 font-medium">作品 / 更新日期</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">署名</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">历史来源</th><th scope="col" className="w-[15%] px-4 py-3 font-medium">归档状态</th><th scope="col" className="w-[17%] px-4 py-3 font-medium">文件 / 下载权限</th></tr></thead>
+      <thead className="border-b border-line bg-wash text-xs text-muted"><tr><th scope="col" className="w-[28%] px-5 py-3 font-medium">作品 / 年代</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">署名</th><th scope="col" className="w-[20%] px-4 py-3 font-medium">历史来源</th><th scope="col" className="w-[15%] px-4 py-3 font-medium">归档状态</th><th scope="col" className="w-[17%] px-4 py-3 font-medium">文件</th></tr></thead>
       <tbody className="divide-y divide-line">{entries.map(entry => <tr key={entry.id} className="align-top transition hover:bg-surface">
-        <th scope="row" className="px-5 py-4 text-left font-normal [overflow-wrap:anywhere]"><Link href={`/midis/${entry.slug}`} className="font-medium text-foreground hover:text-accent hover:underline">{entry.title}</Link><p className="mt-2 text-xs leading-5 text-muted">{entry.estimated_date ? `约 ${entry.estimated_date}` : entry.estimated_year === null ? "时间不详" : `约 ${entry.estimated_year} 年`}<br />更新于 {dateLabel(entry.updated_at)}</p></th>
+        <th scope="row" className="px-5 py-4 text-left font-normal [overflow-wrap:anywhere]"><Link href={`/midis/${entry.slug}`} className="font-medium text-foreground hover:text-accent hover:underline">{entry.title}</Link><p className="mt-2 text-xs leading-5 text-muted">{catalogEra(entry)}</p></th>
         <td className="px-4 py-4 text-xs leading-5 [overflow-wrap:anywhere]"><Credits credits={entry.credits} /></td>
         <td className="px-4 py-4 text-xs leading-6 [overflow-wrap:anywhere]">{entry.sources.length ? <ul className="space-y-1">{entry.sources.map(source => <li key={source}><Link className="text-muted underline decoration-line underline-offset-4 hover:text-accent" href={catalogHref("/map", { by: "source", group: source })}>{source}</Link></li>)}</ul> : <span className="text-muted">来源待补</span>}</td>
         <td className="px-4 py-4"><CatalogStatus status={entry.archive_status} /></td>
-        <td className="px-4 py-4 text-xs leading-6 tabular-nums"><p className={entry.file_count ? "text-foreground" : "text-muted"}>{entry.file_count ? `${entry.file_count} 个文件` : "暂无文件"}</p><p className={entry.downloadable_file_count ? "text-accent" : "text-muted"}>{entry.downloadable_file_count ? `${entry.downloadable_file_count} 个符合下载权限` : "暂无可下载文件"}</p></td>
+        <td className="px-4 py-4 text-xs leading-6 tabular-nums">{fileCell(entry)}</td>
       </tr>)}</tbody>
     </table>
-  </div></>;
+  </div></CatalogFileAccess>;
 }
 export function CatalogPagination({ pagination, path, query, pageKey = "page", label = "档案分页" }: { pagination: PaginationData; path: CatalogPath; query: UrlQuery; pageKey?: "page" | "groupPage"; label?: string }) {
   const pages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));

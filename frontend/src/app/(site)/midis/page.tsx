@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ApiError } from "@/lib/api/client";
 import { CatalogQueryError, getCatalogEntries, readCatalogQuery, type SearchParams } from "@/lib/api/catalog";
 import { Unavailable } from "@/components/archive";
-import { CatalogFilters, CatalogPagination, CatalogTable, DataNote, InvalidQuery, PageHeader } from "@/components/catalog/ui";
+import { CatalogFilters, CatalogPagination, CatalogTable, InvalidQuery, PageHeader } from "@/components/catalog/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "MIDI 档案", alternates: { canonical: "/midis" } };
@@ -26,6 +26,6 @@ export default async function MidiListPage({ searchParams }: { searchParams: Pro
     <div className="min-w-0"><div className="mb-3 flex flex-wrap items-baseline justify-between gap-2"><h2 className="text-sm font-medium">{grouped || query.status ? "筛选结果" : "全部作品"}</h2><p className="text-xs text-muted">{result.pagination.total.toLocaleString("zh-CN")} 条档案 · 按{query.sort === "title" ? "作品名称" : "最近更新"}排序</p></div>
     <CatalogTable entries={result.data} />
     <CatalogPagination pagination={result.pagination} path="/midis" query={query} />
-    <div className="mt-5"><DataNote /></div></div></div>
+    </div></div>
   </>;
 }

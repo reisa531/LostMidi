@@ -1,4 +1,5 @@
 #include "common/ApiController.h"
+#include <drogon/utils/Utilities.h>
 #include "common/Database.h"
 #include "common/Json.h"
 #include "common/Log.h"
@@ -191,7 +192,16 @@ void ApiController::registerRoutes() {
             if (error != std::errc{} || end != value.data() + value.size() || id < 1)
                 throw ApiError(400, "INVALID_FILE_ID", "File id must be a positive 64-bit integer.");
             const auto file = midis_.fileForDownload(slug, id);
-            auto bytes = objects_.read(file.storageKey, static_cast<std::size_t>(file.fileSize));
+            const auto archived = db_->execSqlSync(
+                "SELECT replace(encode(content,'base64'),chr(10),'') AS data FROM listening_assets "
+                "WHERE midi_id=$1 AND source_hash=$2 AND mime<>'image/webp' AND octet_length(content)=$3::bigint LIMIT 1",
+                file.midiId, file.sha256, static_cast<int64_t>(file.fileSize));
+            std::string bytes;
+            if (!archived.empty()) {
+                auto copy = drogon::utils::base64Decode(archived[0]["data"].as<std::string>());
+                if (storage::sha256(std::as_bytes(std::span(copy))) == file.sha256) bytes = std::move(copy);
+            }
+            if (bytes.empty()) bytes = objects_.read(file.storageKey, static_cast<std::size_t>(file.fileSize));
             std::string encoded;
             constexpr char hex[] = "0123456789ABCDEF";
             for (unsigned char c : file.originalFilename) { encoded += '%'; encoded += hex[c >> 4]; encoded += hex[c & 15]; }
